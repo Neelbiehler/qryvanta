@@ -1,9 +1,10 @@
-use axum::extract::{Query, State};
+use axum::Json;
+use axum::extract::{Extension, Query, State};
 use axum::http::HeaderMap;
 use axum::http::StatusCode;
-use axum::Json;
-use qryvanta_application::AuthEvent;
-use qryvanta_core::{AppError, UserIdentity};
+use qryvanta_application::{AuthEvent, AuthOutcome};
+use qryvanta_core::{AppError, TenantId, UserIdentity};
+use qryvanta_domain::{RegistrationMode, UserId};
 use serde::{Deserialize, Serialize};
 use tower_sessions::Session;
 use uuid::Uuid;
@@ -12,11 +13,18 @@ use webauthn_rs::prelude::{
     RegisterPublicKeyCredential,
 };
 
-use crate::dto::UserIdentityResponse;
+use crate::dto::{
+    AcceptInviteRequest, AuthLoginRequest as LoginRequest, AuthLoginResponse as LoginResponse,
+    AuthMfaVerifyRequest as MfaVerifyRequest, AuthRegisterRequest as RegisterRequest,
+    GenericMessageResponse, InviteRequest, UserIdentityResponse,
+};
 use crate::error::ApiResult;
 use crate::state::AppState;
 
 pub const SESSION_USER_KEY: &str = "user_identity";
+/// Absolute session creation timestamp for OWASP absolute timeout enforcement.
+pub const SESSION_CREATED_AT_KEY: &str = "session_created_at";
+const SESSION_MFA_PENDING_KEY: &str = "mfa_pending_user_id";
 
 const SESSION_WEBAUTHN_REG_STATE_KEY: &str = "webauthn_reg_state";
 const SESSION_WEBAUTHN_AUTH_STATE_KEY: &str = "webauthn_auth_state";
@@ -35,6 +43,57 @@ pub struct BootstrapRequest {
 #[derive(Debug, Serialize)]
 pub struct AuthStatusResponse {
     pub requires_totp: bool,
+}
+
+// ---- New DTOs for password auth ----
+
+#[derive(Debug, Deserialize)]
+pub struct ChangePasswordRequest {
+    pub current_password: String,
+    pub new_password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ForgotPasswordRequest {
+    pub email: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResetPasswordRequest {
+    pub token: String,
+    pub new_password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VerifyEmailRequest {
+    pub token: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MfaDisableRequest {
+    pub password: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MfaRegenerateRequest {
+    pub password: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TotpEnrollmentResponse {
+    pub secret_base32: String,
+    pub otpauth_uri: String,
+    pub recovery_codes: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RecoveryCodesResponse {
+    pub recovery_codes: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MfaConfirmRequest {
+    pub code: String,
 }
 
 pub async fn bootstrap_handler(
@@ -270,6 +329,14 @@ pub async fn webauthn_login_finish_handler(
             AppError::Internal(format!("failed to persist session identity: {error}"))
         })?;
 
+    // OWASP Session Management: record absolute creation time.
+    session
+        .insert(SESSION_CREATED_AT_KEY, chrono::Utc::now().timestamp())
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!("failed to persist session creation time: {error}"))
+        })?;
+
     let (ip_address, user_agent) = extract_request_context(&headers);
     state
         .auth_event_service
@@ -328,6 +395,596 @@ pub async fn me_handler(session: Session) -> ApiResult<Json<UserIdentityResponse
     Ok(Json(UserIdentityResponse::from(identity)))
 }
 
+// ---- New handlers for email+password auth ----
+
+/// POST /auth/register - Create a new account with email+password.
+pub async fn register_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(payload): Json<RegisterRequest>,
+) -> ApiResult<Json<GenericMessageResponse>> {
+    let (ip_address, user_agent) = extract_request_context(&headers);
+
+    // For now, default to open registration. In production, check tenant config.
+    let registration_mode = qryvanta_domain::RegistrationMode::Open;
+
+    let _user_id = state
+        .user_service
+        .register(qryvanta_application::RegisterParams {
+            email: payload.email,
+            password: payload.password,
+            display_name: payload.display_name,
+            registration_mode,
+            preferred_tenant_id: state.bootstrap_tenant_id,
+            ip_address,
+            user_agent,
+        })
+        .await?;
+
+    // OWASP: generic response to prevent account enumeration.
+    Ok(Json(GenericMessageResponse {
+        message: "a link to activate your account has been emailed to the address provided"
+            .to_owned(),
+    }))
+}
+
+/// POST /auth/login - Authenticate with email+password.
+pub async fn login_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    session: Session,
+    Json(payload): Json<LoginRequest>,
+) -> ApiResult<Json<LoginResponse>> {
+    let (ip_address, user_agent) = extract_request_context(&headers);
+
+    let outcome = state
+        .user_service
+        .login(&payload.email, &payload.password, ip_address, user_agent)
+        .await?;
+
+    match outcome {
+        AuthOutcome::Authenticated(user) => {
+            let tenant_id = state
+                .tenant_repository
+                .find_tenant_for_subject(&user.id.to_string())
+                .await?
+                .ok_or_else(|| AppError::Internal("user has no tenant membership".to_owned()))?;
+
+            let identity = UserIdentity::new(
+                user.id.to_string(),
+                user.email.clone(),
+                Some(user.email),
+                tenant_id,
+            );
+
+            // OWASP Session Management: regenerate session ID on privilege change.
+            session.cycle_id().await.map_err(|error| {
+                AppError::Internal(format!("failed to cycle session id: {error}"))
+            })?;
+
+            session
+                .insert(SESSION_USER_KEY, &identity)
+                .await
+                .map_err(|error| {
+                    AppError::Internal(format!("failed to persist session identity: {error}"))
+                })?;
+
+            // OWASP Session Management: record absolute creation time.
+            session
+                .insert(SESSION_CREATED_AT_KEY, chrono::Utc::now().timestamp())
+                .await
+                .map_err(|error| {
+                    AppError::Internal(format!("failed to persist session creation time: {error}"))
+                })?;
+
+            Ok(Json(LoginResponse {
+                status: "authenticated".to_owned(),
+                requires_totp: false,
+            }))
+        }
+        AuthOutcome::MfaRequired { user_id } => {
+            // Store the pending user_id in session for MFA verification.
+            session
+                .insert(SESSION_MFA_PENDING_KEY, user_id.to_string())
+                .await
+                .map_err(|error| {
+                    AppError::Internal(format!("failed to persist MFA pending state: {error}"))
+                })?;
+
+            Ok(Json(LoginResponse {
+                status: "mfa_required".to_owned(),
+                requires_totp: true,
+            }))
+        }
+        AuthOutcome::Failed => {
+            // OWASP: generic error message for all failure cases.
+            Err(AppError::Unauthorized("invalid email or password".to_owned()).into())
+        }
+    }
+}
+
+/// POST /auth/login/mfa - Complete MFA challenge with TOTP or recovery code.
+pub async fn mfa_verify_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    session: Session,
+    Json(payload): Json<MfaVerifyRequest>,
+) -> ApiResult<Json<LoginResponse>> {
+    let pending_user_id_str: String = session
+        .get(SESSION_MFA_PENDING_KEY)
+        .await
+        .map_err(|error| AppError::Internal(format!("failed to read MFA pending state: {error}")))?
+        .ok_or_else(|| AppError::Unauthorized("no MFA challenge in progress".to_owned()))?;
+
+    let user_id_uuid = Uuid::parse_str(&pending_user_id_str)
+        .map_err(|error| AppError::Internal(format!("invalid pending user id: {error}")))?;
+    let user_id = UserId::from_uuid(user_id_uuid);
+
+    let method = payload.method.as_deref().unwrap_or("totp");
+
+    let valid = match method {
+        "recovery" => {
+            state
+                .mfa_service
+                .verify_recovery_code(user_id, &payload.code)
+                .await?
+        }
+        _ => {
+            state
+                .mfa_service
+                .verify_totp(user_id, &payload.code)
+                .await?
+        }
+    };
+
+    if !valid {
+        let (ip_address, user_agent) = extract_request_context(&headers);
+        state
+            .auth_event_service
+            .record_event(AuthEvent {
+                subject: Some(user_id.to_string()),
+                event_type: "mfa_verify".to_owned(),
+                outcome: "failed".to_owned(),
+                ip_address,
+                user_agent,
+            })
+            .await?;
+
+        return Err(AppError::Unauthorized("invalid MFA code".to_owned()).into());
+    }
+
+    // MFA verified -- establish session.
+    session
+        .remove_value(SESSION_MFA_PENDING_KEY)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!("failed to clear MFA pending state: {error}"))
+        })?;
+
+    let user = state
+        .user_service
+        .find_by_id(user_id)
+        .await?
+        .ok_or_else(|| AppError::Internal("user not found after MFA".to_owned()))?;
+
+    let tenant_id = state
+        .tenant_repository
+        .find_tenant_for_subject(&user.id.to_string())
+        .await?
+        .ok_or_else(|| AppError::Internal("user has no tenant membership".to_owned()))?;
+
+    let identity = UserIdentity::new(
+        user.id.to_string(),
+        user.email.clone(),
+        Some(user.email),
+        tenant_id,
+    );
+
+    session
+        .cycle_id()
+        .await
+        .map_err(|error| AppError::Internal(format!("failed to cycle session id: {error}")))?;
+
+    session
+        .insert(SESSION_USER_KEY, &identity)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!("failed to persist session identity: {error}"))
+        })?;
+
+    session
+        .insert(SESSION_CREATED_AT_KEY, chrono::Utc::now().timestamp())
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!("failed to persist session creation time: {error}"))
+        })?;
+
+    let (ip_address, user_agent) = extract_request_context(&headers);
+    state
+        .auth_event_service
+        .record_event(AuthEvent {
+            subject: Some(user_id.to_string()),
+            event_type: "mfa_verify".to_owned(),
+            outcome: "success".to_owned(),
+            ip_address,
+            user_agent,
+        })
+        .await?;
+
+    Ok(Json(LoginResponse {
+        status: "authenticated".to_owned(),
+        requires_totp: false,
+    }))
+}
+
+/// PUT /api/profile/password - Change password (requires auth).
+pub async fn change_password_handler(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserIdentity>,
+    Json(payload): Json<ChangePasswordRequest>,
+) -> ApiResult<StatusCode> {
+    let user_id_uuid = Uuid::parse_str(user.subject())
+        .map_err(|error| AppError::Internal(format!("invalid user subject: {error}")))?;
+    let user_id = UserId::from_uuid(user_id_uuid);
+
+    state
+        .user_service
+        .change_password(user_id, &payload.current_password, &payload.new_password)
+        .await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// POST /auth/forgot-password - Request password reset email.
+pub async fn forgot_password_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<ForgotPasswordRequest>,
+) -> ApiResult<Json<GenericMessageResponse>> {
+    let user = state.user_service.find_by_email(&payload.email).await?;
+    let user_id = user.map(|u| u.id);
+
+    state
+        .auth_token_service
+        .request_password_reset(&payload.email, user_id)
+        .await?;
+
+    // OWASP: always return generic success message.
+    Ok(Json(GenericMessageResponse {
+        message: "if that email address is in our database, we will send you an email to reset your password".to_owned(),
+    }))
+}
+
+/// POST /auth/reset-password - Reset password with token.
+pub async fn reset_password_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<ResetPasswordRequest>,
+) -> ApiResult<Json<GenericMessageResponse>> {
+    let token_record = state
+        .auth_token_service
+        .validate_token(&payload.token)
+        .await?;
+
+    if token_record.token_type != "password_reset" {
+        return Err(AppError::Unauthorized("invalid token type".to_owned()).into());
+    }
+
+    let user_id = token_record
+        .user_id
+        .ok_or_else(|| AppError::Internal("password reset token has no user_id".to_owned()))?;
+
+    // Validate new password.
+    let user = state
+        .user_service
+        .find_by_id(user_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("user not found".to_owned()))?;
+
+    qryvanta_domain::validate_password(&payload.new_password, user.totp_enabled)?;
+
+    let password_hash = state
+        .user_service
+        .password_hasher()
+        .hash_password(&payload.new_password)?;
+
+    state
+        .user_service
+        .user_repository()
+        .update_password(user_id, &password_hash)
+        .await?;
+
+    // Reset failed logins and unlock account.
+    state
+        .user_service
+        .user_repository()
+        .reset_failed_logins(user_id)
+        .await?;
+
+    // Mark token as consumed.
+    state
+        .auth_token_service
+        .consume_token(token_record.id)
+        .await?;
+
+    Ok(Json(GenericMessageResponse {
+        message: "your password has been reset successfully".to_owned(),
+    }))
+}
+
+/// POST /auth/verify-email - Verify email with token.
+pub async fn verify_email_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<VerifyEmailRequest>,
+) -> ApiResult<Json<GenericMessageResponse>> {
+    let token_record = state
+        .auth_token_service
+        .validate_token(&payload.token)
+        .await?;
+
+    if token_record.token_type != "email_verification" {
+        return Err(AppError::Unauthorized("invalid token type".to_owned()).into());
+    }
+
+    let user_id = token_record
+        .user_id
+        .ok_or_else(|| AppError::Internal("verification token has no user_id".to_owned()))?;
+
+    state
+        .user_service
+        .user_repository()
+        .mark_email_verified(user_id)
+        .await?;
+
+    state
+        .auth_token_service
+        .consume_token(token_record.id)
+        .await?;
+
+    Ok(Json(GenericMessageResponse {
+        message: "email address verified successfully".to_owned(),
+    }))
+}
+
+/// POST /auth/resend-verification - Resend email verification (requires auth).
+pub async fn resend_verification_handler(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserIdentity>,
+) -> ApiResult<Json<GenericMessageResponse>> {
+    let user_id_uuid = Uuid::parse_str(user.subject())
+        .map_err(|error| AppError::Internal(format!("invalid user subject: {error}")))?;
+    let user_id = UserId::from_uuid(user_id_uuid);
+
+    let user_record = state
+        .user_service
+        .find_by_id(user_id)
+        .await?
+        .ok_or_else(|| AppError::NotFound("user not found".to_owned()))?;
+
+    if user_record.email_verified {
+        return Ok(Json(GenericMessageResponse {
+            message: "email is already verified".to_owned(),
+        }));
+    }
+
+    state
+        .auth_token_service
+        .send_email_verification(user_id, &user_record.email)
+        .await?;
+
+    Ok(Json(GenericMessageResponse {
+        message: "verification email sent".to_owned(),
+    }))
+}
+
+/// POST /auth/invite - Send a tenant invite email (requires auth).
+pub async fn send_invite_handler(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserIdentity>,
+    Json(payload): Json<InviteRequest>,
+) -> ApiResult<Json<GenericMessageResponse>> {
+    let tenant_name = payload
+        .tenant_name
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("your workspace");
+
+    let metadata = serde_json::json!({
+        "tenant_id": user.tenant_id().to_string(),
+        "invited_by": user.subject(),
+    });
+
+    state
+        .auth_token_service
+        .send_invite(&payload.email, user.display_name(), tenant_name, &metadata)
+        .await?;
+
+    // OWASP: generic response to avoid enumeration.
+    Ok(Json(GenericMessageResponse {
+        message: "if the email can receive invites, an invitation has been sent".to_owned(),
+    }))
+}
+
+/// POST /auth/invite/accept - Accept an invite token.
+pub async fn accept_invite_handler(
+    State(state): State<AppState>,
+    session: Session,
+    Json(payload): Json<AcceptInviteRequest>,
+) -> ApiResult<Json<LoginResponse>> {
+    let token_record = state
+        .auth_token_service
+        .validate_token(&payload.token)
+        .await?;
+
+    if token_record.token_type != "invite" {
+        return Err(AppError::Unauthorized("invalid token type".to_owned()).into());
+    }
+
+    let tenant_id = tenant_id_from_invite_metadata(token_record.metadata.as_ref())?;
+    let invited_email = token_record.email.clone();
+
+    let user_id =
+        if let Some(existing_user) = state.user_service.find_by_email(&invited_email).await? {
+            let display_name = payload
+                .display_name
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| default_display_name(&invited_email));
+
+            state
+                .tenant_repository
+                .create_membership(
+                    tenant_id,
+                    &existing_user.id.to_string(),
+                    display_name,
+                    Some(invited_email.as_str()),
+                )
+                .await?;
+
+            existing_user.id
+        } else {
+            let password = payload.password.as_deref().ok_or_else(|| {
+                AppError::Validation("password is required for new invited users".to_owned())
+            })?;
+
+            let display_name = payload
+                .display_name
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| default_display_name(&invited_email));
+
+            state
+                .user_service
+                .register(qryvanta_application::RegisterParams {
+                    email: invited_email.clone(),
+                    password: password.to_owned(),
+                    display_name: display_name.to_owned(),
+                    registration_mode: RegistrationMode::Open,
+                    preferred_tenant_id: Some(tenant_id),
+                    ip_address: None,
+                    user_agent: None,
+                })
+                .await?
+        };
+
+    state
+        .user_service
+        .user_repository()
+        .mark_email_verified(user_id)
+        .await?;
+
+    state
+        .auth_token_service
+        .consume_token(token_record.id)
+        .await?;
+
+    // Establish authenticated session for the invited user.
+    session
+        .cycle_id()
+        .await
+        .map_err(|error| AppError::Internal(format!("failed to cycle session id: {error}")))?;
+
+    let identity = UserIdentity::new(
+        user_id.to_string(),
+        invited_email.clone(),
+        Some(invited_email),
+        tenant_id,
+    );
+
+    session
+        .insert(SESSION_USER_KEY, &identity)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!("failed to persist session identity: {error}"))
+        })?;
+
+    session
+        .insert(SESSION_CREATED_AT_KEY, chrono::Utc::now().timestamp())
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!("failed to persist session creation time: {error}"))
+        })?;
+
+    Ok(Json(LoginResponse {
+        status: "authenticated".to_owned(),
+        requires_totp: false,
+    }))
+}
+
+// ---- MFA management handlers (requires auth) ----
+
+/// POST /auth/mfa/totp/enroll - Start TOTP enrollment.
+pub async fn mfa_enroll_handler(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserIdentity>,
+) -> ApiResult<Json<TotpEnrollmentResponse>> {
+    let user_id_uuid = Uuid::parse_str(user.subject())
+        .map_err(|error| AppError::Internal(format!("invalid user subject: {error}")))?;
+    let user_id = UserId::from_uuid(user_id_uuid);
+
+    let enrollment = state.mfa_service.start_enrollment(user_id).await?;
+
+    Ok(Json(TotpEnrollmentResponse {
+        secret_base32: enrollment.secret_base32,
+        otpauth_uri: enrollment.otpauth_uri,
+        recovery_codes: enrollment.recovery_codes,
+    }))
+}
+
+/// POST /auth/mfa/totp/confirm - Confirm TOTP enrollment.
+pub async fn mfa_confirm_handler(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserIdentity>,
+    Json(payload): Json<MfaConfirmRequest>,
+) -> ApiResult<StatusCode> {
+    let user_id_uuid = Uuid::parse_str(user.subject())
+        .map_err(|error| AppError::Internal(format!("invalid user subject: {error}")))?;
+    let user_id = UserId::from_uuid(user_id_uuid);
+
+    state
+        .mfa_service
+        .confirm_enrollment(user_id, &payload.code)
+        .await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// DELETE /auth/mfa/totp - Disable TOTP (requires password).
+pub async fn mfa_disable_handler(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserIdentity>,
+    Json(payload): Json<MfaDisableRequest>,
+) -> ApiResult<StatusCode> {
+    let user_id_uuid = Uuid::parse_str(user.subject())
+        .map_err(|error| AppError::Internal(format!("invalid user subject: {error}")))?;
+    let user_id = UserId::from_uuid(user_id_uuid);
+
+    state
+        .mfa_service
+        .disable_totp(user_id, &payload.password)
+        .await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// POST /auth/mfa/recovery-codes/regenerate - Regenerate recovery codes.
+pub async fn mfa_regenerate_recovery_codes_handler(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserIdentity>,
+    Json(payload): Json<MfaRegenerateRequest>,
+) -> ApiResult<Json<RecoveryCodesResponse>> {
+    let user_id_uuid = Uuid::parse_str(user.subject())
+        .map_err(|error| AppError::Internal(format!("invalid user subject: {error}")))?;
+    let user_id = UserId::from_uuid(user_id_uuid);
+
+    let codes = state
+        .mfa_service
+        .regenerate_recovery_codes(user_id, &payload.password)
+        .await?;
+
+    Ok(Json(RecoveryCodesResponse {
+        recovery_codes: codes,
+    }))
+}
+
 async fn load_passkeys(state: &AppState, subject: &str) -> Result<Vec<Passkey>, AppError> {
     let passkey_json_values = state.passkey_repository.list_by_subject(subject).await?;
 
@@ -338,6 +995,30 @@ async fn load_passkeys(state: &AppState, subject: &str) -> Result<Vec<Passkey>, 
                 .map_err(|error| AppError::Internal(format!("failed to decode passkey: {error}")))
         })
         .collect()
+}
+
+fn tenant_id_from_invite_metadata(
+    metadata: Option<&serde_json::Value>,
+) -> Result<TenantId, AppError> {
+    let metadata = metadata.ok_or_else(|| {
+        AppError::Unauthorized("invite token is missing tenant metadata".to_owned())
+    })?;
+
+    let tenant_id_str = metadata
+        .get("tenant_id")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            AppError::Unauthorized("invite token has invalid tenant metadata".to_owned())
+        })?;
+
+    let tenant_uuid = Uuid::parse_str(tenant_id_str)
+        .map_err(|error| AppError::Unauthorized(format!("invalid invite tenant id: {error}")))?;
+
+    Ok(TenantId::from_uuid(tenant_uuid))
+}
+
+fn default_display_name(email: &str) -> &str {
+    email.split('@').next().unwrap_or("new user")
 }
 
 fn extract_request_context(headers: &HeaderMap) -> (Option<String>, Option<String>) {
@@ -356,4 +1037,38 @@ fn extract_request_context(headers: &HeaderMap) -> (Option<String>, Option<Strin
         .map(ToOwned::to_owned);
 
     (ip_address, user_agent)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{default_display_name, tenant_id_from_invite_metadata};
+    use qryvanta_core::TenantId;
+
+    #[test]
+    fn invite_metadata_parses_tenant_id() {
+        let tenant_id = TenantId::new();
+        let metadata = serde_json::json!({
+            "tenant_id": tenant_id.to_string(),
+            "invited_by": "tester",
+        });
+
+        let parsed = tenant_id_from_invite_metadata(Some(&metadata));
+        assert!(parsed.is_ok());
+        assert_eq!(
+            parsed.unwrap_or_default().to_string(),
+            tenant_id.to_string()
+        );
+    }
+
+    #[test]
+    fn invite_metadata_rejects_missing_tenant_id() {
+        let metadata = serde_json::json!({"invited_by": "tester"});
+        let parsed = tenant_id_from_invite_metadata(Some(&metadata));
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn display_name_defaults_to_email_local_part() {
+        assert_eq!(default_display_name("alex@company.com"), "alex");
+    }
 }

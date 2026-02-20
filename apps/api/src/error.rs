@@ -27,12 +27,15 @@ impl From<AppError> for ApiError {
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
+        let is_rate_limited = matches!(self.0, AppError::RateLimited(_));
+
         let status = match self.0 {
             AppError::Validation(_) => StatusCode::BAD_REQUEST,
             AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::Conflict(_) => StatusCode::CONFLICT,
             AppError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
             AppError::Forbidden(_) => StatusCode::FORBIDDEN,
+            AppError::RateLimited(_) => StatusCode::TOO_MANY_REQUESTS,
             AppError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
@@ -40,7 +43,12 @@ impl IntoResponse for ApiError {
             message: self.0.to_string(),
         });
 
-        (status, payload).into_response()
+        if is_rate_limited {
+            // OWASP: include Retry-After header on 429 responses.
+            (status, [("retry-after", "60")], payload).into_response()
+        } else {
+            (status, payload).into_response()
+        }
     }
 }
 
