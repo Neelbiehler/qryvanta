@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use qryvanta_application::TenantRepository;
 use qryvanta_core::{AppError, AppResult, TenantId};
+use qryvanta_domain::RegistrationMode;
 use sqlx::PgPool;
 
 use crate::postgres_security_admin_repository::assign_owner_role_grants;
@@ -38,6 +39,30 @@ impl TenantRepository for PostgresTenantRepository {
         })?;
 
         Ok(tenant_id.map(TenantId::from_uuid))
+    }
+
+    async fn registration_mode_for_tenant(
+        &self,
+        tenant_id: TenantId,
+    ) -> AppResult<RegistrationMode> {
+        let stored_mode = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT registration_mode
+            FROM tenants
+            WHERE id = $1
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to resolve tenant registration mode: {error}"
+            ))
+        })?
+        .ok_or_else(|| AppError::NotFound(format!("tenant '{}' not found", tenant_id)))?;
+
+        RegistrationMode::parse(stored_mode.as_str())
     }
 
     async fn create_membership(

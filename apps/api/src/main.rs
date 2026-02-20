@@ -258,6 +258,11 @@ async fn main() -> Result<(), AppError> {
             "/api/security/audit-log",
             get(handlers::security::list_audit_log_handler),
         )
+        .route(
+            "/api/security/registration-mode",
+            get(handlers::security::registration_mode_handler)
+                .put(handlers::security::update_registration_mode_handler),
+        )
         .route("/auth/me", get(auth::me_handler))
         .route(
             "/auth/webauthn/register/start",
@@ -291,7 +296,14 @@ async fn main() -> Result<(), AppError> {
                 .map_err(|error| AppError::Internal(format!("invalid FRONTEND_URL: {error}")))?,
         )
         .allow_credentials(true)
-        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
         .allow_headers([CONTENT_TYPE]);
 
     // Rate limit rules (OWASP Credential Stuffing Prevention).

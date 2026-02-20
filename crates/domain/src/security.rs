@@ -101,6 +101,8 @@ pub enum AuditAction {
     SecurityRoleAssigned,
     /// Emitted when a role is removed from a subject.
     SecurityRoleUnassigned,
+    /// Emitted when tenant registration mode is updated.
+    SecurityTenantRegistrationModeUpdated,
 }
 
 impl AuditAction {
@@ -112,6 +114,9 @@ impl AuditAction {
             Self::SecurityRoleCreated => "security.role.created",
             Self::SecurityRoleAssigned => "security.role.assigned",
             Self::SecurityRoleUnassigned => "security.role.unassigned",
+            Self::SecurityTenantRegistrationModeUpdated => {
+                "security.tenant.registration_mode.updated"
+            }
         }
     }
 }

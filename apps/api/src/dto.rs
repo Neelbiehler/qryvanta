@@ -1,5 +1,5 @@
 use qryvanta_core::UserIdentity;
-use qryvanta_domain::EntityDefinition;
+use qryvanta_domain::{EntityDefinition, RegistrationMode};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -159,6 +159,16 @@ pub struct RemoveRoleAssignmentRequest {
     pub role_name: String,
 }
 
+/// Incoming payload for tenant registration mode updates.
+#[derive(Debug, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/update-tenant-registration-mode-request.ts"
+)]
+pub struct UpdateTenantRegistrationModeRequest {
+    pub registration_mode: String,
+}
+
 /// API representation of an RBAC role.
 #[derive(Debug, Serialize, TS)]
 #[ts(
@@ -199,6 +209,16 @@ pub struct RoleAssignmentResponse {
     pub role_id: String,
     pub role_name: String,
     pub assigned_at: String,
+}
+
+/// API representation of tenant registration mode.
+#[derive(Debug, Serialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/tenant-registration-mode-response.ts"
+)]
+pub struct TenantRegistrationModeResponse {
+    pub registration_mode: String,
 }
 
 impl From<EntityDefinition> for EntityResponse {
@@ -261,13 +281,22 @@ impl From<qryvanta_application::RoleAssignment> for RoleAssignmentResponse {
     }
 }
 
+impl From<RegistrationMode> for TenantRegistrationModeResponse {
+    fn from(value: RegistrationMode) -> Self {
+        Self {
+            registration_mode: value.as_str().to_owned(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         AcceptInviteRequest, AssignRoleRequest, AuditLogEntryResponse, AuthLoginRequest,
         AuthLoginResponse, AuthMfaVerifyRequest, AuthRegisterRequest, CreateEntityRequest,
         CreateRoleRequest, EntityResponse, GenericMessageResponse, HealthResponse, InviteRequest,
-        RemoveRoleAssignmentRequest, RoleAssignmentResponse, RoleResponse, UserIdentityResponse,
+        RemoveRoleAssignmentRequest, RoleAssignmentResponse, RoleResponse,
+        TenantRegistrationModeResponse, UpdateTenantRegistrationModeRequest, UserIdentityResponse,
     };
 
     use crate::error::ErrorResponse;
@@ -282,9 +311,11 @@ mod tests {
         CreateRoleRequest::export(&config)?;
         AssignRoleRequest::export(&config)?;
         RemoveRoleAssignmentRequest::export(&config)?;
+        UpdateTenantRegistrationModeRequest::export(&config)?;
         EntityResponse::export(&config)?;
         RoleResponse::export(&config)?;
         RoleAssignmentResponse::export(&config)?;
+        TenantRegistrationModeResponse::export(&config)?;
         AuditLogEntryResponse::export(&config)?;
         ErrorResponse::export(&config)?;
         HealthResponse::export(&config)?;

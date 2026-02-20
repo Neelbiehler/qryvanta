@@ -15,4 +15,6 @@ export * from "./generated/invite-request";
 export * from "./generated/remove-role-assignment-request";
 export * from "./generated/role-assignment-response";
 export * from "./generated/role-response";
+export * from "./generated/tenant-registration-mode-response";
+export * from "./generated/update-tenant-registration-mode-request";
 export * from "./generated/user-identity-response";

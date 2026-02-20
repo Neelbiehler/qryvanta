@@ -3,11 +3,12 @@ use axum::extract::{Extension, Query, State};
 use axum::http::StatusCode;
 
 use qryvanta_core::UserIdentity;
-use qryvanta_domain::Permission;
+use qryvanta_domain::{Permission, RegistrationMode};
 
 use crate::dto::{
     AssignRoleRequest, AuditLogEntryResponse, CreateRoleRequest, RemoveRoleAssignmentRequest,
-    RoleAssignmentResponse, RoleResponse,
+    RoleAssignmentResponse, RoleResponse, TenantRegistrationModeResponse,
+    UpdateTenantRegistrationModeRequest,
 };
 use crate::error::ApiResult;
 use crate::state::AppState;
@@ -123,4 +124,33 @@ pub async fn list_audit_log_handler(
         .collect();
 
     Ok(Json(entries))
+}
+
+pub async fn registration_mode_handler(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserIdentity>,
+) -> ApiResult<Json<TenantRegistrationModeResponse>> {
+    let registration_mode = state
+        .security_admin_service
+        .registration_mode(&user)
+        .await?;
+
+    Ok(Json(TenantRegistrationModeResponse::from(
+        registration_mode,
+    )))
+}
+
+pub async fn update_registration_mode_handler(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserIdentity>,
+    Json(payload): Json<UpdateTenantRegistrationModeRequest>,
+) -> ApiResult<Json<TenantRegistrationModeResponse>> {
+    let registration_mode = RegistrationMode::parse(payload.registration_mode.as_str())?;
+
+    let updated_mode = state
+        .security_admin_service
+        .update_registration_mode(&user, registration_mode)
+        .await?;
+
+    Ok(Json(TenantRegistrationModeResponse::from(updated_mode)))
 }

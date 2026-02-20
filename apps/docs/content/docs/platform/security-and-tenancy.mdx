@@ -36,6 +36,7 @@ Current RBAC baseline:
 - Effective grants are resolved from `rbac_subject_roles` + `rbac_role_grants`.
 - Tenant bootstrap assigns a `tenant_owner` system role with metadata read/create grants.
 - Role administration endpoints allow custom role creation and subject assignment.
+- Security administration endpoints expose tenant registration mode read/update controls.
 - Baseline permissions now include metadata field and runtime record scopes.
 - Metadata writes now require both entity and field-write scopes.
 
@@ -55,5 +56,6 @@ Current audit baseline:
 - Metadata entity creation emits an append-only event in `audit_log_entries`.
 - Event fields include tenant, subject, action, resource type/id, and detail.
 - Role creation and assignment emit security audit events.
+- Tenant registration mode updates emit `security.tenant.registration_mode.updated` audit events.
 - Authentication lifecycle events (bootstrap, login, MFA, passkey registration/login, logout, registration) are appended to `auth_events`.
 - Audit log reads support action/subject filters with offset pagination for admin review workflows.

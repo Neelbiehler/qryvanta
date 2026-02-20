@@ -23,6 +23,9 @@ Exit criteria:
 
 ## Phase 1: Foundation
 
+Status:
+- Complete
+
 Target outcome:
 - Persistent metadata and basic platform identity/security primitives.
 

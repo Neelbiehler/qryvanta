@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use qryvanta_core::{AppResult, TenantId, UserIdentity};
-use qryvanta_domain::{AuditAction, EntityDefinition, Permission};
+use qryvanta_domain::{AuditAction, EntityDefinition, Permission, RegistrationMode};
 
 use crate::AuthorizationService;
 
@@ -45,6 +45,12 @@ pub struct AuditEvent {
 pub trait TenantRepository: Send + Sync {
     /// Finds the tenant associated with the provided subject claim.
     async fn find_tenant_for_subject(&self, subject: &str) -> AppResult<Option<TenantId>>;
+
+    /// Returns the active registration mode for a tenant.
+    async fn registration_mode_for_tenant(
+        &self,
+        tenant_id: TenantId,
+    ) -> AppResult<RegistrationMode>;
 
     /// Adds a membership for the subject inside a tenant.
     async fn create_membership(

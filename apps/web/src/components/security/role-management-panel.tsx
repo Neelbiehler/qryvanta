@@ -9,6 +9,8 @@ import {
   apiFetch,
   type RoleAssignmentResponse,
   type RoleResponse,
+  type TenantRegistrationModeResponse,
+  type UpdateTenantRegistrationModeRequest,
 } from "@/lib/api";
 
 const PERMISSION_OPTIONS = [
@@ -26,11 +28,13 @@ const PERMISSION_OPTIONS = [
 type RoleManagementPanelProps = {
   roles: RoleResponse[];
   assignments: RoleAssignmentResponse[];
+  registrationMode: string;
 };
 
 export function RoleManagementPanel({
   roles,
   assignments,
+  registrationMode,
 }: RoleManagementPanelProps) {
   const router = useRouter();
   const roleNames = useMemo(() => roles.map((role) => role.name), [roles]);
@@ -41,9 +45,13 @@ export function RoleManagementPanel({
   ]);
   const [assignSubject, setAssignSubject] = useState("");
   const [assignRoleName, setAssignRoleName] = useState("");
+  const [tenantRegistrationMode, setTenantRegistrationMode] =
+    useState(registrationMode);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmittingRole, setIsSubmittingRole] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
+  const [isUpdatingRegistrationMode, setIsUpdatingRegistrationMode] =
+    useState(false);
 
   function togglePermission(permission: string) {
     setSelectedPermissions((current) =>
@@ -136,6 +144,36 @@ export function RoleManagementPanel({
     }
   }
 
+  async function handleRegistrationModeSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setErrorMessage(null);
+    setIsUpdatingRegistrationMode(true);
+
+    try {
+      const payload: UpdateTenantRegistrationModeRequest = {
+        registration_mode: tenantRegistrationMode,
+      };
+      const response = await apiFetch("/api/security/registration-mode", {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json()) as { message?: string };
+        setErrorMessage(payload.message ?? "Unable to update registration mode.");
+        return;
+      }
+
+      const updated = (await response.json()) as TenantRegistrationModeResponse;
+      setTenantRegistrationMode(updated.registration_mode);
+      router.refresh();
+    } catch {
+      setErrorMessage("Unable to update registration mode.");
+    } finally {
+      setIsUpdatingRegistrationMode(false);
+    }
+  }
+
   return (
     <div className="grid gap-8 md:grid-cols-2">
       <form className="space-y-4" onSubmit={handleRoleSubmit}>
@@ -205,6 +243,28 @@ export function RoleManagementPanel({
 
         <Button disabled={isAssigning} type="submit" variant="outline">
           {isAssigning ? "Assigning..." : "Assign Role"}
+        </Button>
+      </form>
+
+      <form className="space-y-4 md:col-span-2" onSubmit={handleRegistrationModeSubmit}>
+        <div className="space-y-2">
+          <Label htmlFor="tenant_registration_mode">Tenant Registration Mode</Label>
+          <p className="text-sm text-zinc-600">
+            Control whether users can self-register or only join by invite.
+          </p>
+          <select
+            id="tenant_registration_mode"
+            className="h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-900"
+            value={tenantRegistrationMode}
+            onChange={(event) => setTenantRegistrationMode(event.target.value)}
+          >
+            <option value="invite_only">Invite only</option>
+            <option value="open">Open registration</option>
+          </select>
+        </div>
+
+        <Button disabled={isUpdatingRegistrationMode} type="submit" variant="outline">
+          {isUpdatingRegistrationMode ? "Saving..." : "Save Registration Mode"}
         </Button>
       </form>
 

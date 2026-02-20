@@ -48,4 +48,6 @@ description: Configuration strategy for local, staging, and production environme
 
 For local passkey and session stability, keep `FRONTEND_URL`, `WEBAUTHN_RP_ORIGIN`, and `NEXT_PUBLIC_API_BASE_URL` aligned to `localhost` hosts.
 
+When `DEV_DEFAULT_TENANT_ID` is set, unauthenticated registration (`/auth/register`) follows that tenant's `registration_mode` (`invite_only` by default). Administrators can update this mode via `PUT /api/security/registration-mode`.
+
 For production email operations, see `operations/email-delivery`.
