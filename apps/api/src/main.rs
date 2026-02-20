@@ -14,21 +14,21 @@ use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::sync::Arc;
 
+use axum::Router;
 use axum::http::header::CONTENT_TYPE;
 use axum::http::{HeaderValue, Method};
 use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{get, post};
-use axum::Router;
 use qryvanta_application::{MetadataService, TenantRepository};
-use qryvanta_core::AppError;
+use qryvanta_core::{AppError, TenantId};
 use qryvanta_infrastructure::{
     PostgresMetadataRepository, PostgresPasskeyRepository, PostgresTenantRepository,
 };
 use sqlx::postgres::PgPoolOptions;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
-use tower_sessions::cookie::time::Duration;
 use tower_sessions::cookie::SameSite;
+use tower_sessions::cookie::time::Duration;
 use tower_sessions::{Expiry, SessionManagerLayer};
 use tower_sessions_sqlx_store::PostgresStore;
 use tracing::info;
@@ -67,6 +67,17 @@ async fn main() -> Result<(), AppError> {
     let cookie_secure = env::var("SESSION_COOKIE_SECURE")
         .unwrap_or_else(|_| "false".to_owned())
         .eq_ignore_ascii_case("true");
+    let bootstrap_tenant_id = env::var("DEV_DEFAULT_TENANT_ID")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| {
+            uuid::Uuid::parse_str(value.as_str())
+                .map(TenantId::from_uuid)
+                .map_err(|error| {
+                    AppError::Validation(format!("invalid DEV_DEFAULT_TENANT_ID: {error}"))
+                })
+        })
+        .transpose()?;
 
     let pool = PgPoolOptions::new()
         .max_connections(10)
@@ -120,6 +131,7 @@ async fn main() -> Result<(), AppError> {
         webauthn,
         frontend_url: frontend_url.clone(),
         bootstrap_token,
+        bootstrap_tenant_id,
     };
 
     let protected_routes = Router::new()

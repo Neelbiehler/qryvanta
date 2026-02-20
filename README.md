@@ -35,9 +35,11 @@ Our goal is to build a practical alternative to traditional enterprise business 
 
 Default local ports:
 
-- API: `http://127.0.0.1:3001`
-- Web: `http://127.0.0.1:3000`
+- API: `http://localhost:3001`
+- Web: `http://localhost:3000`
 - Docs: `http://127.0.0.1:3002`
+
+Keep auth-related URLs on `localhost` during local development to avoid passkey and session-cookie origin mismatches.
 
 ## Useful Commands
 

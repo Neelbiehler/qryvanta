@@ -28,6 +28,15 @@ pub trait TenantRepository: Send + Sync {
         display_name: &str,
         email: Option<&str>,
     ) -> AppResult<()>;
+
+    /// Ensures the subject can be resolved to a tenant membership and returns that tenant.
+    async fn ensure_membership_for_subject(
+        &self,
+        subject: &str,
+        display_name: &str,
+        email: Option<&str>,
+        preferred_tenant_id: Option<TenantId>,
+    ) -> AppResult<TenantId>;
 }
 
 /// Application service for metadata operations.

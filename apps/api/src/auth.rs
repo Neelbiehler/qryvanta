@@ -1,6 +1,6 @@
+use axum::Json;
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
-use axum::Json;
 use qryvanta_core::{AppError, UserIdentity};
 use serde::{Deserialize, Serialize};
 use tower_sessions::Session;
@@ -46,9 +46,13 @@ pub async fn bootstrap_handler(
 
     let tenant_id = state
         .tenant_repository
-        .find_tenant_for_subject(&payload.subject)
-        .await?
-        .ok_or_else(|| AppError::Unauthorized("subject is not a tenant member".to_owned()))?;
+        .ensure_membership_for_subject(
+            &payload.subject,
+            &payload.subject,
+            None,
+            state.bootstrap_tenant_id,
+        )
+        .await?;
 
     let identity = UserIdentity::new(payload.subject.clone(), payload.subject, None, tenant_id);
 

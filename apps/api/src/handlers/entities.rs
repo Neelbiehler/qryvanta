@@ -1,6 +1,6 @@
+use axum::Json;
 use axum::extract::{Extension, State};
 use axum::http::StatusCode;
-use axum::Json;
 use qryvanta_core::UserIdentity;
 
 use crate::dto::{CreateEntityRequest, EntityResponse};

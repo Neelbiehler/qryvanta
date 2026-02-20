@@ -1,5 +1,5 @@
 use axum::extract::{Request, State};
-use axum::http::{header, HeaderValue, Method};
+use axum::http::{HeaderValue, Method, header};
 use axum::middleware::Next;
 use axum::response::Response;
 use qryvanta_core::{AppError, UserIdentity};

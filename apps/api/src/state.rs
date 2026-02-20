@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use qryvanta_application::{MetadataService, TenantRepository};
+use qryvanta_core::TenantId;
 use qryvanta_infrastructure::PostgresPasskeyRepository;
 use webauthn_rs::Webauthn;
 
@@ -13,4 +14,5 @@ pub struct AppState {
     pub webauthn: Arc<Webauthn>,
     pub frontend_url: String,
     pub bootstrap_token: String,
+    pub bootstrap_tenant_id: Option<TenantId>,
 }
