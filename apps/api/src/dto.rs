@@ -73,15 +73,18 @@ mod tests {
     use super::{CreateEntityRequest, EntityResponse, HealthResponse, UserIdentityResponse};
 
     use crate::error::ErrorResponse;
+    use ts_rs::Config;
     use ts_rs::TS;
 
     #[test]
     fn export_ts_bindings() -> Result<(), ts_rs::ExportError> {
-        CreateEntityRequest::export()?;
-        EntityResponse::export()?;
-        ErrorResponse::export()?;
-        HealthResponse::export()?;
-        UserIdentityResponse::export()?;
+        let config = Config::default();
+
+        CreateEntityRequest::export(&config)?;
+        EntityResponse::export(&config)?;
+        ErrorResponse::export(&config)?;
+        HealthResponse::export(&config)?;
+        UserIdentityResponse::export(&config)?;
 
         Ok(())
     }
