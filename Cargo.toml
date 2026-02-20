@@ -10,20 +10,20 @@ resolver = "2"
 
 [workspace.package]
 version = "0.1.0"
-edition = "2021"
-rust-version = "1.82"
+edition = "2024"
+rust-version = "1.93"
 license = "Apache-2.0"
 
 [workspace.dependencies]
-async-trait = "0.1.86"
-axum = { version = "0.8.1", features = ["macros"] }
-chrono = { version = "0.4.40", default-features = false, features = ["clock", "serde"] }
+async-trait = "0.1.89"
+axum = { version = "0.8.8", features = ["macros"] }
+chrono = { version = "0.4.43", default-features = false, features = ["clock", "serde"] }
 dotenvy = "0.15.7"
-http = "1.2.0"
-reqwest = { version = "0.12.12", default-features = false, features = ["json", "rustls-tls"] }
-serde = { version = "1.0.218", features = ["derive"] }
-serde_json = "1.0.140"
-sqlx = { version = "0.8.3", features = [
+http = "1.4.0"
+reqwest = { version = "0.13.2", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+sqlx = { version = "0.8.6", features = [
     "chrono",
     "macros",
     "migrate",
@@ -31,17 +31,17 @@ sqlx = { version = "0.8.3", features = [
     "runtime-tokio-rustls",
     "uuid",
 ] }
-thiserror = "2.0.11"
-tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread", "net"] }
-tower-http = { version = "0.6.2", features = ["cors", "trace"] }
+thiserror = "2.0.18"
+tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread", "net"] }
+tower-http = { version = "0.6.8", features = ["cors", "trace"] }
 tower-sessions = "0.14.0"
 tower-sessions-sqlx-store = { version = "0.15.0", features = ["postgres"] }
-tracing = "0.1.41"
-tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt"] }
-ts-rs = "10.1.0"
-url = "2.5.7"
-uuid = { version = "1.15.1", features = ["serde", "v4"] }
-webauthn-rs = { version = "0.5.4", features = ["danger-allow-state-serialisation"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt"] }
+ts-rs = "12.0.1"
+url = "2.5.8"
+uuid = { version = "1.20.0", features = ["serde", "v4"] }
+webauthn-rs = { version = "0.5.1", features = ["danger-allow-state-serialisation"] }
 
 [workspace.lints.rust]
 missing_docs = "warn"
