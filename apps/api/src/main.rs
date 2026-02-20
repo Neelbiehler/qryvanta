@@ -309,38 +309,38 @@ async fn main() -> Result<(), AppError> {
             "/auth/webauthn/login/finish",
             post(auth::webauthn_login_finish_handler),
         )
-        .layer(axum::Extension(login_rate_rule))
         .route_layer(from_fn_with_state(
             app_state.clone(),
             middleware::rate_limit,
-        ));
+        ))
+        .layer(axum::Extension(login_rate_rule));
 
     // Rate-limited auth routes: registration.
     let register_routes = Router::new()
         .route("/auth/register", post(auth::register_handler))
-        .layer(axum::Extension(register_rate_rule))
         .route_layer(from_fn_with_state(
             app_state.clone(),
             middleware::rate_limit,
-        ));
+        ))
+        .layer(axum::Extension(register_rate_rule));
 
     // Rate-limited auth routes: forgot password.
     let forgot_password_routes = Router::new()
         .route("/auth/forgot-password", post(auth::forgot_password_handler))
         .route("/auth/reset-password", post(auth::reset_password_handler))
-        .layer(axum::Extension(forgot_password_rate_rule))
         .route_layer(from_fn_with_state(
             app_state.clone(),
             middleware::rate_limit,
-        ));
+        ))
+        .layer(axum::Extension(forgot_password_rate_rule));
 
     let invite_accept_routes = Router::new()
         .route("/auth/invite/accept", post(auth::accept_invite_handler))
-        .layer(axum::Extension(invite_accept_rate_rule))
         .route_layer(from_fn_with_state(
             app_state.clone(),
             middleware::rate_limit,
-        ));
+        ))
+        .layer(axum::Extension(invite_accept_rate_rule));
 
     let app = Router::new()
         .route("/health", get(handlers::health::health_handler))
