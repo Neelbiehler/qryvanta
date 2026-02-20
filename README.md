@@ -1,5 +1,11 @@
 # Qryvanta
 
+> **⚠️ Active Development**
+>
+> Qryvanta is currently in active development and is **not yet ready for production use**.
+>
+> Interested in the project? Contact us at [contact@qryvanta.org](mailto:contact@qryvanta.org).
+
 Qryvanta is an open-source, self-hostable, metadata-driven business platform.
 
 Our goal is to build a practical alternative to traditional enterprise business suites with a transparent architecture and portable deployments.
