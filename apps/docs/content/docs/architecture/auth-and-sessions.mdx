@@ -38,6 +38,13 @@ Password hashing uses Argon2id (`m=19456, t=2, p=1`) per OWASP Password Storage 
 
 - `POST /auth/invite` issues signed invite links for tenant onboarding.
 - `POST /auth/invite/accept` accepts invite tokens, creates memberships, and starts a session.
+- Invite issuance requires authenticated permission checks and route-specific abuse throttling.
+
+## Auth Token Guarantees
+
+- Verification, reset, and invite tokens are random and stored as SHA-256 hashes.
+- Token validation and consumption are atomic at persistence time to reduce replay races.
+- All token errors return the same unauthorized response (`invalid or expired token`).
 
 ## WebAuthn Responsibilities
 
@@ -71,5 +78,9 @@ Auth endpoints use database-backed sliding-window limits (`auth_rate_limits`) ke
 - Registration: 5 attempts per hour
 - Forgot password: 5 attempts per hour
 - Invite acceptance: 10 attempts per hour
+- Resend verification: 5 attempts per hour per authenticated subject
+- Invite send: 20 attempts per hour per authenticated subject
+- Invite recipient: 3 attempts per hour per tenant+recipient
+- Verify email token: 30 attempts per hour per source IP
 
 HTTP `429` responses include a `Retry-After` header.

@@ -39,11 +39,13 @@ description: Configuration strategy for local, staging, and production environme
 | `SESSION_COOKIE_SECURE` | No | Enforce secure session cookies (`false` default for local dev) |
 | `TOTP_ENCRYPTION_KEY` | Yes (prod) | 64-char hex key used to encrypt stored TOTP secrets (`[0;32]` fallback only for local dev) |
 | `EMAIL_PROVIDER` | No | Email adapter (`console` default, `smtp` for production delivery) |
-| `SMTP_HOST` | Required if `EMAIL_PROVIDER=smtp` | SMTP server host |
-| `SMTP_PORT` | Required if `EMAIL_PROVIDER=smtp` | SMTP server port (`587` default) |
-| `SMTP_USERNAME` | Required if `EMAIL_PROVIDER=smtp` | SMTP username |
-| `SMTP_PASSWORD` | Required if `EMAIL_PROVIDER=smtp` | SMTP password |
-| `SMTP_FROM_ADDRESS` | Required if `EMAIL_PROVIDER=smtp` | Sender address used for auth/invite emails |
+| `SMTP_HOST` | Required if `EMAIL_PROVIDER=smtp` | SMTP server host (must be non-empty; startup fails fast if missing) |
+| `SMTP_PORT` | Required if `EMAIL_PROVIDER=smtp` | SMTP server port (`u16`; startup fails on invalid values) |
+| `SMTP_USERNAME` | Required if `EMAIL_PROVIDER=smtp` | SMTP username (must be non-empty) |
+| `SMTP_PASSWORD` | Required if `EMAIL_PROVIDER=smtp` | SMTP password (must be non-empty) |
+| `SMTP_FROM_ADDRESS` | Required if `EMAIL_PROVIDER=smtp` | Sender address used for auth/invite emails (must be non-empty and valid) |
 | `NEXT_PUBLIC_API_BASE_URL` | No | Browser-facing API base URL for web app |
 
 For local passkey and session stability, keep `FRONTEND_URL`, `WEBAUTHN_RP_ORIGIN`, and `NEXT_PUBLIC_API_BASE_URL` aligned to `localhost` hosts.
+
+For production email operations, see `operations/email-delivery`.

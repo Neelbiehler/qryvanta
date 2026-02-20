@@ -2,9 +2,9 @@ use axum::Json;
 use axum::extract::{Extension, Query, State};
 use axum::http::HeaderMap;
 use axum::http::StatusCode;
-use qryvanta_application::{AuthEvent, AuthOutcome};
+use qryvanta_application::{AuthEvent, AuthOutcome, RateLimitRule};
 use qryvanta_core::{AppError, TenantId, UserIdentity};
-use qryvanta_domain::{RegistrationMode, UserId};
+use qryvanta_domain::{AuthTokenType, EmailAddress, Permission, RegistrationMode, UserId};
 use serde::{Deserialize, Serialize};
 use tower_sessions::Session;
 use uuid::Uuid;
@@ -28,6 +28,11 @@ const SESSION_MFA_PENDING_KEY: &str = "mfa_pending_user_id";
 
 const SESSION_WEBAUTHN_REG_STATE_KEY: &str = "webauthn_reg_state";
 const SESSION_WEBAUTHN_AUTH_STATE_KEY: &str = "webauthn_auth_state";
+
+const RESEND_VERIFICATION_RATE_RULE: (i32, i64) = (5, 60 * 60);
+const INVITE_SENDER_RATE_RULE: (i32, i64) = (20, 60 * 60);
+const INVITE_RECIPIENT_RATE_RULE: (i32, i64) = (3, 60 * 60);
+const VERIFY_EMAIL_RATE_RULE: (i32, i64) = (30, 60 * 60);
 
 #[derive(Debug, Deserialize)]
 pub struct LoginStartQuery {
@@ -404,11 +409,12 @@ pub async fn register_handler(
     Json(payload): Json<RegisterRequest>,
 ) -> ApiResult<Json<GenericMessageResponse>> {
     let (ip_address, user_agent) = extract_request_context(&headers);
+    let register_email = payload.email.clone();
 
     // For now, default to open registration. In production, check tenant config.
     let registration_mode = qryvanta_domain::RegistrationMode::Open;
 
-    let _user_id = state
+    let user_id = state
         .user_service
         .register(qryvanta_application::RegisterParams {
             email: payload.email,
@@ -419,6 +425,11 @@ pub async fn register_handler(
             ip_address,
             user_agent,
         })
+        .await?;
+
+    state
+        .auth_token_service
+        .send_email_verification(user_id, &register_email)
         .await?;
 
     // OWASP: generic response to prevent account enumeration.
@@ -640,12 +651,23 @@ pub async fn forgot_password_handler(
     State(state): State<AppState>,
     Json(payload): Json<ForgotPasswordRequest>,
 ) -> ApiResult<Json<GenericMessageResponse>> {
-    let user = state.user_service.find_by_email(&payload.email).await?;
+    let canonical_email = EmailAddress::new(payload.email.as_str()).ok();
+
+    let user = if let Some(email) = canonical_email.as_ref() {
+        state.user_service.find_by_email(email.as_str()).await?
+    } else {
+        None
+    };
+
     let user_id = user.map(|u| u.id);
+    let request_email = canonical_email
+        .as_ref()
+        .map(|email| email.as_str())
+        .unwrap_or(payload.email.as_str());
 
     state
         .auth_token_service
-        .request_password_reset(&payload.email, user_id)
+        .request_password_reset(request_email, user_id)
         .await?;
 
     // OWASP: always return generic success message.
@@ -661,12 +683,8 @@ pub async fn reset_password_handler(
 ) -> ApiResult<Json<GenericMessageResponse>> {
     let token_record = state
         .auth_token_service
-        .validate_token(&payload.token)
+        .consume_valid_token(&payload.token, AuthTokenType::PasswordReset)
         .await?;
-
-    if token_record.token_type != "password_reset" {
-        return Err(AppError::Unauthorized("invalid token type".to_owned()).into());
-    }
 
     let user_id = token_record
         .user_id
@@ -699,12 +717,6 @@ pub async fn reset_password_handler(
         .reset_failed_logins(user_id)
         .await?;
 
-    // Mark token as consumed.
-    state
-        .auth_token_service
-        .consume_token(token_record.id)
-        .await?;
-
     Ok(Json(GenericMessageResponse {
         message: "your password has been reset successfully".to_owned(),
     }))
@@ -713,16 +725,24 @@ pub async fn reset_password_handler(
 /// POST /auth/verify-email - Verify email with token.
 pub async fn verify_email_handler(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(payload): Json<VerifyEmailRequest>,
 ) -> ApiResult<Json<GenericMessageResponse>> {
-    let token_record = state
-        .auth_token_service
-        .validate_token(&payload.token)
+    let (ip_address, _) = extract_request_context(&headers);
+    let verify_rule = RateLimitRule::new(
+        "verify_email",
+        VERIFY_EMAIL_RATE_RULE.0,
+        VERIFY_EMAIL_RATE_RULE.1,
+    );
+    state
+        .rate_limit_service
+        .check_rate_limit(&verify_rule, ip_address.as_deref().unwrap_or("unknown"))
         .await?;
 
-    if token_record.token_type != "email_verification" {
-        return Err(AppError::Unauthorized("invalid token type".to_owned()).into());
-    }
+    let token_record = state
+        .auth_token_service
+        .consume_valid_token(&payload.token, AuthTokenType::EmailVerification)
+        .await?;
 
     let user_id = token_record
         .user_id
@@ -732,11 +752,6 @@ pub async fn verify_email_handler(
         .user_service
         .user_repository()
         .mark_email_verified(user_id)
-        .await?;
-
-    state
-        .auth_token_service
-        .consume_token(token_record.id)
         .await?;
 
     Ok(Json(GenericMessageResponse {
@@ -749,6 +764,16 @@ pub async fn resend_verification_handler(
     State(state): State<AppState>,
     Extension(user): Extension<UserIdentity>,
 ) -> ApiResult<Json<GenericMessageResponse>> {
+    let resend_rule = RateLimitRule::new(
+        "resend_verification",
+        RESEND_VERIFICATION_RATE_RULE.0,
+        RESEND_VERIFICATION_RATE_RULE.1,
+    );
+    state
+        .rate_limit_service
+        .check_rate_limit(&resend_rule, user.subject())
+        .await?;
+
     let user_id_uuid = Uuid::parse_str(user.subject())
         .map_err(|error| AppError::Internal(format!("invalid user subject: {error}")))?;
     let user_id = UserId::from_uuid(user_id_uuid);
@@ -781,6 +806,37 @@ pub async fn send_invite_handler(
     Extension(user): Extension<UserIdentity>,
     Json(payload): Json<InviteRequest>,
 ) -> ApiResult<Json<GenericMessageResponse>> {
+    state
+        .authorization_service
+        .require_permission(
+            user.tenant_id(),
+            user.subject(),
+            Permission::SecurityInviteSend,
+        )
+        .await?;
+
+    let invite_sender_rule = RateLimitRule::new(
+        "invite_sender",
+        INVITE_SENDER_RATE_RULE.0,
+        INVITE_SENDER_RATE_RULE.1,
+    );
+    state
+        .rate_limit_service
+        .check_rate_limit(&invite_sender_rule, user.subject())
+        .await?;
+
+    let canonical_email = EmailAddress::new(payload.email.as_str())?;
+    let invite_recipient_rule = RateLimitRule::new(
+        "invite_recipient",
+        INVITE_RECIPIENT_RATE_RULE.0,
+        INVITE_RECIPIENT_RATE_RULE.1,
+    );
+    let invite_recipient_key = format!("{}:{}", user.tenant_id(), canonical_email.as_str());
+    state
+        .rate_limit_service
+        .check_rate_limit(&invite_recipient_rule, invite_recipient_key.as_str())
+        .await?;
+
     let tenant_name = payload
         .tenant_name
         .as_deref()
@@ -794,7 +850,12 @@ pub async fn send_invite_handler(
 
     state
         .auth_token_service
-        .send_invite(&payload.email, user.display_name(), tenant_name, &metadata)
+        .send_invite(
+            canonical_email.as_str(),
+            user.display_name(),
+            tenant_name,
+            &metadata,
+        )
         .await?;
 
     // OWASP: generic response to avoid enumeration.
@@ -811,12 +872,8 @@ pub async fn accept_invite_handler(
 ) -> ApiResult<Json<LoginResponse>> {
     let token_record = state
         .auth_token_service
-        .validate_token(&payload.token)
+        .consume_valid_token(&payload.token, AuthTokenType::Invite)
         .await?;
-
-    if token_record.token_type != "invite" {
-        return Err(AppError::Unauthorized("invalid token type".to_owned()).into());
-    }
 
     let tenant_id = tenant_id_from_invite_metadata(token_record.metadata.as_ref())?;
     let invited_email = token_record.email.clone();
@@ -869,11 +926,6 @@ pub async fn accept_invite_handler(
         .user_service
         .user_repository()
         .mark_email_verified(user_id)
-        .await?;
-
-    state
-        .auth_token_service
-        .consume_token(token_record.id)
         .await?;
 
     // Establish authenticated session for the invited user.

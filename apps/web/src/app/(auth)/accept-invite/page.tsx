@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label } from "@qryvanta/ui";
 import { API_BASE_URL, type AcceptInviteRequest } from "@/lib/api";
@@ -14,6 +14,16 @@ export default function AcceptInvitePage() {
   const [password, setPassword] = useState("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!token || typeof window === "undefined") {
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete("token");
+    window.history.replaceState({}, "", url.toString());
+  }, [token]);
 
   async function acceptInvite() {
     if (!token) {

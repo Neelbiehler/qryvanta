@@ -20,6 +20,7 @@ const PERMISSION_OPTIONS = [
   "runtime.record.write",
   "security.audit.read",
   "security.role.manage",
+  "security.invite.send",
 ] as const;
 
 type RoleManagementPanelProps = {
