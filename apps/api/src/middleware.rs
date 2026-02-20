@@ -32,10 +32,10 @@ pub async fn require_same_origin_for_mutations(
     if is_state_changing_method(request.method()) {
         let headers = request.headers();
 
-        if let Some(fetch_site) = headers.get("sec-fetch-site") {
-            if fetch_site == HeaderValue::from_static("cross-site") {
-                return Err(AppError::Unauthorized("cross-site request blocked".to_owned()).into());
-            }
+        if let Some(fetch_site) = headers.get("sec-fetch-site")
+            && fetch_site == HeaderValue::from_static("cross-site")
+        {
+            return Err(AppError::Unauthorized("cross-site request blocked".to_owned()).into());
         }
 
         let origin = headers

@@ -3,6 +3,8 @@ use qryvanta_application::TenantRepository;
 use qryvanta_core::{AppError, AppResult, TenantId};
 use sqlx::PgPool;
 
+use crate::postgres_security_admin_repository::assign_owner_role_grants;
+
 /// PostgreSQL-backed tenant membership repository.
 #[derive(Clone)]
 pub struct PostgresTenantRepository {
@@ -45,6 +47,11 @@ impl TenantRepository for PostgresTenantRepository {
         display_name: &str,
         email: Option<&str>,
     ) -> AppResult<()> {
+        let mut transaction =
+            self.pool.begin().await.map_err(|error| {
+                AppError::Internal(format!("failed to begin transaction: {error}"))
+            })?;
+
         sqlx::query(
             r#"
             INSERT INTO tenant_memberships (tenant_id, subject, display_name, email)
@@ -56,9 +63,15 @@ impl TenantRepository for PostgresTenantRepository {
         .bind(subject)
         .bind(display_name)
         .bind(email)
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|error| AppError::Internal(format!("failed to create membership: {error}")))?;
+
+        assign_owner_role_grants(&mut transaction, tenant_id, subject).await?;
+
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!("failed to commit transaction: {error}"))
+        })?;
 
         Ok(())
     }
@@ -113,6 +126,8 @@ impl TenantRepository for PostgresTenantRepository {
                 "failed to ensure tenant membership exists: {error}"
             ))
         })?;
+
+        assign_owner_role_grants(&mut transaction, tenant_id, subject).await?;
 
         transaction.commit().await.map_err(|error| {
             AppError::Internal(format!("failed to commit transaction: {error}"))

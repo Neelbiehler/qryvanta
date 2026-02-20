@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { Header } from "@/components/layout/header";
 import { Sidebar } from "@/components/layout/sidebar";
+import { AccessDeniedCard } from "@/components/shared/access-denied-card";
 import { apiServerFetch, type UserIdentityResponse } from "@/lib/api";
 
 type AppLayoutProps = {
@@ -15,6 +16,18 @@ export default async function AppLayout({ children }: AppLayoutProps) {
 
   if (meResponse.status === 401) {
     redirect("/login");
+  }
+
+  if (meResponse.status === 403) {
+    return (
+      <div className="mx-auto flex min-h-screen w-full max-w-3xl items-center p-6">
+        <AccessDeniedCard
+          section="Workspace"
+          title="Access Restricted"
+          message="Your account is authenticated but does not have access to this workspace."
+        />
+      </div>
+    );
   }
 
   if (!meResponse.ok) {

@@ -101,6 +101,10 @@ pub enum AppError {
     #[error("unauthorized: {0}")]
     Unauthorized(String),
 
+    /// User is authenticated but blocked by authorization policy.
+    #[error("forbidden: {0}")]
+    Forbidden(String),
+
     /// Internal unexpected error.
     #[error("internal error: {0}")]
     Internal(String),

@@ -21,6 +21,18 @@ export function Sidebar() {
         >
           Entities
         </Link>
+        <Link
+          href="/security/roles"
+          className="block rounded-md bg-white px-3 py-2 text-sm font-medium text-zinc-900 shadow-sm transition hover:bg-emerald-100"
+        >
+          Roles
+        </Link>
+        <Link
+          href="/security/audit"
+          className="block rounded-md bg-white px-3 py-2 text-sm font-medium text-zinc-900 shadow-sm transition hover:bg-emerald-100"
+        >
+          Audit Log
+        </Link>
       </nav>
     </SidebarContainer>
   );

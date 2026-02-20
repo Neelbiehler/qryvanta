@@ -1,9 +1,21 @@
-import type { EntityResponse, UserIdentityResponse } from "@qryvanta/api-types";
+import type {
+  AuditLogEntryResponse,
+  EntityResponse,
+  RoleAssignmentResponse,
+  RoleResponse,
+  UserIdentityResponse,
+} from "@qryvanta/api-types";
 
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 
-export type { EntityResponse, UserIdentityResponse };
+export type {
+  AuditLogEntryResponse,
+  EntityResponse,
+  RoleAssignmentResponse,
+  RoleResponse,
+  UserIdentityResponse,
+};
 
 function withDefaultHeaders(headers?: HeadersInit): Headers {
   const requestHeaders = new Headers(headers);

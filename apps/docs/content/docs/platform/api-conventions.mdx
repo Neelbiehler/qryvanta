@@ -17,6 +17,7 @@ Keep handlers focused on:
 - `AppError::Validation` -> `400 Bad Request`
 - `AppError::NotFound` -> `404 Not Found`
 - `AppError::Conflict` -> `409 Conflict`
+- `AppError::Forbidden` -> `403 Forbidden`
 - `AppError::Internal` -> `500 Internal Server Error`
 
 ## Resource Design
@@ -25,3 +26,12 @@ Keep handlers focused on:
 - Keep request/response DTOs explicit.
 - Use predictable collection endpoints for list and create paths.
 - Ensure API contracts remain versionable as metadata runtime expands.
+
+## Security Admin Endpoints
+
+- `GET /api/security/roles` lists tenant roles and grants.
+- `POST /api/security/roles` creates custom roles.
+- `GET /api/security/role-assignments` lists current subject-to-role mappings.
+- `POST /api/security/role-assignments` assigns roles to existing tenant members.
+- `POST /api/security/role-unassignments` removes role assignments.
+- `GET /api/security/audit-log?limit=50&offset=0&action=...&subject=...` lists filtered tenant audit entries.
