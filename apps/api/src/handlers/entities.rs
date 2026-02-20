@@ -13,7 +13,7 @@ pub async fn list_entities_handler(
 ) -> ApiResult<Json<Vec<EntityResponse>>> {
     let entities = state
         .metadata_service
-        .list_entities(user.tenant_id())
+        .list_entities(&user)
         .await?
         .into_iter()
         .map(EntityResponse::from)
@@ -29,7 +29,7 @@ pub async fn create_entity_handler(
 ) -> ApiResult<(StatusCode, Json<EntityResponse>)> {
     let entity = state
         .metadata_service
-        .register_entity(user.tenant_id(), payload.logical_name, payload.display_name)
+        .register_entity(&user, payload.logical_name, payload.display_name)
         .await?;
 
     Ok((StatusCode::CREATED, Json(EntityResponse::from(entity))))

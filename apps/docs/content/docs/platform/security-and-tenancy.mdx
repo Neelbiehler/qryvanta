@@ -23,6 +23,15 @@ Phase 1 metadata operations require `TenantId` and query with `WHERE tenant_id =
 2. Application-level policy checks
 3. Repository-level tenant scoping enforcement
 
+Current RBAC baseline:
+
+- Permissions are evaluated in `MetadataService` via `AuthorizationService`.
+- Effective grants are resolved from `rbac_subject_roles` + `rbac_role_grants`.
+- Tenant bootstrap assigns a `tenant_owner` system role with metadata read/create grants.
+- Role administration endpoints allow custom role creation and subject assignment.
+- Baseline permissions now include metadata field and runtime record scopes.
+- Metadata writes now require both entity and field-write scopes.
+
 ## Audit Requirements
 
 Track:
@@ -33,3 +42,11 @@ Track:
 - Resource id
 - Timestamp
 - Before/after snapshots (where applicable)
+
+Current audit baseline:
+
+- Metadata entity creation emits an append-only event in `audit_log_entries`.
+- Event fields include tenant, subject, action, resource type/id, and detail.
+- Role creation and assignment emit security audit events.
+- Authentication lifecycle events (bootstrap, passkey registration/login, logout) are appended to `auth_events`.
+- Audit log reads support action/subject filters with offset pagination for admin review workflows.

@@ -1,6 +1,8 @@
-use axum::Json;
 use axum::extract::{Query, State};
+use axum::http::HeaderMap;
 use axum::http::StatusCode;
+use axum::Json;
+use qryvanta_application::AuthEvent;
 use qryvanta_core::{AppError, UserIdentity};
 use serde::{Deserialize, Serialize};
 use tower_sessions::Session;
@@ -37,6 +39,7 @@ pub struct AuthStatusResponse {
 
 pub async fn bootstrap_handler(
     State(state): State<AppState>,
+    headers: HeaderMap,
     session: Session,
     Json(payload): Json<BootstrapRequest>,
 ) -> ApiResult<StatusCode> {
@@ -54,7 +57,8 @@ pub async fn bootstrap_handler(
         )
         .await?;
 
-    let identity = UserIdentity::new(payload.subject.clone(), payload.subject, None, tenant_id);
+    let subject = payload.subject;
+    let identity = UserIdentity::new(subject.clone(), subject.clone(), None, tenant_id);
 
     session
         .insert(SESSION_USER_KEY, &identity)
@@ -62,6 +66,18 @@ pub async fn bootstrap_handler(
         .map_err(|error| {
             AppError::Internal(format!("failed to persist session identity: {error}"))
         })?;
+
+    let (ip_address, user_agent) = extract_request_context(&headers);
+    state
+        .auth_event_service
+        .record_event(AuthEvent {
+            subject: Some(subject),
+            event_type: "bootstrap_login".to_owned(),
+            outcome: "success".to_owned(),
+            ip_address,
+            user_agent,
+        })
+        .await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -109,6 +125,7 @@ pub async fn webauthn_registration_start_handler(
 
 pub async fn webauthn_registration_finish_handler(
     State(state): State<AppState>,
+    headers: HeaderMap,
     session: Session,
     Json(payload): Json<RegisterPublicKeyCredential>,
 ) -> ApiResult<StatusCode> {
@@ -138,6 +155,18 @@ pub async fn webauthn_registration_finish_handler(
     state
         .passkey_repository
         .insert_for_subject(subject.as_str(), passkey_json.as_str())
+        .await?;
+
+    let (ip_address, user_agent) = extract_request_context(&headers);
+    state
+        .auth_event_service
+        .record_event(AuthEvent {
+            subject: Some(subject),
+            event_type: "passkey_registration".to_owned(),
+            outcome: "success".to_owned(),
+            ip_address,
+            user_agent,
+        })
         .await?;
 
     Ok(StatusCode::NO_CONTENT)
@@ -177,6 +206,7 @@ pub async fn webauthn_login_start_handler(
 
 pub async fn webauthn_login_finish_handler(
     State(state): State<AppState>,
+    headers: HeaderMap,
     session: Session,
     Json(payload): Json<PublicKeyCredential>,
 ) -> ApiResult<Json<AuthStatusResponse>> {
@@ -226,7 +256,12 @@ pub async fn webauthn_login_finish_handler(
             ))
         })?;
 
-    let identity = UserIdentity::new(subject.clone(), subject, None, tenant_id);
+    state
+        .tenant_repository
+        .create_membership(tenant_id, &subject, &subject, None)
+        .await?;
+
+    let identity = UserIdentity::new(subject.clone(), subject.clone(), None, tenant_id);
 
     session
         .insert(SESSION_USER_KEY, &identity)
@@ -235,16 +270,50 @@ pub async fn webauthn_login_finish_handler(
             AppError::Internal(format!("failed to persist session identity: {error}"))
         })?;
 
+    let (ip_address, user_agent) = extract_request_context(&headers);
+    state
+        .auth_event_service
+        .record_event(AuthEvent {
+            subject: Some(subject),
+            event_type: "passkey_login".to_owned(),
+            outcome: "success".to_owned(),
+            ip_address,
+            user_agent,
+        })
+        .await?;
+
     Ok(Json(AuthStatusResponse {
         requires_totp: false,
     }))
 }
 
-pub async fn logout_handler(session: Session) -> ApiResult<StatusCode> {
+pub async fn logout_handler(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    session: Session,
+) -> ApiResult<StatusCode> {
+    let subject = session
+        .get::<UserIdentity>(SESSION_USER_KEY)
+        .await
+        .map_err(|error| AppError::Internal(format!("failed to read session identity: {error}")))?
+        .map(|identity| identity.subject().to_owned());
+
     session
         .delete()
         .await
         .map_err(|error| AppError::Internal(format!("failed to delete session: {error}")))?;
+
+    let (ip_address, user_agent) = extract_request_context(&headers);
+    state
+        .auth_event_service
+        .record_event(AuthEvent {
+            subject,
+            event_type: "logout".to_owned(),
+            outcome: "success".to_owned(),
+            ip_address,
+            user_agent,
+        })
+        .await?;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -269,4 +338,22 @@ async fn load_passkeys(state: &AppState, subject: &str) -> Result<Vec<Passkey>, 
                 .map_err(|error| AppError::Internal(format!("failed to decode passkey: {error}")))
         })
         .collect()
+}
+
+fn extract_request_context(headers: &HeaderMap) -> (Option<String>, Option<String>) {
+    let ip_address = headers
+        .get("x-forwarded-for")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(',').next())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
+
+    let user_agent = headers
+        .get("user-agent")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned);
+
+    (ip_address, user_agent)
 }

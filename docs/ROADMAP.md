@@ -6,6 +6,21 @@ This roadmap turns Qryvanta from a metadata CRUD skeleton into an open-source, s
 
 Build a metadata-driven platform where teams can define business data models, generate operational apps, automate workflows, and self-host everything.
 
+## Enterprise Foundation Track
+
+Target outcome:
+- Production-safe security controls established early in the platform lifecycle.
+
+Scope:
+1. Introduce tenant-scoped RBAC policy checks in application services.
+2. Add append-only audit logs for metadata write operations.
+3. Assign bootstrap identities to a system owner role with baseline grants.
+
+Exit criteria:
+- Metadata API operations are blocked when subject permissions are missing.
+- Metadata writes create audit events with tenant and actor context.
+- Tenant bootstrap creates deterministic owner grants for first membership.
+
 ## Phase 1: Foundation
 
 Target outcome:
@@ -94,8 +109,8 @@ Exit criteria:
 
 ## Immediate Backlog (Start Here)
 
-1. Add DB technology decision record (`docs/adr/`) for Postgres + migration tool.
-2. Define metadata persistence schema (`entities`, `fields`, `relations`, versioning tables).
-3. Implement `PostgresMetadataRepository` behind `MetadataRepository` port.
-4. Add integration tests for duplicate logical name conflict behavior.
-5. Add auth middleware and seed initial admin credentials for development.
+1. Add field-level and record-level permission model on top of RBAC.
+2. Add role management APIs and admin UI surfaces.
+3. Expand audit coverage to metadata publish and workflow operations.
+4. Add audit retention/export controls for self-hosted operators.
+5. Add tenant boundary integration tests for every persistence adapter.

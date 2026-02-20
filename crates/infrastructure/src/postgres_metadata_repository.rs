@@ -42,14 +42,14 @@ impl MetadataRepository for PostgresMetadataRepository {
         match result {
             Ok(_) => Ok(()),
             Err(error) => {
-                if let sqlx::Error::Database(database_error) = &error {
-                    if database_error.code().as_deref() == Some("23505") {
-                        return Err(AppError::Conflict(format!(
-                            "entity '{}' already exists for tenant '{}'",
-                            entity.logical_name().as_str(),
-                            tenant_id
-                        )));
-                    }
+                if let sqlx::Error::Database(database_error) = &error
+                    && database_error.code().as_deref() == Some("23505")
+                {
+                    return Err(AppError::Conflict(format!(
+                        "entity '{}' already exists for tenant '{}'",
+                        entity.logical_name().as_str(),
+                        tenant_id
+                    )));
                 }
 
                 Err(AppError::Internal(format!(

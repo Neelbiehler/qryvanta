@@ -16,6 +16,7 @@ import {
   buttonVariants,
 } from "@qryvanta/ui";
 import { apiServerFetch, type EntityResponse } from "@/lib/api";
+import { AccessDeniedCard } from "@/components/shared/access-denied-card";
 import { cn } from "@/lib/utils";
 
 export default async function EntitiesPage() {
@@ -24,6 +25,16 @@ export default async function EntitiesPage() {
 
   if (response.status === 401) {
     redirect("/login");
+  }
+
+  if (response.status === 403) {
+    return (
+      <AccessDeniedCard
+        section="Metadata"
+        title="Entities"
+        message="Your account is authenticated but does not have metadata read permissions yet."
+      />
+    );
   }
 
   if (!response.ok) {

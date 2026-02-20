@@ -19,10 +19,14 @@ use axum::http::header::CONTENT_TYPE;
 use axum::http::{HeaderValue, Method};
 use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{get, post};
-use qryvanta_application::{MetadataService, TenantRepository};
+use qryvanta_application::{
+    AuthEventService, AuthorizationService, MetadataService, SecurityAdminService, TenantRepository,
+};
 use qryvanta_core::{AppError, TenantId};
 use qryvanta_infrastructure::{
-    PostgresMetadataRepository, PostgresPasskeyRepository, PostgresTenantRepository,
+    PostgresAuditLogRepository, PostgresAuditRepository, PostgresAuthEventRepository,
+    PostgresAuthorizationRepository, PostgresMetadataRepository, PostgresPasskeyRepository,
+    PostgresSecurityAdminRepository, PostgresTenantRepository,
 };
 use sqlx::postgres::PgPoolOptions;
 use tower_http::cors::CorsLayer;
@@ -106,6 +110,19 @@ async fn main() -> Result<(), AppError> {
         .with_expiry(Expiry::OnInactivity(Duration::minutes(30)));
 
     let metadata_repository = Arc::new(PostgresMetadataRepository::new(pool.clone()));
+    let authorization_repository = Arc::new(PostgresAuthorizationRepository::new(pool.clone()));
+    let authorization_service = AuthorizationService::new(authorization_repository);
+    let audit_repository = Arc::new(PostgresAuditRepository::new(pool.clone()));
+    let security_admin_repository = Arc::new(PostgresSecurityAdminRepository::new(pool.clone()));
+    let audit_log_repository = Arc::new(PostgresAuditLogRepository::new(pool.clone()));
+    let security_admin_service = SecurityAdminService::new(
+        authorization_service.clone(),
+        security_admin_repository,
+        audit_log_repository,
+        audit_repository.clone(),
+    );
+    let auth_event_repository = Arc::new(PostgresAuthEventRepository::new(pool.clone()));
+    let auth_event_service = AuthEventService::new(auth_event_repository);
     let tenant_repository: Arc<dyn TenantRepository> =
         Arc::new(PostgresTenantRepository::new(pool.clone()));
     let passkey_repository = PostgresPasskeyRepository::new(pool.clone());
@@ -125,7 +142,13 @@ async fn main() -> Result<(), AppError> {
     );
 
     let app_state = AppState {
-        metadata_service: MetadataService::new(metadata_repository),
+        metadata_service: MetadataService::new(
+            metadata_repository,
+            authorization_service,
+            audit_repository,
+        ),
+        security_admin_service,
+        auth_event_service,
         tenant_repository,
         passkey_repository,
         webauthn,
@@ -139,6 +162,24 @@ async fn main() -> Result<(), AppError> {
             "/api/entities",
             get(handlers::entities::list_entities_handler)
                 .post(handlers::entities::create_entity_handler),
+        )
+        .route(
+            "/api/security/roles",
+            get(handlers::security::list_roles_handler)
+                .post(handlers::security::create_role_handler),
+        )
+        .route(
+            "/api/security/role-assignments",
+            get(handlers::security::list_role_assignments_handler)
+                .post(handlers::security::assign_role_handler),
+        )
+        .route(
+            "/api/security/role-unassignments",
+            post(handlers::security::unassign_role_handler),
+        )
+        .route(
+            "/api/security/audit-log",
+            get(handlers::security::list_audit_log_handler),
         )
         .route("/auth/me", get(auth::me_handler))
         .route(

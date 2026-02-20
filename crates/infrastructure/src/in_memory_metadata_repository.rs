@@ -83,4 +83,36 @@ mod tests {
         assert!(listed.is_ok());
         assert_eq!(listed.unwrap_or_default().len(), 1);
     }
+
+    #[tokio::test]
+    async fn list_entities_does_not_leak_across_tenants() {
+        let repository = InMemoryMetadataRepository::new();
+        let left_tenant = TenantId::new();
+        let right_tenant = TenantId::new();
+
+        let left_entity = EntityDefinition::new("account", "Account");
+        assert!(left_entity.is_ok());
+        let right_entity = EntityDefinition::new("contact", "Contact");
+        assert!(right_entity.is_ok());
+
+        let left_save_result = repository
+            .save_entity(left_tenant, left_entity.unwrap_or_else(|_| unreachable!()))
+            .await;
+        assert!(left_save_result.is_ok());
+
+        let right_save_result = repository
+            .save_entity(
+                right_tenant,
+                right_entity.unwrap_or_else(|_| unreachable!()),
+            )
+            .await;
+        assert!(right_save_result.is_ok());
+
+        let left_listed = repository.list_entities(left_tenant).await;
+        assert!(left_listed.is_ok());
+
+        let entities = left_listed.unwrap_or_default();
+        assert_eq!(entities.len(), 1);
+        assert_eq!(entities[0].logical_name().as_str(), "account");
+    }
 }
