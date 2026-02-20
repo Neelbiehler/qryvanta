@@ -22,6 +22,6 @@
     "rust:lint": "cargo clippy --workspace --all-targets -- -D warnings"
   },
   "devDependencies": {
-    "turbo": "^2.4.4"
+    "turbo": "^2.8.10"
   }
 }
