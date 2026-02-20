@@ -1,0 +1,6 @@
+* @qryvanta/core-team
+
+/apps/api/ @qryvanta/runtime-team @qryvanta/core-team
+/apps/web/ @qryvanta/frontend-team
+/crates/ @qryvanta/platform-team @qryvanta/core-team
+/.github/ @qryvanta/security-team @qryvanta/core-team

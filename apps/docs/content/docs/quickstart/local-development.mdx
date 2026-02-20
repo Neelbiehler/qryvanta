@@ -1,0 +1,51 @@
+---
+title: Local Development
+description: Day-to-day loop for running API, web, docs, and Postgres.
+---
+
+## Infrastructure First
+
+```bash
+docker compose up -d
+cp .env.example .env
+```
+
+## Core Commands
+
+```bash
+pnpm dev        # run all JS workspaces in turbo
+pnpm build      # build all JS workspaces
+pnpm check      # static checks
+pnpm lint       # lint checks
+pnpm test       # workspace tests
+```
+
+## Rust Quality Gate
+
+```bash
+cargo fmt --all
+cargo xcheck
+cargo xclippy
+cargo xtest
+```
+
+## App-Specific Loops
+
+```bash
+pnpm --filter @qryvanta/api dev
+pnpm --filter @qryvanta/web dev
+pnpm --filter @qryvanta/docs dev
+```
+
+Default local ports:
+
+- API: `http://127.0.0.1:3001`
+- Web: `http://127.0.0.1:3000`
+- Docs: `http://127.0.0.1:3002`
+
+## Notes
+
+- Keep domain and application crates framework-agnostic.
+- Keep HTTP behavior in `apps/api`.
+- Keep WebAuthn/session behavior in API (BFF) and use cookie auth from web.
+- Update docs whenever architecture or behavior changes.

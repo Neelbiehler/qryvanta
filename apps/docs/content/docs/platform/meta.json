@@ -1,0 +1,10 @@
+{
+  "title": "Platform",
+  "pages": [
+    "metadata-runtime",
+    "app-builder",
+    "automation",
+    "security-and-tenancy",
+    "api-conventions"
+  ]
+}

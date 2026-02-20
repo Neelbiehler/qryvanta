@@ -1,0 +1,24 @@
+---
+title: Automation
+description: Trigger and action model for background business workflows.
+---
+
+## Workflow Model
+
+- Trigger: event-based (record created/updated/deleted) or schedule-based
+- Conditions: boolean filters before actions execute
+- Actions: create/update record, call HTTP endpoint, notify channel
+
+## Execution Semantics
+
+1. Trigger event enters queue.
+2. Workflow worker resolves metadata and permission context.
+3. Actions run with retries and timeout policy.
+4. Result is persisted to execution history.
+
+## Reliability Requirements
+
+- Idempotent action handling where possible
+- Retry with bounded attempts
+- Dead-letter storage for repeated failures
+- Full traceability by tenant and actor

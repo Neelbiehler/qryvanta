@@ -1,0 +1,28 @@
+---
+title: Runtime Components
+description: Planned runtime pieces for metadata, workflows, and operations.
+---
+
+## Core Runtime Services
+
+1. `Metadata Service`: schema definitions, lifecycle, publish/version control.
+2. `Record Runtime`: dynamic CRUD/query against published metadata.
+3. `Automation Engine`: trigger dispatcher + action workers.
+4. `Identity and Access`: authn, authz, role mapping, tenant scoping.
+5. `Audit and Observability`: immutable logs, metrics, and traces.
+
+## Data and Execution Flow
+
+1. Admin publishes metadata.
+2. Runtime exposes entity record behavior from published schema.
+3. Record events trigger workflow execution.
+4. Every write operation is audited with actor + tenant context.
+
+## Deployment Topology
+
+- API service
+- Web app
+- Docs app
+- Database
+- Background worker runtime
+- Optional cache/queue for scale

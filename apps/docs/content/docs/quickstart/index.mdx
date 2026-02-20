@@ -1,0 +1,36 @@
+---
+title: Quickstart
+description: Install prerequisites and run Qryvanta locally.
+---
+
+## Prerequisites
+
+- Rust stable (`rustup`)
+- Node.js 22+
+- pnpm 10+
+
+## Install and Run
+
+```bash
+pnpm install
+cargo xcheck
+pnpm dev
+```
+
+Services:
+
+- API: `http://127.0.0.1:3001`
+- Web: `http://127.0.0.1:3000`
+- Docs: `http://127.0.0.1:3002`
+
+## Verify Baseline
+
+```bash
+curl http://127.0.0.1:3001/health
+```
+
+Expected:
+
+```json
+{"status":"ok"}
+```

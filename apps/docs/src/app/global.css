@@ -1,0 +1,13 @@
+@import 'tailwindcss';
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
+
+:root {
+  --fd-primary: oklch(0.57 0.16 236);
+}
+
+body {
+  background:
+    radial-gradient(circle at 20% -10%, color-mix(in oklab, var(--fd-primary) 12%, transparent), transparent 40%),
+    radial-gradient(circle at 100% 0%, color-mix(in oklab, var(--fd-primary) 9%, transparent), transparent 35%);
+}

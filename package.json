@@ -1,0 +1,27 @@
+{
+  "name": "qryvanta",
+  "private": true,
+  "packageManager": "pnpm@10.5.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev --parallel",
+    "build": "turbo run build",
+    "check": "turbo run check && pnpm contracts:check",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "contracts:generate": "cargo test -p qryvanta-api export_ts_bindings -- --nocapture",
+    "contracts:check": "pnpm contracts:generate && git diff --exit-code -- packages/api-types/src/generated",
+    "dev:web": "pnpm --filter @qryvanta/web dev",
+    "dev:docs": "pnpm --filter @qryvanta/docs dev",
+    "dev:api": "pnpm --filter @qryvanta/api dev",
+    "rust:check": "cargo check --workspace --all-targets",
+    "rust:test": "cargo test --workspace",
+    "rust:lint": "cargo clippy --workspace --all-targets -- -D warnings"
+  },
+  "devDependencies": {
+    "turbo": "^2.4.4"
+  }
+}

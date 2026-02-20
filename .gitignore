@@ -1,0 +1,33 @@
+# Rust
+/target
+
+# Node
+node_modules
+.pnpm-store
+
+# Next.js
+.next
+out
+.turbo
+*.tsbuildinfo
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Docker
+postgres_data
+kanidm_data
+dev/.tmp
+
+# Certificates (self-signed for local dev only)
+dev/kanidm/*.pem
+
+# OS / IDE
+.DS_Store
+.idea
+.vscode
+
+# Local agent configuration (optional, machine-specific)
+.agent

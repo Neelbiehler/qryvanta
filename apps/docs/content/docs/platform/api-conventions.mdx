@@ -1,0 +1,27 @@
+---
+title: API Conventions
+description: Consistent transport patterns for predictable integration behavior.
+---
+
+## Handler Responsibilities
+
+Keep handlers focused on:
+
+1. Request parsing
+2. Application service calls
+3. Response mapping
+4. Error to HTTP translation
+
+## Error Mapping
+
+- `AppError::Validation` -> `400 Bad Request`
+- `AppError::NotFound` -> `404 Not Found`
+- `AppError::Conflict` -> `409 Conflict`
+- `AppError::Internal` -> `500 Internal Server Error`
+
+## Resource Design
+
+- Prefer stable logical identifiers.
+- Keep request/response DTOs explicit.
+- Use predictable collection endpoints for list and create paths.
+- Ensure API contracts remain versionable as metadata runtime expands.

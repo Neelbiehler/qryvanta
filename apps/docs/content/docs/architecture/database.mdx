@@ -1,0 +1,42 @@
+---
+title: Database
+description: Phase 1 PostgreSQL schema and repository boundaries.
+---
+
+## Data Store Choice
+
+Phase 1 replaces in-memory persistence with PostgreSQL + SQLx.
+
+- SQL migrations live in `crates/infrastructure/migrations`
+- API startup runs migrations automatically
+- Repository adapters remain in `crates/infrastructure`
+
+## Core Tables
+
+### Metadata
+
+- `entity_definitions`
+  - `tenant_id`
+  - `logical_name`
+  - `display_name`
+  - unique constraint on `(tenant_id, logical_name)`
+
+### Tenancy
+
+- `tenants`
+- `tenant_memberships`
+  - unique constraint on `(tenant_id, subject)`
+  - index on `subject` for identity lookup
+
+### Sessions
+
+- `tower_sessions`
+  - session id
+  - serialized session payload
+  - expiry timestamp
+
+## Enforcement
+
+Tenant isolation is enforced in repository queries by requiring `TenantId` as an input for metadata operations.
+
+No API handler directly executes SQL. Handlers call application services, which call repository ports.

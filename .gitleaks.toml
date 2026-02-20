@@ -1,0 +1,16 @@
+title = "Qryvanta Gitleaks Config"
+
+[allowlist]
+  description = "Allowlisted files and patterns"
+  paths = [
+    '''MODULE\.bazel\.lock''',
+    '''pnpm-lock\.yaml''',
+    '''\.bazelversion''',
+    '''nix/flake\.lock''',
+  ]
+
+[[rules]]
+  id = "qryvanta-api-key"
+  description = "Qryvanta API Key"
+  regex = '''(?i)qryvanta[_-]?api[_-]?key\s*[:=]\s*['"][^\s'"]+['"]'''
+  tags = ["key", "qryvanta"]

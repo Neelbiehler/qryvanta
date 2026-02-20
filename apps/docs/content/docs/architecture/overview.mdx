@@ -1,0 +1,28 @@
+---
+title: Overview
+description: Architectural direction for an open and self-hostable business platform.
+---
+
+Qryvanta uses a modular monorepo and strict layer boundaries to support long-term evolution from metadata CRUD into a full platform runtime.
+
+Phase 1 foundation uses:
+
+- PostgreSQL for durable metadata, tenancy, and session storage
+- First-party WebAuthn passkey identity
+- Axum BFF auth flow with server-side session cookies and origin checks
+
+## Principles
+
+1. Domain invariants are independent from transport and storage.
+2. Application use-cases orchestrate behavior via ports.
+3. Infrastructure implements ports and can be replaced.
+4. API and web are delivery surfaces, not business cores.
+5. Every major capability is self-hostable by default.
+
+## Target Capability Map
+
+- Metadata runtime: entities, fields, relations, validation.
+- App runtime: generated forms and views.
+- Automation runtime: triggers, actions, retries, run history.
+- Security model: RBAC, tenant boundaries, auditability.
+- Operations: containerized deployment and backup/restore.

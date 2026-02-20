@@ -1,0 +1,29 @@
+---
+title: Metadata Runtime
+description: Core model for entities, fields, constraints, and publish lifecycle.
+---
+
+## Goal
+
+Represent business models as metadata and execute runtime behavior from published definitions.
+
+## Planned Model Concepts
+
+- Entity: stable logical name + display metadata
+- Field: type, validation, default, required flag
+- Relation: one-to-many and many-to-one references
+- Constraint: uniqueness, required groups, domain limits
+- Versioning: draft and published states
+
+## Lifecycle
+
+1. Create or edit draft metadata.
+2. Validate metadata integrity.
+3. Publish immutable version.
+4. Runtime APIs use only published versions.
+
+## Design Guardrails
+
+- Never couple runtime behavior to hardcoded entity tables.
+- Keep validation deterministic and explicit.
+- Return meaningful `AppError::Validation` messages for model violations.

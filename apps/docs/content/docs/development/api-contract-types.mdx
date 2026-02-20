@@ -1,0 +1,38 @@
+---
+title: API Contract Types
+description: Rust-first TypeScript contract generation for frontend safety.
+---
+
+API transport contracts are defined in Rust and exported to TypeScript.
+This keeps frontend and backend DTOs aligned and removes duplicated type declarations.
+
+## Source of Truth
+
+- Rust DTOs in `apps/api/src/dto.rs`
+- API error payload in `apps/api/src/error.rs`
+
+These structs derive `TS` from `ts-rs` and export generated types into `packages/api-types/src/generated`.
+
+## Commands
+
+Generate contracts:
+
+```bash
+pnpm contracts:generate
+```
+
+Verify generated contracts are up to date:
+
+```bash
+pnpm contracts:check
+```
+
+`pnpm check` includes `contracts:check` as a CI guard.
+
+## Adding or Updating DTOs
+
+1. Add or modify Rust DTO structs.
+2. Derive `TS` and set `#[ts(export, export_to = "...")]`.
+3. Run `pnpm contracts:generate`.
+4. Export the new generated type from `packages/api-types/src/index.ts`.
+5. Switch frontend imports to `@qryvanta/api-types`.

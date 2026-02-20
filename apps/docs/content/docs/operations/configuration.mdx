@@ -1,0 +1,39 @@
+---
+title: Configuration
+description: Configuration strategy for local, staging, and production environments.
+---
+
+## Principles
+
+- Configuration is externalized via environment variables.
+- Defaults are developer-friendly but never assumed for production.
+- Sensitive values must be sourced from secret managers or encrypted stores.
+
+## Suggested Domains
+
+- API server settings (host, port, CORS)
+- Database connection and pool sizing
+- Auth settings (issuer, signing keys, token lifetime)
+- Worker execution settings (concurrency, retries, timeouts)
+- Observability sinks (logs, metrics, tracing)
+
+## Change Safety
+
+- Prefer additive config evolution.
+- Document required and optional values per release.
+- Validate startup configuration and fail fast on invalid values.
+
+## Phase 1 Environment Variables
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `DATABASE_URL` | Yes | PostgreSQL connection string used by API and migrations |
+| `API_HOST` | No | API bind host (`127.0.0.1` default) |
+| `API_PORT` | No | API bind port (`3001` default) |
+| `FRONTEND_URL` | No | Allowed CORS origin and post-login redirect target |
+| `SESSION_SECRET` | Yes | Session secret (32+ chars) |
+| `AUTH_BOOTSTRAP_TOKEN` | Yes | One-time bootstrap token for initial authenticated session setup |
+| `WEBAUTHN_RP_ID` | No | WebAuthn relying party id (`localhost` default) |
+| `WEBAUTHN_RP_ORIGIN` | No | WebAuthn relying party origin (`FRONTEND_URL` default) |
+| `SESSION_COOKIE_SECURE` | No | Enforce secure session cookies (`false` default for local dev) |
+| `NEXT_PUBLIC_API_BASE_URL` | No | Browser-facing API base URL for web app |

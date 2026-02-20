@@ -1,0 +1,17 @@
+[package]
+name = "qryvanta-application"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+qryvanta-core = { path = "../core" }
+qryvanta-domain = { path = "../domain" }
+
+[dev-dependencies]
+tokio.workspace = true
+
+[lints]
+workspace = true

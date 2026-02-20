@@ -1,0 +1,35 @@
+---
+title: Auth and Sessions
+description: First-party passkey authentication with server-side sessions.
+---
+
+## Model
+
+Phase 1 uses a backend-for-frontend (BFF) pattern:
+
+1. The browser calls API auth routes for passkey login and session APIs.
+2. Axum verifies WebAuthn ceremonies server-side.
+3. Session state is persisted in PostgreSQL via `tower-sessions-sqlx-store`.
+4. The frontend never stores bearer tokens directly.
+
+## Session Behavior
+
+- Cookie flags: `HttpOnly=true`, `SameSite=Lax`
+- `Secure=false` in local development (`SESSION_COOKIE_SECURE=true` in production)
+- Session table: `tower_sessions`
+
+`require_auth` middleware reads `UserIdentity` from session and injects it into request extensions for protected routes.
+
+## WebAuthn Responsibilities
+
+`/auth/webauthn/*` performs:
+
+1. Challenge generation and server-side state persistence
+2. Passkey attestation/assertion verification
+3. Credential counter update and replay resistance
+4. Subject-to-tenant lookup through `TenantRepository`
+5. Session write of `UserIdentity`
+
+## CSRF and Origin Defense
+
+State-changing requests enforce same-origin headers and reject `Sec-Fetch-Site: cross-site` traffic.

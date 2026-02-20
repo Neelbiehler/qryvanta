@@ -1,0 +1,7 @@
+[alias]
+xcheck = "check --workspace --all-targets"
+xtest = "test --workspace"
+xclippy = "clippy --workspace --all-targets -- -D warnings"
+
+[env]
+SQLX_OFFLINE = "true"

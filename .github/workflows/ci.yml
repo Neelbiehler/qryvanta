@@ -1,0 +1,63 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: qryvanta
+          POSTGRES_USER: qryvanta
+          POSTGRES_PASSWORD: qryvanta
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U qryvanta -d qryvanta"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://qryvanta:qryvanta@127.0.0.1:5432/qryvanta
+      SQLX_OFFLINE: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli --no-default-features --features postgres,rustls
+      - name: Rust format
+        run: cargo fmt --all -- --check
+      - name: SQLx offline metadata
+        run: cargo sqlx prepare --check --workspace
+      - name: Rust check
+        run: cargo xcheck
+      - name: Rust clippy
+        run: cargo xclippy
+      - name: Rust tests
+        run: cargo xtest
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Web lint
+        run: pnpm --filter @qryvanta/web lint
+      - name: Web build
+        run: pnpm --filter @qryvanta/web build

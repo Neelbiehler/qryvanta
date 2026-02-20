@@ -1,0 +1,27 @@
+---
+title: Self Hosting
+description: Deployment expectations for running Qryvanta on your own infrastructure.
+---
+
+## Expected Runtime Stack
+
+- API service
+- Web app
+- Docs app
+- Postgres database
+- Background worker process
+- Optional cache/queue service
+
+## Packaging Direction
+
+1. Docker Compose baseline for local and small deployments
+2. Environment-based configuration
+3. Upgrade-safe migrations
+4. Backup and restore procedures
+
+## Minimum Production Checklist
+
+- TLS termination configured
+- Secrets managed outside source control
+- Database backups scheduled and tested
+- Health endpoints monitored

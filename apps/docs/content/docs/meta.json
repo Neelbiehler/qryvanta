@@ -1,0 +1,12 @@
+{
+  "title": "Qryvanta Docs",
+  "root": true,
+  "pages": [
+    "index",
+    "quickstart",
+    "architecture",
+    "platform",
+    "operations",
+    "development"
+  ]
+}

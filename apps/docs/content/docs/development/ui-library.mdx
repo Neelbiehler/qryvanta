@@ -1,0 +1,30 @@
+---
+title: UI Library
+description: Shared UI component package for consistent app surfaces.
+---
+
+Qryvanta ships reusable web primitives from `@qryvanta/ui` in `packages/ui`.
+The package is based on shadcn patterns and is the default source for shared application components.
+
+## Usage
+
+Import components from the package root:
+
+```tsx
+import { Button, Card, CardContent, CardHeader, CardTitle } from "@qryvanta/ui";
+```
+
+Do not import from `apps/web/src/components/ui` for shared primitives.
+
+## Adding Components
+
+1. Add the component in `packages/ui/src/components`.
+2. Reuse `packages/ui/src/lib/cn.ts` for class merging.
+3. Export the component from `packages/ui/src/index.ts`.
+4. Update consuming apps to import from `@qryvanta/ui`.
+
+## Integration Notes
+
+- Next.js apps should include `@qryvanta/ui` in `transpilePackages`.
+- Tailwind consumers should include `packages/ui/src` as a source so classes are detected.
+- Keep package APIs stable to avoid broad refactors across apps.

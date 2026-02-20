@@ -1,0 +1,34 @@
+---
+title: Engineering Standards
+description: Mandatory coding and review expectations for Qryvanta contributions.
+---
+
+## Required Reading
+
+- `AGENTS.md`
+- `RUST_STYLE_GUIDE.md`
+- `CONTRIBUTING.md`
+
+## Rust Expectations
+
+- Respect crate boundaries and dependency direction.
+- Keep business behavior in domain/application layers.
+- Return typed errors with clear mapping to API status codes.
+- Add tests for invariants and use-cases.
+
+## PR Gate
+
+```bash
+cargo fmt --all
+cargo xcheck
+cargo xclippy
+cargo xtest
+pnpm check
+pnpm lint
+pnpm test
+```
+
+## Documentation Rule
+
+Any architecture or behavior change must update this docs site in the same PR.
+Use the `Documentation Policy` page for required scope and checklist.

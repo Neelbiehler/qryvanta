@@ -1,0 +1,42 @@
+---
+title: Documentation Policy
+description: Required documentation updates for every feature and behavior change.
+---
+
+## Policy
+
+Documentation updates are mandatory for all externally meaningful changes.
+
+This includes:
+
+- New features
+- API contract changes
+- Metadata model changes
+- Configuration changes
+- Migration and deployment changes
+- Operational or observability changes
+
+## Required Update Locations
+
+1. Product and architecture docs: `apps/docs/content/docs`
+2. Repository-level summaries when needed: `README.md`
+3. Agent operating rules when process changes: `AGENTS.md`
+
+## Structure Requirements
+
+- Place docs in the correct section: `quickstart`, `architecture`, `platform`, `operations`, `development`.
+- Add new pages to the nearest `meta.json` to keep navigation structured.
+- Prefer extending existing pages before creating fragmented one-off pages.
+
+## Pull Request Checklist
+
+Before merging, confirm:
+
+1. Every behavior change has matching documentation.
+2. New pages are discoverable from docs navigation.
+3. Commands, endpoints, and configuration names are accurate.
+4. Examples and snippets reflect current implementation.
+
+## Exception
+
+Docs updates may be skipped only for purely internal refactors with no behavior or operational impact.

@@ -1,0 +1,35 @@
+---
+title: Security and Tenancy
+description: Authentication, authorization, and strict tenant boundary model.
+---
+
+## Security Baseline
+
+- WebAuthn passkey login (`/auth/webauthn/login/start` + `/auth/webauthn/login/finish`)
+- Server-side session cookie (`tower-sessions`)
+- Route protection via `require_auth` middleware
+- Tenant lookup from `tenant_memberships` on successful authentication
+
+## Tenancy Model
+
+Every persisted record must include tenant ownership context.
+Repository methods should require tenant scope in query paths to prevent leakage.
+
+Phase 1 metadata operations require `TenantId` and query with `WHERE tenant_id = $1`.
+
+## Authorization Layers
+
+1. Route-level authentication
+2. Application-level policy checks
+3. Repository-level tenant scoping enforcement
+
+## Audit Requirements
+
+Track:
+
+- Actor identity
+- Tenant id
+- Action type
+- Resource id
+- Timestamp
+- Before/after snapshots (where applicable)

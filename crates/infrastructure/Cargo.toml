@@ -1,0 +1,18 @@
+[package]
+name = "qryvanta-infrastructure"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait.workspace = true
+qryvanta-application = { path = "../application" }
+qryvanta-core = { path = "../core" }
+qryvanta-domain = { path = "../domain" }
+sqlx.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

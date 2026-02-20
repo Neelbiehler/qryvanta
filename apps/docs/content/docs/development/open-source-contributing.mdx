@@ -1,0 +1,58 @@
+---
+title: Open Source Contributing
+description: Contribution workflow, quality gates, and community standards for Qryvanta.
+---
+
+## Start Here
+
+1. Read `CONTRIBUTING.md`.
+2. Read `AGENTS.md` and `RUST_STYLE_GUIDE.md`.
+3. Review architecture boundaries before implementing changes.
+
+## Local Setup
+
+```bash
+pnpm install
+docker compose up -d
+cp .env.example .env
+cargo xcheck
+```
+
+Optional local coding-agent presets:
+
+```bash
+cp -R .agent.example .agent
+```
+
+`.agent/` is ignored by git and intended for machine-specific configuration.
+
+## Pull Request Expectations
+
+- Keep pull requests focused and explain the "why" clearly.
+- Add or update tests for behavior changes.
+- Keep domain logic in `crates/domain` and use-cases in `crates/application`.
+- Update docs in the same PR for any externally meaningful change.
+
+## Required Validation
+
+```bash
+cargo fmt --all
+cargo xcheck
+cargo xclippy
+cargo xtest
+pnpm check
+pnpm lint
+pnpm test
+```
+
+## Community Standards
+
+- Follow `CODE_OF_CONDUCT.md` in all project spaces.
+- Report security issues privately via `SECURITY.md`.
+
+## Roadmap Alignment
+
+Before proposing large features, check:
+
+- `docs/ROADMAP.md`
+- `apps/docs/content/docs/development/roadmap.mdx`

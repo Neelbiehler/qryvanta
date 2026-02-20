@@ -1,0 +1,30 @@
+---
+title: Observability
+description: Logging, metrics, and trace expectations for platform reliability.
+---
+
+## Logging
+
+- Use structured logs with request and tenant context.
+- Log errors with actionable messages and identifiers.
+- Avoid logging secrets or sensitive payloads.
+
+## Metrics
+
+Track at minimum:
+
+- Request rate, latency, and error rate
+- Workflow executions, retries, and dead-letter counts
+- Queue depth and worker throughput
+- DB query latency and connection pool health
+
+## Tracing
+
+Add distributed trace spans across:
+
+1. HTTP request entry
+2. Application use-case execution
+3. Infrastructure calls
+4. Workflow action pipelines
+
+Use trace ids in logs for correlation.

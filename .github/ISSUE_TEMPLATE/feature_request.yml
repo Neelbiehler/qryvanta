@@ -1,0 +1,36 @@
+name: Feature request
+description: Propose an enhancement aligned with Qryvanta's roadmap
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What user or operator problem are you trying to solve?
+      placeholder: Describe the current limitation and why it matters.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the change and expected behavior.
+      placeholder: Describe your suggested implementation at a high level.
+    validations:
+      required: true
+
+  - type: textarea
+    id: architecture
+    attributes:
+      label: Architecture impact
+      description: Which layers or apps are impacted?
+      placeholder: apps/api, crates/application, apps/web, docs, etc.
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any alternatives or tradeoffs considered.
