@@ -53,6 +53,11 @@ Keep auth-related URLs on `localhost` during local development to avoid passkey 
 - Production should use `EMAIL_PROVIDER=smtp` with non-empty `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, and `SMTP_FROM_ADDRESS`.
 - Qryvanta mail flows are transactional-only (verification, reset, invite) and do not include marketing tracking.
 
+## Security Administration
+
+- Tenant role admins can manage custom RBAC roles and assignments from the web UI.
+- Tenant role admins can switch workspace registration mode between `invite_only` and `open`.
+
 ## Useful Commands
 
 - `pnpm dev` - run API, web, and docs

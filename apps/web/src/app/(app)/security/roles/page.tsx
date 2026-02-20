@@ -20,6 +20,7 @@ import {
   apiServerFetch,
   type RoleAssignmentResponse,
   type RoleResponse,
+  type TenantRegistrationModeResponse,
 } from "@/lib/api";
 
 export default async function RolesPage() {
@@ -27,6 +28,10 @@ export default async function RolesPage() {
   const response = await apiServerFetch("/api/security/roles", cookieHeader);
   const assignmentsResponse = await apiServerFetch(
     "/api/security/role-assignments",
+    cookieHeader,
+  );
+  const registrationModeResponse = await apiServerFetch(
+    "/api/security/registration-mode",
     cookieHeader,
   );
 
@@ -38,7 +43,15 @@ export default async function RolesPage() {
     redirect("/login");
   }
 
-  if (response.status === 403 || assignmentsResponse.status === 403) {
+  if (registrationModeResponse.status === 401) {
+    redirect("/login");
+  }
+
+  if (
+    response.status === 403 ||
+    assignmentsResponse.status === 403 ||
+    registrationModeResponse.status === 403
+  ) {
     return (
       <AccessDeniedCard
         section="Security"
@@ -56,8 +69,14 @@ export default async function RolesPage() {
     throw new Error("Failed to load role assignments");
   }
 
+  if (!registrationModeResponse.ok) {
+    throw new Error("Failed to load tenant registration mode");
+  }
+
   const roles = (await response.json()) as RoleResponse[];
   const assignments = (await assignmentsResponse.json()) as RoleAssignmentResponse[];
+  const registrationMode =
+    (await registrationModeResponse.json()) as TenantRegistrationModeResponse;
 
   return (
     <Card>
@@ -67,7 +86,11 @@ export default async function RolesPage() {
       </CardHeader>
 
       <CardContent className="space-y-8">
-        <RoleManagementPanel roles={roles} assignments={assignments} />
+        <RoleManagementPanel
+          roles={roles}
+          assignments={assignments}
+          registrationMode={registrationMode.registration_mode}
+        />
 
         <Table>
           <TableHeader>

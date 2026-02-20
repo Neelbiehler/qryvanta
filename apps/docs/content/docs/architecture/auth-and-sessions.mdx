@@ -25,12 +25,19 @@ The API uses a backend-for-frontend (BFF) pattern:
 
 ## Password and MFA Flows
 
-- `POST /auth/register` creates email/password users and sends verification mail.
+- `POST /auth/register` creates email/password users and sends verification mail when tenant registration mode allows open signup.
 - `POST /auth/login` authenticates passwords and returns `mfa_required` when TOTP is enabled.
 - `POST /auth/login/mfa` verifies TOTP or single-use recovery codes.
 - `POST /auth/forgot-password` and `POST /auth/reset-password` implement token-based recovery.
 - `PUT /api/profile/password` rotates passwords for authenticated users.
 - `POST /auth/mfa/totp/*` and `/auth/mfa/recovery-codes/regenerate` manage MFA enrollment and recovery.
+
+Registration mode behavior:
+
+- If `DEV_DEFAULT_TENANT_ID` is configured, `/auth/register` uses that tenant's `registration_mode` (`invite_only` by default in schema).
+- If no default tenant is configured, `/auth/register` remains open and creates tenant membership for the new user.
+- Invite acceptance (`/auth/invite/accept`) is allowed regardless of registration mode.
+- Tenant admins can read/update registration mode through `/api/security/registration-mode`.
 
 Password hashing uses Argon2id (`m=19456, t=2, p=1`) per OWASP Password Storage guidance.
 
@@ -65,6 +72,7 @@ Passkeys remain available as an optional login and account-hardening path.
 - If a membership already exists, that tenant is used.
 - If no membership exists, the API creates one during bootstrap.
 - `DEV_DEFAULT_TENANT_ID` can pin local bootstrap to a known tenant UUID; if unset, a tenant is created for first-time bootstrap subjects.
+- Bootstrap rotates the session id and records absolute session creation time like other successful auth flows.
 
 ## CSRF and Origin Defense
 

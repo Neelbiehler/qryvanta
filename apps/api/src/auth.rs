@@ -125,10 +125,22 @@ pub async fn bootstrap_handler(
     let identity = UserIdentity::new(subject.clone(), subject.clone(), None, tenant_id);
 
     session
+        .cycle_id()
+        .await
+        .map_err(|error| AppError::Internal(format!("failed to cycle session id: {error}")))?;
+
+    session
         .insert(SESSION_USER_KEY, &identity)
         .await
         .map_err(|error| {
             AppError::Internal(format!("failed to persist session identity: {error}"))
+        })?;
+
+    session
+        .insert(SESSION_CREATED_AT_KEY, chrono::Utc::now().timestamp())
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!("failed to persist session creation time: {error}"))
         })?;
 
     let (ip_address, user_agent) = extract_request_context(&headers);
@@ -411,8 +423,14 @@ pub async fn register_handler(
     let (ip_address, user_agent) = extract_request_context(&headers);
     let register_email = payload.email.clone();
 
-    // For now, default to open registration. In production, check tenant config.
-    let registration_mode = qryvanta_domain::RegistrationMode::Open;
+    let registration_mode = if let Some(tenant_id) = state.bootstrap_tenant_id {
+        state
+            .tenant_repository
+            .registration_mode_for_tenant(tenant_id)
+            .await?
+    } else {
+        RegistrationMode::Open
+    };
 
     let user_id = state
         .user_service

@@ -34,4 +34,6 @@ Keep handlers focused on:
 - `GET /api/security/role-assignments` lists current subject-to-role mappings.
 - `POST /api/security/role-assignments` assigns roles to existing tenant members.
 - `POST /api/security/role-unassignments` removes role assignments.
+- `GET /api/security/registration-mode` reads the tenant registration mode (`invite_only` or `open`).
+- `PUT /api/security/registration-mode` updates tenant registration mode.
 - `GET /api/security/audit-log?limit=50&offset=0&action=...&subject=...` lists filtered tenant audit entries.

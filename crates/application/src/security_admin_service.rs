@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use qryvanta_core::{AppResult, TenantId, UserIdentity};
-use qryvanta_domain::{AuditAction, Permission};
+use qryvanta_domain::{AuditAction, Permission, RegistrationMode};
 
 use crate::{AuditEvent, AuditRepository, AuthorizationService};
 
@@ -105,6 +105,16 @@ pub trait SecurityAdminRepository: Send + Sync {
 
     /// Lists current role assignments in tenant scope.
     async fn list_role_assignments(&self, tenant_id: TenantId) -> AppResult<Vec<RoleAssignment>>;
+
+    /// Returns the tenant registration mode.
+    async fn registration_mode(&self, tenant_id: TenantId) -> AppResult<RegistrationMode>;
+
+    /// Updates and returns tenant registration mode.
+    async fn set_registration_mode(
+        &self,
+        tenant_id: TenantId,
+        registration_mode: RegistrationMode,
+    ) -> AppResult<RegistrationMode>;
 }
 
 /// Repository port for reading tenant audit logs.
@@ -288,6 +298,55 @@ impl SecurityAdminService {
             .list_recent_entries(actor.tenant_id(), query)
             .await
     }
+
+    /// Returns tenant registration mode for administrative users.
+    pub async fn registration_mode(&self, actor: &UserIdentity) -> AppResult<RegistrationMode> {
+        self.authorization_service
+            .require_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::SecurityRoleManage,
+            )
+            .await?;
+
+        self.repository.registration_mode(actor.tenant_id()).await
+    }
+
+    /// Updates tenant registration mode and emits an audit event.
+    pub async fn update_registration_mode(
+        &self,
+        actor: &UserIdentity,
+        registration_mode: RegistrationMode,
+    ) -> AppResult<RegistrationMode> {
+        self.authorization_service
+            .require_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::SecurityRoleManage,
+            )
+            .await?;
+
+        let updated_mode = self
+            .repository
+            .set_registration_mode(actor.tenant_id(), registration_mode)
+            .await?;
+
+        self.audit_repository
+            .append_event(AuditEvent {
+                tenant_id: actor.tenant_id(),
+                subject: actor.subject().to_owned(),
+                action: AuditAction::SecurityTenantRegistrationModeUpdated,
+                resource_type: "tenant".to_owned(),
+                resource_id: actor.tenant_id().to_string(),
+                detail: Some(format!(
+                    "set tenant registration mode to '{}'",
+                    updated_mode.as_str()
+                )),
+            })
+            .await?;
+
+        Ok(updated_mode)
+    }
 }
 
 #[cfg(test)]
@@ -299,7 +358,7 @@ mod tests {
     use tokio::sync::Mutex;
 
     use qryvanta_core::{AppError, AppResult, TenantId, UserIdentity};
-    use qryvanta_domain::Permission;
+    use qryvanta_domain::{Permission, RegistrationMode};
 
     use crate::{AuditEvent, AuditRepository, AuthorizationRepository, AuthorizationService};
 
@@ -327,10 +386,20 @@ mod tests {
         }
     }
 
-    #[derive(Default)]
     struct FakeSecurityAdminRepository {
         roles: Mutex<Vec<RoleDefinition>>,
         assignments: Mutex<Vec<(TenantId, String, String)>>,
+        registration_mode: Mutex<RegistrationMode>,
+    }
+
+    impl Default for FakeSecurityAdminRepository {
+        fn default() -> Self {
+            Self {
+                roles: Mutex::new(Vec::new()),
+                assignments: Mutex::new(Vec::new()),
+                registration_mode: Mutex::new(RegistrationMode::InviteOnly),
+            }
+        }
     }
 
     #[async_trait]
@@ -388,6 +457,20 @@ mod tests {
             _tenant_id: TenantId,
         ) -> AppResult<Vec<RoleAssignment>> {
             Ok(Vec::new())
+        }
+
+        async fn registration_mode(&self, _tenant_id: TenantId) -> AppResult<RegistrationMode> {
+            Ok(*self.registration_mode.lock().await)
+        }
+
+        async fn set_registration_mode(
+            &self,
+            _tenant_id: TenantId,
+            registration_mode: RegistrationMode,
+        ) -> AppResult<RegistrationMode> {
+            let mut mode = self.registration_mode.lock().await;
+            *mode = registration_mode;
+            Ok(*mode)
         }
     }
 
@@ -515,5 +598,43 @@ mod tests {
         let result = service.unassign_role(&actor, "bob", "ops").await;
 
         assert!(matches!(result, Err(AppError::Forbidden(_))));
+    }
+
+    #[tokio::test]
+    async fn update_registration_mode_requires_manage_permission() {
+        let tenant_id = TenantId::new();
+        let actor = actor(tenant_id, "alice");
+        let (service, _) = service_with_permissions(tenant_id, "alice", Vec::new());
+
+        let result = service
+            .update_registration_mode(&actor, RegistrationMode::Open)
+            .await;
+
+        assert!(matches!(result, Err(AppError::Forbidden(_))));
+    }
+
+    #[tokio::test]
+    async fn update_registration_mode_writes_audit_event() {
+        let tenant_id = TenantId::new();
+        let actor = actor(tenant_id, "alice");
+        let (service, audit_repository) =
+            service_with_permissions(tenant_id, "alice", vec![Permission::SecurityRoleManage]);
+
+        let updated_mode = service
+            .update_registration_mode(&actor, RegistrationMode::Open)
+            .await;
+
+        assert!(updated_mode.is_ok());
+        assert_eq!(
+            updated_mode.unwrap_or(RegistrationMode::InviteOnly),
+            RegistrationMode::Open
+        );
+
+        let events = audit_repository.events.lock().await;
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].action,
+            qryvanta_domain::AuditAction::SecurityTenantRegistrationModeUpdated
+        );
     }
 }

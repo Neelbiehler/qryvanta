@@ -10,6 +10,8 @@ import type {
   InviteRequest,
   RoleAssignmentResponse,
   RoleResponse,
+  TenantRegistrationModeResponse,
+  UpdateTenantRegistrationModeRequest,
   UserIdentityResponse,
 } from "@qryvanta/api-types";
 
@@ -28,6 +30,8 @@ export type {
   InviteRequest,
   RoleAssignmentResponse,
   RoleResponse,
+  TenantRegistrationModeResponse,
+  UpdateTenantRegistrationModeRequest,
   UserIdentityResponse,
 };
 

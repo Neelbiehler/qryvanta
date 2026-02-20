@@ -8,7 +8,7 @@ use qryvanta_application::{
     CreateRoleInput, RoleAssignment, RoleDefinition, SecurityAdminRepository,
 };
 use qryvanta_core::{AppError, AppResult, TenantId};
-use qryvanta_domain::Permission;
+use qryvanta_domain::{Permission, RegistrationMode};
 
 /// PostgreSQL-backed repository for role administration.
 #[derive(Clone)]
@@ -246,6 +246,64 @@ impl SecurityAdminRepository for PostgresSecurityAdminRepository {
                 assigned_at: row.assigned_at,
             })
             .collect())
+    }
+
+    async fn registration_mode(&self, tenant_id: TenantId) -> AppResult<RegistrationMode> {
+        let stored_mode = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT registration_mode
+            FROM tenants
+            WHERE id = $1
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to resolve tenant registration mode: {error}"
+            ))
+        })?
+        .ok_or_else(|| AppError::NotFound(format!("tenant '{}' not found", tenant_id)))?;
+
+        RegistrationMode::parse(stored_mode.as_str()).map_err(|error| {
+            AppError::Internal(format!(
+                "invalid tenant registration mode '{}' for tenant '{}': {error}",
+                stored_mode, tenant_id
+            ))
+        })
+    }
+
+    async fn set_registration_mode(
+        &self,
+        tenant_id: TenantId,
+        registration_mode: RegistrationMode,
+    ) -> AppResult<RegistrationMode> {
+        let stored_mode = sqlx::query_scalar::<_, String>(
+            r#"
+            UPDATE tenants
+            SET registration_mode = $2
+            WHERE id = $1
+            RETURNING registration_mode
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(registration_mode.as_str())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to update tenant registration mode: {error}"
+            ))
+        })?
+        .ok_or_else(|| AppError::NotFound(format!("tenant '{}' not found", tenant_id)))?;
+
+        RegistrationMode::parse(stored_mode.as_str()).map_err(|error| {
+            AppError::Internal(format!(
+                "invalid tenant registration mode '{}' for tenant '{}': {error}",
+                stored_mode, tenant_id
+            ))
+        })
     }
 }
 
