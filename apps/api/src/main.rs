@@ -154,21 +154,27 @@ async fn main() -> Result<(), AppError> {
 
     // Auth token and email services.
     let auth_token_repository = Arc::new(PostgresAuthTokenRepository::new(pool.clone()));
-    let email_service: Arc<dyn EmailService> = if email_provider == "smtp" {
-        let smtp_config = SmtpEmailConfig {
-            host: env::var("SMTP_HOST").unwrap_or_else(|_| "localhost".to_owned()),
-            port: env::var("SMTP_PORT")
-                .ok()
-                .and_then(|value| value.parse().ok())
-                .unwrap_or(587),
-            username: env::var("SMTP_USERNAME").unwrap_or_default(),
-            password: env::var("SMTP_PASSWORD").unwrap_or_default(),
-            from_address: env::var("SMTP_FROM_ADDRESS")
-                .unwrap_or_else(|_| "noreply@qryvanta.local".to_owned()),
-        };
-        Arc::new(SmtpEmailService::new(smtp_config))
-    } else {
-        Arc::new(ConsoleEmailService::new())
+    let email_service: Arc<dyn EmailService> = match email_provider.as_str() {
+        "smtp" => {
+            let smtp_port = required_non_empty_env("SMTP_PORT")?
+                .parse::<u16>()
+                .map_err(|error| AppError::Validation(format!("invalid SMTP_PORT: {error}")))?;
+
+            let smtp_config = SmtpEmailConfig {
+                host: required_non_empty_env("SMTP_HOST")?,
+                port: smtp_port,
+                username: required_non_empty_env("SMTP_USERNAME")?,
+                password: required_non_empty_env("SMTP_PASSWORD")?,
+                from_address: required_non_empty_env("SMTP_FROM_ADDRESS")?,
+            };
+            Arc::new(SmtpEmailService::new(smtp_config)?)
+        }
+        "console" => Arc::new(ConsoleEmailService::new()),
+        _ => {
+            return Err(AppError::Validation(format!(
+                "EMAIL_PROVIDER must be either 'console' or 'smtp', got '{email_provider}'"
+            )));
+        }
     };
 
     let auth_token_service =
@@ -210,10 +216,11 @@ async fn main() -> Result<(), AppError> {
     let app_state = AppState {
         metadata_service: MetadataService::new(
             metadata_repository,
-            authorization_service,
+            authorization_service.clone(),
             audit_repository,
         ),
         security_admin_service,
+        authorization_service,
         auth_event_service,
         user_service,
         auth_token_service,
@@ -388,4 +395,13 @@ fn init_tracing() {
 
 fn required_env(name: &str) -> Result<String, AppError> {
     env::var(name).map_err(|_| AppError::Validation(format!("{name} is required")))
+}
+
+fn required_non_empty_env(name: &str) -> Result<String, AppError> {
+    let value = required_env(name)?;
+    if value.trim().is_empty() {
+        return Err(AppError::Validation(format!("{name} must not be empty")));
+    }
+
+    Ok(value)
 }

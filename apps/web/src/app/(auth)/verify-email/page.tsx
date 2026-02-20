@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@qryvanta/ui";
 import { API_BASE_URL, type GenericMessageResponse } from "@/lib/api";
@@ -12,6 +12,16 @@ export default function VerifyEmailPage() {
   const token = useSearchParams().get("token") ?? "";
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!token || typeof window === "undefined") {
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete("token");
+    window.history.replaceState({}, "", url.toString());
+  }, [token]);
 
   async function verify() {
     if (!token) {

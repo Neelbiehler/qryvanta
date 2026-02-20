@@ -1,7 +1,7 @@
 //! SMTP email service using the `lettre` crate.
 
 use async_trait::async_trait;
-use lettre::message::header::ContentType;
+use lettre::message::{Mailbox, MultiPart, SinglePart, header::ContentType};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 use qryvanta_application::EmailService;
@@ -25,14 +25,33 @@ pub struct SmtpEmailConfig {
 /// Production email service using SMTP.
 #[derive(Clone)]
 pub struct SmtpEmailService {
-    config: SmtpEmailConfig,
+    from_address: Mailbox,
+    mailer: AsyncSmtpTransport<Tokio1Executor>,
 }
 
 impl SmtpEmailService {
     /// Creates a new SMTP email service.
-    #[must_use]
-    pub fn new(config: SmtpEmailConfig) -> Self {
-        Self { config }
+    pub fn new(config: SmtpEmailConfig) -> AppResult<Self> {
+        let from_address = config
+            .from_address
+            .parse()
+            .map_err(|error| AppError::Validation(format!("invalid SMTP_FROM_ADDRESS: {error}")))?;
+
+        let credentials = Credentials::new(config.username, config.password);
+
+        let mailer = AsyncSmtpTransport::<Tokio1Executor>::relay(&config.host)
+            .map_err(|error| {
+                AppError::Validation(format!("failed to create SMTP transport: {error}"))
+            })?
+            .port(config.port)
+            .credentials(credentials)
+            .timeout(Some(std::time::Duration::from_secs(10)))
+            .build();
+
+        Ok(Self {
+            from_address,
+            mailer,
+        })
     }
 }
 
@@ -43,38 +62,46 @@ impl EmailService for SmtpEmailService {
         to: &str,
         subject: &str,
         text_body: &str,
-        _html_body: Option<&str>,
+        html_body: Option<&str>,
     ) -> AppResult<()> {
-        let from = self
-            .config
-            .from_address
-            .parse()
-            .map_err(|error| AppError::Internal(format!("invalid from address: {error}")))?;
+        if subject.contains('\r') || subject.contains('\n') {
+            return Err(AppError::Validation(
+                "email subject must not contain newline characters".to_owned(),
+            ));
+        }
 
         let to_mailbox = to
             .parse()
-            .map_err(|error| AppError::Internal(format!("invalid recipient address: {error}")))?;
+            .map_err(|error| AppError::Validation(format!("invalid recipient address: {error}")))?;
 
-        let message = Message::builder()
-            .from(from)
+        let message_builder = Message::builder()
+            .from(self.from_address.clone())
             .to(to_mailbox)
-            .subject(subject)
+            .subject(subject);
+
+        let plain_text = SinglePart::builder()
             .header(ContentType::TEXT_PLAIN)
-            .body(text_body.to_owned())
-            .map_err(|error| AppError::Internal(format!("failed to build email: {error}")))?;
+            .body(text_body.to_owned());
 
-        let credentials =
-            Credentials::new(self.config.username.clone(), self.config.password.clone());
+        let message = if let Some(html_body) = html_body {
+            let html_part = SinglePart::builder()
+                .header(ContentType::TEXT_HTML)
+                .body(html_body.to_owned());
 
-        let mailer = AsyncSmtpTransport::<Tokio1Executor>::relay(&self.config.host)
-            .map_err(|error| {
-                AppError::Internal(format!("failed to create SMTP transport: {error}"))
-            })?
-            .port(self.config.port)
-            .credentials(credentials)
-            .build();
+            message_builder
+                .multipart(
+                    MultiPart::alternative()
+                        .singlepart(plain_text)
+                        .singlepart(html_part),
+                )
+                .map_err(|error| AppError::Internal(format!("failed to build email: {error}")))?
+        } else {
+            message_builder
+                .singlepart(plain_text)
+                .map_err(|error| AppError::Internal(format!("failed to build email: {error}")))?
+        };
 
-        mailer
+        self.mailer
             .send(message)
             .await
             .map_err(|error| AppError::Internal(format!("failed to send email: {error}")))?;

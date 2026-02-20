@@ -23,6 +23,8 @@ pub enum Permission {
     SecurityAuditRead,
     /// Allows managing roles and grants.
     SecurityRoleManage,
+    /// Allows sending tenant invite emails.
+    SecurityInviteSend,
 }
 
 impl Permission {
@@ -38,6 +40,7 @@ impl Permission {
             Self::RuntimeRecordWrite => "runtime.record.write",
             Self::SecurityAuditRead => "security.audit.read",
             Self::SecurityRoleManage => "security.role.manage",
+            Self::SecurityInviteSend => "security.invite.send",
         }
     }
 
@@ -53,6 +56,7 @@ impl Permission {
             Permission::RuntimeRecordWrite,
             Permission::SecurityAuditRead,
             Permission::SecurityRoleManage,
+            Permission::SecurityInviteSend,
         ];
 
         ALL
@@ -77,6 +81,7 @@ impl FromStr for Permission {
             "runtime.record.write" => Ok(Self::RuntimeRecordWrite),
             "security.audit.read" => Ok(Self::SecurityAuditRead),
             "security.role.manage" => Ok(Self::SecurityRoleManage),
+            "security.invite.send" => Ok(Self::SecurityInviteSend),
             _ => Err(AppError::Validation(format!(
                 "unknown permission value '{value}'"
             ))),

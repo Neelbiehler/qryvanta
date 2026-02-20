@@ -1,0 +1,52 @@
+---
+title: Email Delivery
+description: Secure transactional email delivery standards for auth and tenant invites.
+---
+
+## Scope
+
+Qryvanta email delivery is transactional-only in Phase 1 auth flows:
+
+- Account verification
+- Password reset
+- Tenant invites
+
+Qryvanta does not include marketing open tracking, click tracking redirects, or behavioral profiling.
+
+## Security Baseline
+
+- Tokens are random, hashed-at-rest, single-use, and expiry-bound.
+- Token consumption is atomic in persistence to reduce replay races.
+- Invite sending requires authenticated access and role-based permission checks.
+- Invite sending requires the `security.invite.send` permission.
+- Auth email endpoints use rate limits to reduce abuse and spam amplification.
+- SMTP sender and recipient addresses are validated before send.
+- Email subjects reject newline characters to prevent header injection.
+
+## SMTP Configuration
+
+When `EMAIL_PROVIDER=smtp`, startup fails fast unless these variables are valid and non-empty:
+
+- `SMTP_HOST`
+- `SMTP_PORT` (must parse as `u16`)
+- `SMTP_USERNAME`
+- `SMTP_PASSWORD`
+- `SMTP_FROM_ADDRESS`
+
+`EMAIL_PROVIDER=console` is intended for local development only.
+
+## Deliverability Guidance
+
+For production domains:
+
+1. Publish SPF records for the chosen SMTP provider.
+2. Enable DKIM signing for the sender domain.
+3. Configure a DMARC policy and monitor reports.
+4. Use a stable `from` domain with valid reverse DNS.
+
+## Operational Guidance
+
+- Use dedicated credentials for Qryvanta mail transport.
+- Rotate SMTP credentials through a secret manager.
+- Monitor API logs and auth events for delivery failures and invite abuse.
+- Keep invite and reset rate limits aligned with incident response policies.

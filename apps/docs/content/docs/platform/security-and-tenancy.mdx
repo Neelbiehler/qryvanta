@@ -12,6 +12,7 @@ description: Authentication, authorization, and strict tenant boundary model.
 - WebAuthn passkey login (`/auth/webauthn/login/start` + `/auth/webauthn/login/finish`)
 - Server-side session cookie (`tower-sessions`)
 - Route protection via `require_auth` middleware
+- Invite issuance requires explicit permission checks (`security.invite.send`)
 - Tenant lookup from `tenant_memberships` on successful authentication
 - Absolute session timeout (8h), inactivity timeout (30m), and session id rotation on login
 - Database-backed auth rate limiting (`auth_rate_limits`) on public auth endpoints

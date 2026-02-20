@@ -52,39 +52,29 @@ impl AuthTokenRepository for PostgresAuthTokenRepository {
         Ok(id)
     }
 
-    async fn find_valid_token(&self, token_hash: &str) -> AppResult<Option<AuthTokenRecord>> {
+    async fn consume_valid_token(
+        &self,
+        token_hash: &str,
+        token_type: AuthTokenType,
+    ) -> AppResult<Option<AuthTokenRecord>> {
         let row = sqlx::query_as::<_, TokenRow>(
-            r#"
-            SELECT id, user_id, email, token_hash, token_type, expires_at, used_at, metadata
-            FROM auth_tokens
-            WHERE token_hash = $1
-              AND used_at IS NULL
-              AND expires_at > now()
-            LIMIT 1
-            "#,
-        )
-        .bind(token_hash)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|error| AppError::Internal(format!("failed to find auth token: {error}")))?;
-
-        Ok(row.map(AuthTokenRecord::from))
-    }
-
-    async fn mark_used(&self, token_id: uuid::Uuid) -> AppResult<()> {
-        sqlx::query(
             r#"
             UPDATE auth_tokens
             SET used_at = now()
-            WHERE id = $1
+            WHERE token_hash = $1
+              AND token_type = $2
+              AND used_at IS NULL
+              AND expires_at > now()
+            RETURNING id, user_id, email, token_hash, token_type, expires_at, used_at, metadata
             "#,
         )
-        .bind(token_id)
-        .execute(&self.pool)
+        .bind(token_hash)
+        .bind(token_type.as_str())
+        .fetch_optional(&self.pool)
         .await
-        .map_err(|error| AppError::Internal(format!("failed to mark token used: {error}")))?;
+        .map_err(|error| AppError::Internal(format!("failed to consume auth token: {error}")))?;
 
-        Ok(())
+        Ok(row.map(AuthTokenRecord::from))
     }
 
     async fn invalidate_tokens_for_user(

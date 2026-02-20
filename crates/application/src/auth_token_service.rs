@@ -8,7 +8,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use qryvanta_core::{AppError, AppResult};
-use qryvanta_domain::{AuthTokenType, UserId};
+use qryvanta_domain::{AuthTokenType, EmailAddress, UserId};
 
 /// Auth token record as persisted in the database.
 #[derive(Debug, Clone)]
@@ -45,11 +45,16 @@ pub trait AuthTokenRepository: Send + Sync {
         metadata: Option<&serde_json::Value>,
     ) -> AppResult<uuid::Uuid>;
 
-    /// Finds a valid (unexpired, unused) token by its hash.
-    async fn find_valid_token(&self, token_hash: &str) -> AppResult<Option<AuthTokenRecord>>;
-
-    /// Marks a token as used.
-    async fn mark_used(&self, token_id: uuid::Uuid) -> AppResult<()>;
+    /// Atomically consumes a valid token by its hash and returns the record.
+    ///
+    /// Consumption succeeds only when the token is unexpired and unused.
+    /// When consumed, `used_at` is set in the same database statement to
+    /// prevent replay races.
+    async fn consume_valid_token(
+        &self,
+        token_hash: &str,
+        token_type: AuthTokenType,
+    ) -> AppResult<Option<AuthTokenRecord>>;
 
     /// Invalidates all unused tokens of a given type for a user.
     async fn invalidate_tokens_for_user(
@@ -113,11 +118,20 @@ impl AuthTokenService {
         email: &str,
         user_id: Option<UserId>,
     ) -> AppResult<()> {
+        let Ok(canonical_email) = EmailAddress::new(email) else {
+            // Keep generic success response semantics for invalid inputs.
+            return Ok(());
+        };
+
         // Rate limit: max 3 reset requests per email per hour.
         let one_hour_ago = chrono::Utc::now() - chrono::Duration::hours(1);
         let recent_count = self
             .token_repository
-            .count_recent_tokens(email, AuthTokenType::PasswordReset, one_hour_ago)
+            .count_recent_tokens(
+                canonical_email.as_str(),
+                AuthTokenType::PasswordReset,
+                one_hour_ago,
+            )
             .await?;
 
         if recent_count >= 3 {
@@ -135,13 +149,13 @@ impl AuthTokenService {
             .invalidate_tokens_for_user(uid, AuthTokenType::PasswordReset)
             .await?;
 
-        let (raw_token, token_hash) = generate_token();
+        let (raw_token, token_hash) = generate_token()?;
 
         let expires_at = chrono::Utc::now() + chrono::Duration::hours(1);
         self.token_repository
             .create_token(
                 Some(uid),
-                email,
+                canonical_email.as_str(),
                 &token_hash,
                 AuthTokenType::PasswordReset,
                 expires_at,
@@ -160,7 +174,7 @@ impl AuthTokenService {
         );
 
         self.email_service
-            .send_email(email, subject, &text_body, None)
+            .send_email(canonical_email.as_str(), subject, &text_body, None)
             .await?;
 
         Ok(())
@@ -168,18 +182,20 @@ impl AuthTokenService {
 
     /// Issues an email verification token and sends the verification email.
     pub async fn send_email_verification(&self, user_id: UserId, email: &str) -> AppResult<()> {
+        let canonical_email = EmailAddress::new(email)?;
+
         // Invalidate previous verification tokens.
         self.token_repository
             .invalidate_tokens_for_user(user_id, AuthTokenType::EmailVerification)
             .await?;
 
-        let (raw_token, token_hash) = generate_token();
+        let (raw_token, token_hash) = generate_token()?;
 
         let expires_at = chrono::Utc::now() + chrono::Duration::hours(24);
         self.token_repository
             .create_token(
                 Some(user_id),
-                email,
+                canonical_email.as_str(),
                 &token_hash,
                 AuthTokenType::EmailVerification,
                 expires_at,
@@ -197,7 +213,7 @@ impl AuthTokenService {
         );
 
         self.email_service
-            .send_email(email, subject, &text_body, None)
+            .send_email(canonical_email.as_str(), subject, &text_body, None)
             .await?;
 
         Ok(())
@@ -211,13 +227,15 @@ impl AuthTokenService {
         tenant_name: &str,
         metadata: &serde_json::Value,
     ) -> AppResult<()> {
-        let (raw_token, token_hash) = generate_token();
+        let canonical_email = EmailAddress::new(email)?;
+
+        let (raw_token, token_hash) = generate_token()?;
 
         let expires_at = chrono::Utc::now() + chrono::Duration::days(7);
         self.token_repository
             .create_token(
                 None,
-                email,
+                canonical_email.as_str(),
                 &token_hash,
                 AuthTokenType::Invite,
                 expires_at,
@@ -235,28 +253,27 @@ impl AuthTokenService {
         );
 
         self.email_service
-            .send_email(email, &subject, &text_body, None)
+            .send_email(canonical_email.as_str(), &subject, &text_body, None)
             .await?;
 
         Ok(())
     }
 
-    /// Validates a token and returns its record if valid.
-    pub async fn validate_token(&self, raw_token: &str) -> AppResult<AuthTokenRecord> {
+    /// Atomically validates and consumes a token.
+    pub async fn consume_valid_token(
+        &self,
+        raw_token: &str,
+        token_type: AuthTokenType,
+    ) -> AppResult<AuthTokenRecord> {
         let token_hash = hash_token(raw_token);
 
         let record = self
             .token_repository
-            .find_valid_token(&token_hash)
+            .consume_valid_token(&token_hash, token_type)
             .await?
             .ok_or_else(|| AppError::Unauthorized("invalid or expired token".to_owned()))?;
 
         Ok(record)
-    }
-
-    /// Consumes a token (marks it as used).
-    pub async fn consume_token(&self, token_id: uuid::Uuid) -> AppResult<()> {
-        self.token_repository.mark_used(token_id).await
     }
 
     /// Returns a reference to the token repository.
@@ -269,14 +286,12 @@ impl AuthTokenService {
 /// Generates a cryptographically random token and its SHA-256 hash.
 ///
 /// Returns `(raw_token_hex, sha256_hash_hex)`.
-fn generate_token() -> (String, String) {
+fn generate_token() -> AppResult<(String, String)> {
     use std::fmt::Write;
 
     let mut bytes = [0u8; 32];
-    // getrandom should not fail on supported platforms.
-    // Fallback: this will produce a zero-filled token which will be
-    // rejected on validation.
-    getrandom::fill(&mut bytes).unwrap_or(());
+    getrandom::fill(&mut bytes)
+        .map_err(|error| AppError::Internal(format!("failed to generate auth token: {error}")))?;
 
     let raw_token = bytes
         .iter()
@@ -286,7 +301,7 @@ fn generate_token() -> (String, String) {
         });
 
     let hash = hash_token(&raw_token);
-    (raw_token, hash)
+    Ok((raw_token, hash))
 }
 
 /// Computes the SHA-256 hash of a token string for storage.
@@ -341,12 +356,12 @@ mod tests {
             Ok(uuid::Uuid::new_v4())
         }
 
-        async fn find_valid_token(&self, _token_hash: &str) -> AppResult<Option<AuthTokenRecord>> {
+        async fn consume_valid_token(
+            &self,
+            _token_hash: &str,
+            _token_type: AuthTokenType,
+        ) -> AppResult<Option<AuthTokenRecord>> {
             Ok(None)
-        }
-
-        async fn mark_used(&self, _token_id: uuid::Uuid) -> AppResult<()> {
-            Ok(())
         }
 
         async fn invalidate_tokens_for_user(
