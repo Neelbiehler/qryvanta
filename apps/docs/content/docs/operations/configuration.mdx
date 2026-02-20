@@ -33,7 +33,10 @@ description: Configuration strategy for local, staging, and production environme
 | `FRONTEND_URL` | No | Allowed CORS origin and post-login redirect target |
 | `SESSION_SECRET` | Yes | Session secret (32+ chars) |
 | `AUTH_BOOTSTRAP_TOKEN` | Yes | One-time bootstrap token for initial authenticated session setup |
+| `DEV_DEFAULT_TENANT_ID` | No | Optional local-development tenant UUID used when bootstrap creates first membership |
 | `WEBAUTHN_RP_ID` | No | WebAuthn relying party id (`localhost` default) |
 | `WEBAUTHN_RP_ORIGIN` | No | WebAuthn relying party origin (`FRONTEND_URL` default) |
 | `SESSION_COOKIE_SECURE` | No | Enforce secure session cookies (`false` default for local dev) |
 | `NEXT_PUBLIC_API_BASE_URL` | No | Browser-facing API base URL for web app |
+
+For local passkey and session stability, keep `FRONTEND_URL`, `WEBAUTHN_RP_ORIGIN`, and `NEXT_PUBLIC_API_BASE_URL` aligned to `localhost` hosts.

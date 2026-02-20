@@ -39,9 +39,21 @@ pnpm --filter @qryvanta/docs dev
 
 Default local ports:
 
-- API: `http://127.0.0.1:3001`
-- Web: `http://127.0.0.1:3000`
+- API: `http://localhost:3001`
+- Web: `http://localhost:3000`
 - Docs: `http://127.0.0.1:3002`
+
+## Local Passkey Test
+
+Use one hostname (`localhost`) for the web app and API while testing auth.
+
+1. Set `FRONTEND_URL=http://localhost:3000`.
+2. Set `NEXT_PUBLIC_API_BASE_URL=http://localhost:3001`.
+3. Start apps with `pnpm dev`.
+4. Open `http://localhost:3000/login`.
+5. Enter a subject and bootstrap token, click **Bootstrap Session**.
+6. Click **Enroll Passkey** and complete the browser/device prompt.
+7. Click **Sign in with Passkey**.
 
 ## Notes
 

@@ -63,6 +63,33 @@ type RegistrationChallengeResponse = {
   };
 };
 
+type ErrorResponse = {
+  message?: string;
+};
+
+async function readErrorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const contentType = response.headers.get("content-type") ?? "";
+    if (contentType.includes("application/json")) {
+      const payload = (await response.json()) as ErrorResponse;
+      if (payload.message?.trim()) {
+        return payload.message;
+      }
+
+      return fallback;
+    }
+
+    const body = (await response.text()).trim();
+    if (body) {
+      return body;
+    }
+  } catch {
+    return fallback;
+  }
+
+  return fallback;
+}
+
 export default function LoginPage() {
   const [subject, setSubject] = useState("");
   const [bootstrapToken, setBootstrapToken] = useState("");
@@ -87,7 +114,7 @@ export default function LoginPage() {
       });
 
       if (!response.ok) {
-        setStatus("Bootstrap failed.");
+        setStatus(await readErrorMessage(response, "Bootstrap failed."));
         return;
       }
 
@@ -116,7 +143,7 @@ export default function LoginPage() {
       );
 
       if (!startResponse.ok) {
-        setStatus("Unable to start passkey login.");
+        setStatus(await readErrorMessage(startResponse, "Unable to start passkey login."));
         return;
       }
 
@@ -165,7 +192,7 @@ export default function LoginPage() {
       });
 
       if (!finishResponse.ok) {
-        setStatus("Passkey verification failed.");
+        setStatus(await readErrorMessage(finishResponse, "Passkey verification failed."));
         return;
       }
 
@@ -186,7 +213,9 @@ export default function LoginPage() {
       });
 
       if (!startResponse.ok) {
-        setStatus("Unable to start passkey enrollment.");
+        setStatus(
+          await readErrorMessage(startResponse, "Unable to start passkey enrollment."),
+        );
         return;
       }
 
@@ -235,7 +264,7 @@ export default function LoginPage() {
       });
 
       if (!finishResponse.ok) {
-        setStatus("Passkey enrollment failed.");
+        setStatus(await readErrorMessage(finishResponse, "Passkey enrollment failed."));
         return;
       }
 

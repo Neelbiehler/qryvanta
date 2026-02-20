@@ -30,6 +30,14 @@ Phase 1 uses a backend-for-frontend (BFF) pattern:
 4. Subject-to-tenant lookup through `TenantRepository`
 5. Session write of `UserIdentity`
 
+## Bootstrap Session Flow
+
+`/auth/bootstrap` validates the bootstrap token and ensures the subject can resolve to a tenant membership.
+
+- If a membership already exists, that tenant is used.
+- If no membership exists, the API creates one during bootstrap.
+- `DEV_DEFAULT_TENANT_ID` can pin local bootstrap to a known tenant UUID; if unset, a tenant is created for first-time bootstrap subjects.
+
 ## CSRF and Origin Defense
 
 State-changing requests enforce same-origin headers and reject `Sec-Fetch-Site: cross-site` traffic.
