@@ -1,14 +1,14 @@
 ---
 title: Auth and Sessions
-description: First-party passkey authentication with server-side sessions.
+description: Email/password + passkey authentication with MFA and server-side sessions.
 ---
 
 ## Model
 
-Phase 1 uses a backend-for-frontend (BFF) pattern:
+The API uses a backend-for-frontend (BFF) pattern:
 
-1. The browser calls API auth routes for passkey login and session APIs.
-2. Axum verifies WebAuthn ceremonies server-side.
+1. The browser calls API auth routes for login, MFA, password reset, and passkey ceremonies.
+2. Axum verifies credentials server-side (Argon2id password hashes + WebAuthn assertions).
 3. Session state is persisted in PostgreSQL via `tower-sessions-sqlx-store`.
 4. The frontend never stores bearer tokens directly.
 
@@ -17,8 +17,27 @@ Phase 1 uses a backend-for-frontend (BFF) pattern:
 - Cookie flags: `HttpOnly=true`, `SameSite=Lax`
 - `Secure=false` in local development (`SESSION_COOKIE_SECURE=true` in production)
 - Session table: `tower_sessions`
+- Inactivity timeout: 30 minutes
+- Absolute timeout: 8 hours (`require_auth` enforces `session_created_at`)
+- Session id is rotated on authentication (`session.cycle_id()`)
 
 `require_auth` middleware reads `UserIdentity` from session and injects it into request extensions for protected routes.
+
+## Password and MFA Flows
+
+- `POST /auth/register` creates email/password users and sends verification mail.
+- `POST /auth/login` authenticates passwords and returns `mfa_required` when TOTP is enabled.
+- `POST /auth/login/mfa` verifies TOTP or single-use recovery codes.
+- `POST /auth/forgot-password` and `POST /auth/reset-password` implement token-based recovery.
+- `PUT /api/profile/password` rotates passwords for authenticated users.
+- `POST /auth/mfa/totp/*` and `/auth/mfa/recovery-codes/regenerate` manage MFA enrollment and recovery.
+
+Password hashing uses Argon2id (`m=19456, t=2, p=1`) per OWASP Password Storage guidance.
+
+## Invite Flows
+
+- `POST /auth/invite` issues signed invite links for tenant onboarding.
+- `POST /auth/invite/accept` accepts invite tokens, creates memberships, and starts a session.
 
 ## WebAuthn Responsibilities
 
@@ -29,6 +48,8 @@ Phase 1 uses a backend-for-frontend (BFF) pattern:
 3. Credential counter update and replay resistance
 4. Subject-to-tenant lookup through `TenantRepository`
 5. Session write of `UserIdentity`
+
+Passkeys remain available as an optional login and account-hardening path.
 
 ## Bootstrap Session Flow
 
@@ -41,3 +62,14 @@ Phase 1 uses a backend-for-frontend (BFF) pattern:
 ## CSRF and Origin Defense
 
 State-changing requests enforce same-origin headers and reject `Sec-Fetch-Site: cross-site` traffic.
+
+## Rate Limiting
+
+Auth endpoints use database-backed sliding-window limits (`auth_rate_limits`) keyed by route category + client IP.
+
+- Login: 10 attempts per 15 minutes
+- Registration: 5 attempts per hour
+- Forgot password: 5 attempts per hour
+- Invite acceptance: 10 attempts per hour
+
+HTTP `429` responses include a `Retry-After` header.
