@@ -5,10 +5,16 @@ description: Authentication, authorization, and strict tenant boundary model.
 
 ## Security Baseline
 
+- Email + password login (`/auth/login`) with Argon2id password hashing
+- TOTP MFA and recovery codes (`/auth/login/mfa`, `/auth/mfa/totp/*`)
+- Forgot password and email verification token flows
+- Invite-based onboarding (`/auth/invite`, `/auth/invite/accept`)
 - WebAuthn passkey login (`/auth/webauthn/login/start` + `/auth/webauthn/login/finish`)
 - Server-side session cookie (`tower-sessions`)
 - Route protection via `require_auth` middleware
 - Tenant lookup from `tenant_memberships` on successful authentication
+- Absolute session timeout (8h), inactivity timeout (30m), and session id rotation on login
+- Database-backed auth rate limiting (`auth_rate_limits`) on public auth endpoints
 
 ## Tenancy Model
 
@@ -48,5 +54,5 @@ Current audit baseline:
 - Metadata entity creation emits an append-only event in `audit_log_entries`.
 - Event fields include tenant, subject, action, resource type/id, and detail.
 - Role creation and assignment emit security audit events.
-- Authentication lifecycle events (bootstrap, passkey registration/login, logout) are appended to `auth_events`.
+- Authentication lifecycle events (bootstrap, login, MFA, passkey registration/login, logout, registration) are appended to `auth_events`.
 - Audit log reads support action/subject filters with offset pagination for admin review workflows.

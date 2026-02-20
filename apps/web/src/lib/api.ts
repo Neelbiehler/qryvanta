@@ -1,6 +1,13 @@
 import type {
+  AcceptInviteRequest,
+  AuthLoginRequest,
+  AuthLoginResponse,
+  AuthMfaVerifyRequest,
+  AuthRegisterRequest,
   AuditLogEntryResponse,
   EntityResponse,
+  GenericMessageResponse,
+  InviteRequest,
   RoleAssignmentResponse,
   RoleResponse,
   UserIdentityResponse,
@@ -10,8 +17,15 @@ export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 
 export type {
+  AcceptInviteRequest,
+  AuthLoginRequest,
+  AuthLoginResponse,
+  AuthMfaVerifyRequest,
+  AuthRegisterRequest,
   AuditLogEntryResponse,
   EntityResponse,
+  GenericMessageResponse,
+  InviteRequest,
   RoleAssignmentResponse,
   RoleResponse,
   UserIdentityResponse,

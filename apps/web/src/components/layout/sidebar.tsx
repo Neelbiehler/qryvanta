@@ -33,6 +33,12 @@ export function Sidebar() {
         >
           Audit Log
         </Link>
+        <Link
+          href="/security/account"
+          className="block rounded-md bg-white px-3 py-2 text-sm font-medium text-zinc-900 shadow-sm transition hover:bg-emerald-100"
+        >
+          Security Settings
+        </Link>
       </nav>
     </SidebarContainer>
   );

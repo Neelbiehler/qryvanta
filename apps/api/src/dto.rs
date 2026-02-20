@@ -48,6 +48,84 @@ pub struct UserIdentityResponse {
     pub tenant_id: String,
 }
 
+/// Incoming payload for email/password registration.
+#[derive(Debug, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/auth-register-request.ts"
+)]
+pub struct AuthRegisterRequest {
+    pub email: String,
+    pub password: String,
+    pub display_name: String,
+}
+
+/// Incoming payload for email/password login.
+#[derive(Debug, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/auth-login-request.ts"
+)]
+pub struct AuthLoginRequest {
+    pub email: String,
+    pub password: String,
+}
+
+/// Auth status response for login and challenge flows.
+#[derive(Debug, Serialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/auth-login-response.ts"
+)]
+pub struct AuthLoginResponse {
+    pub status: String,
+    pub requires_totp: bool,
+}
+
+/// Incoming payload for TOTP or recovery code verification.
+#[derive(Debug, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/auth-mfa-verify-request.ts"
+)]
+pub struct AuthMfaVerifyRequest {
+    pub code: String,
+    pub method: Option<String>,
+}
+
+/// Generic message response for auth flows.
+#[derive(Debug, Serialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/generic-message-response.ts"
+)]
+pub struct GenericMessageResponse {
+    pub message: String,
+}
+
+/// Incoming payload for invite creation.
+#[derive(Debug, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/invite-request.ts"
+)]
+pub struct InviteRequest {
+    pub email: String,
+    pub tenant_name: Option<String>,
+}
+
+/// Incoming payload for invite acceptance.
+#[derive(Debug, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/accept-invite-request.ts"
+)]
+pub struct AcceptInviteRequest {
+    pub token: String,
+    pub password: Option<String>,
+    pub display_name: Option<String>,
+}
+
 /// Incoming payload for custom role creation.
 #[derive(Debug, Deserialize, TS)]
 #[ts(
@@ -186,9 +264,10 @@ impl From<qryvanta_application::RoleAssignment> for RoleAssignmentResponse {
 #[cfg(test)]
 mod tests {
     use super::{
-        AssignRoleRequest, AuditLogEntryResponse, CreateEntityRequest, CreateRoleRequest,
-        EntityResponse, HealthResponse, RemoveRoleAssignmentRequest, RoleAssignmentResponse,
-        RoleResponse, UserIdentityResponse,
+        AcceptInviteRequest, AssignRoleRequest, AuditLogEntryResponse, AuthLoginRequest,
+        AuthLoginResponse, AuthMfaVerifyRequest, AuthRegisterRequest, CreateEntityRequest,
+        CreateRoleRequest, EntityResponse, GenericMessageResponse, HealthResponse, InviteRequest,
+        RemoveRoleAssignmentRequest, RoleAssignmentResponse, RoleResponse, UserIdentityResponse,
     };
 
     use crate::error::ErrorResponse;
@@ -210,6 +289,13 @@ mod tests {
         ErrorResponse::export(&config)?;
         HealthResponse::export(&config)?;
         UserIdentityResponse::export(&config)?;
+        AuthRegisterRequest::export(&config)?;
+        AuthLoginRequest::export(&config)?;
+        AuthLoginResponse::export(&config)?;
+        AuthMfaVerifyRequest::export(&config)?;
+        GenericMessageResponse::export(&config)?;
+        InviteRequest::export(&config)?;
+        AcceptInviteRequest::export(&config)?;
 
         Ok(())
     }

@@ -105,6 +105,10 @@ pub enum AppError {
     #[error("forbidden: {0}")]
     Forbidden(String),
 
+    /// Request rate limit exceeded.
+    #[error("rate limited: {0}")]
+    RateLimited(String),
+
     /// Internal unexpected error.
     #[error("internal error: {0}")]
     Internal(String),

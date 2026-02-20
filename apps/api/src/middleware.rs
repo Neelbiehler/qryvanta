@@ -2,12 +2,18 @@ use axum::extract::{Request, State};
 use axum::http::{HeaderValue, Method, header};
 use axum::middleware::Next;
 use axum::response::Response;
+use qryvanta_application::RateLimitRule;
 use qryvanta_core::{AppError, UserIdentity};
 use tower_sessions::Session;
 
 use crate::auth::SESSION_USER_KEY;
 use crate::error::ApiResult;
 use crate::state::AppState;
+
+/// Maximum absolute session lifetime (8 hours).
+/// OWASP Session Management Cheat Sheet: enforce absolute timeout regardless
+/// of activity to limit the window for session hijacking.
+const ABSOLUTE_SESSION_TIMEOUT_SECONDS: i64 = 8 * 60 * 60;
 
 pub async fn require_auth(
     session: Session,
@@ -19,6 +25,23 @@ pub async fn require_auth(
         .await
         .map_err(|error| AppError::Internal(format!("failed to read session identity: {error}")))?
         .ok_or_else(|| AppError::Unauthorized("authentication required".to_owned()))?;
+
+    // OWASP Session Management: enforce absolute session timeout.
+    if let Some(created_at) = session
+        .get::<i64>(crate::auth::SESSION_CREATED_AT_KEY)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!("failed to read session creation time: {error}"))
+        })?
+    {
+        let elapsed = chrono::Utc::now().timestamp() - created_at;
+        if elapsed > ABSOLUTE_SESSION_TIMEOUT_SECONDS {
+            session.delete().await.map_err(|error| {
+                AppError::Internal(format!("failed to delete expired session: {error}"))
+            })?;
+            return Err(AppError::Unauthorized("session expired".to_owned()).into());
+        }
+    }
 
     request.extensions_mut().insert(identity);
     Ok(next.run(request).await)
@@ -64,4 +87,48 @@ fn is_state_changing_method(method: &Method) -> bool {
         *method,
         Method::POST | Method::PUT | Method::PATCH | Method::DELETE
     )
+}
+
+/// Rate limiting middleware for auth endpoints.
+///
+/// Extracts the client IP from `X-Forwarded-For` or falls back to an
+/// opaque key, then checks the rate limit using the provided rule
+/// (injected via `Extension<RateLimitRule>`).
+///
+/// OWASP Credential Stuffing Prevention: limits login, registration,
+/// and password reset attempts per IP.
+pub async fn rate_limit(
+    State(state): State<AppState>,
+    rule: axum::extract::Extension<RateLimitRule>,
+    request: Request,
+    next: Next,
+) -> ApiResult<Response> {
+    let ip = extract_client_ip(&request);
+    state
+        .rate_limit_service
+        .check_rate_limit(&rule.0, &ip)
+        .await?;
+
+    Ok(next.run(request).await)
+}
+
+/// Extracts the client IP address from request headers.
+///
+/// Prefers `X-Forwarded-For` (first entry) for reverse-proxy setups,
+/// falls back to `X-Real-Ip`, then to `"unknown"`.
+fn extract_client_ip(request: &Request) -> String {
+    request
+        .headers()
+        .get("x-forwarded-for")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|forwarded| forwarded.split(',').next())
+        .map(|ip| ip.trim().to_owned())
+        .or_else(|| {
+            request
+                .headers()
+                .get("x-real-ip")
+                .and_then(|value| value.to_str().ok())
+                .map(|ip| ip.trim().to_owned())
+        })
+        .unwrap_or_else(|| "unknown".to_owned())
 }

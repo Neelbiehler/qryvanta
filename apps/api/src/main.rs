@@ -18,15 +18,19 @@ use axum::Router;
 use axum::http::header::CONTENT_TYPE;
 use axum::http::{HeaderValue, Method};
 use axum::middleware::{from_fn, from_fn_with_state};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post, put};
 use qryvanta_application::{
-    AuthEventService, AuthorizationService, MetadataService, SecurityAdminService, TenantRepository,
+    AuthEventService, AuthTokenService, AuthorizationService, EmailService, MetadataService,
+    MfaService, RateLimitRule, RateLimitService, SecurityAdminService, TenantRepository,
+    UserService,
 };
 use qryvanta_core::{AppError, TenantId};
 use qryvanta_infrastructure::{
-    PostgresAuditLogRepository, PostgresAuditRepository, PostgresAuthEventRepository,
+    AesSecretEncryptor, Argon2PasswordHasher, ConsoleEmailService, PostgresAuditLogRepository,
+    PostgresAuditRepository, PostgresAuthEventRepository, PostgresAuthTokenRepository,
     PostgresAuthorizationRepository, PostgresMetadataRepository, PostgresPasskeyRepository,
-    PostgresSecurityAdminRepository, PostgresTenantRepository,
+    PostgresRateLimitRepository, PostgresSecurityAdminRepository, PostgresTenantRepository,
+    PostgresUserRepository, SmtpEmailConfig, SmtpEmailService, TotpRsProvider,
 };
 use sqlx::postgres::PgPoolOptions;
 use tower_http::cors::CorsLayer;
@@ -46,6 +50,8 @@ use crate::state::AppState;
 async fn main() -> Result<(), AppError> {
     dotenvy::dotenv().ok();
     init_tracing();
+
+    let migrate_only = env::args().nth(1).as_deref() == Some("migrate");
 
     let database_url = required_env("DATABASE_URL")?;
     let frontend_url =
@@ -83,6 +89,10 @@ async fn main() -> Result<(), AppError> {
         })
         .transpose()?;
 
+    let totp_encryption_key = env::var("TOTP_ENCRYPTION_KEY").unwrap_or_else(|_| "0".repeat(64));
+
+    let email_provider = env::var("EMAIL_PROVIDER").unwrap_or_else(|_| "console".to_owned());
+
     let pool = PgPoolOptions::new()
         .max_connections(10)
         .connect(&database_url)
@@ -93,6 +103,11 @@ async fn main() -> Result<(), AppError> {
         .run(&pool)
         .await
         .map_err(|error| AppError::Internal(format!("failed to run migrations: {error}")))?;
+
+    if migrate_only {
+        info!("database migrations applied successfully");
+        return Ok(());
+    }
 
     let session_store = PostgresStore::new(pool.clone())
         .with_table_name("tower_sessions")
@@ -127,6 +142,57 @@ async fn main() -> Result<(), AppError> {
         Arc::new(PostgresTenantRepository::new(pool.clone()));
     let passkey_repository = PostgresPasskeyRepository::new(pool.clone());
 
+    // User and auth services.
+    let user_repository = Arc::new(PostgresUserRepository::new(pool.clone()));
+    let password_hasher = Arc::new(Argon2PasswordHasher::new());
+    let user_service = UserService::new(
+        user_repository.clone(),
+        password_hasher.clone(),
+        tenant_repository.clone(),
+        auth_event_service.clone(),
+    );
+
+    // Auth token and email services.
+    let auth_token_repository = Arc::new(PostgresAuthTokenRepository::new(pool.clone()));
+    let email_service: Arc<dyn EmailService> = if email_provider == "smtp" {
+        let smtp_config = SmtpEmailConfig {
+            host: env::var("SMTP_HOST").unwrap_or_else(|_| "localhost".to_owned()),
+            port: env::var("SMTP_PORT")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(587),
+            username: env::var("SMTP_USERNAME").unwrap_or_default(),
+            password: env::var("SMTP_PASSWORD").unwrap_or_default(),
+            from_address: env::var("SMTP_FROM_ADDRESS")
+                .unwrap_or_else(|_| "noreply@qryvanta.local".to_owned()),
+        };
+        Arc::new(SmtpEmailService::new(smtp_config))
+    } else {
+        Arc::new(ConsoleEmailService::new())
+    };
+
+    let auth_token_service =
+        AuthTokenService::new(auth_token_repository, email_service, frontend_url.clone());
+
+    // MFA services.
+    let totp_provider = Arc::new(TotpRsProvider::new("Qryvanta"));
+    let secret_encryptor = Arc::new(
+        AesSecretEncryptor::from_hex(&totp_encryption_key).unwrap_or_else(|_| {
+            AesSecretEncryptor::from_hex(&"0".repeat(64))
+                .unwrap_or_else(|_| AesSecretEncryptor::new(&[0u8; 32]))
+        }),
+    );
+    let mfa_service = MfaService::new(
+        user_repository,
+        password_hasher,
+        totp_provider,
+        secret_encryptor,
+    );
+
+    // Rate limiting service.
+    let rate_limit_repository = Arc::new(PostgresRateLimitRepository::new(pool.clone()));
+    let rate_limit_service = RateLimitService::new(rate_limit_repository);
+
     let webauthn_origin = Url::parse(&webauthn_rp_origin)
         .map_err(|error| AppError::Validation(format!("invalid WEBAUTHN_RP_ORIGIN: {error}")))?;
     let webauthn = Arc::new(
@@ -149,6 +215,10 @@ async fn main() -> Result<(), AppError> {
         ),
         security_admin_service,
         auth_event_service,
+        user_service,
+        auth_token_service,
+        mfa_service,
+        rate_limit_service,
         tenant_repository,
         passkey_repository,
         webauthn,
@@ -190,6 +260,22 @@ async fn main() -> Result<(), AppError> {
             "/auth/webauthn/register/finish",
             post(auth::webauthn_registration_finish_handler),
         )
+        // Password change (requires auth).
+        .route("/api/profile/password", put(auth::change_password_handler))
+        // MFA management (requires auth).
+        .route("/auth/mfa/totp/enroll", post(auth::mfa_enroll_handler))
+        .route("/auth/mfa/totp/confirm", post(auth::mfa_confirm_handler))
+        .route("/auth/mfa/totp", delete(auth::mfa_disable_handler))
+        .route(
+            "/auth/mfa/recovery-codes/regenerate",
+            post(auth::mfa_regenerate_recovery_codes_handler),
+        )
+        // Email verification (resend, requires auth).
+        .route(
+            "/auth/resend-verification",
+            post(auth::resend_verification_handler),
+        )
+        .route("/auth/invite", post(auth::send_invite_handler))
         .route_layer(from_fn(middleware::require_auth));
 
     let cors_layer = CorsLayer::new()
@@ -201,9 +287,20 @@ async fn main() -> Result<(), AppError> {
         .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
         .allow_headers([CONTENT_TYPE]);
 
-    let app = Router::new()
-        .route("/health", get(handlers::health::health_handler))
-        .route("/auth/bootstrap", post(auth::bootstrap_handler))
+    // Rate limit rules (OWASP Credential Stuffing Prevention).
+    // Login: 10 attempts per IP per 15 minutes.
+    let login_rate_rule = RateLimitRule::new("login", 10, 15 * 60);
+    // Registration: 5 attempts per IP per hour.
+    let register_rate_rule = RateLimitRule::new("register", 5, 60 * 60);
+    // Password reset: 5 attempts per IP per hour.
+    let forgot_password_rate_rule = RateLimitRule::new("forgot_password", 5, 60 * 60);
+    // Invite acceptance: 10 attempts per IP per hour.
+    let invite_accept_rate_rule = RateLimitRule::new("invite_accept", 10, 60 * 60);
+
+    // Rate-limited auth routes: login.
+    let login_routes = Router::new()
+        .route("/auth/login", post(auth::login_handler))
+        .route("/auth/login/mfa", post(auth::mfa_verify_handler))
         .route(
             "/auth/webauthn/login/start",
             get(auth::webauthn_login_start_handler),
@@ -212,6 +309,47 @@ async fn main() -> Result<(), AppError> {
             "/auth/webauthn/login/finish",
             post(auth::webauthn_login_finish_handler),
         )
+        .layer(axum::Extension(login_rate_rule))
+        .route_layer(from_fn_with_state(
+            app_state.clone(),
+            middleware::rate_limit,
+        ));
+
+    // Rate-limited auth routes: registration.
+    let register_routes = Router::new()
+        .route("/auth/register", post(auth::register_handler))
+        .layer(axum::Extension(register_rate_rule))
+        .route_layer(from_fn_with_state(
+            app_state.clone(),
+            middleware::rate_limit,
+        ));
+
+    // Rate-limited auth routes: forgot password.
+    let forgot_password_routes = Router::new()
+        .route("/auth/forgot-password", post(auth::forgot_password_handler))
+        .route("/auth/reset-password", post(auth::reset_password_handler))
+        .layer(axum::Extension(forgot_password_rate_rule))
+        .route_layer(from_fn_with_state(
+            app_state.clone(),
+            middleware::rate_limit,
+        ));
+
+    let invite_accept_routes = Router::new()
+        .route("/auth/invite/accept", post(auth::accept_invite_handler))
+        .layer(axum::Extension(invite_accept_rate_rule))
+        .route_layer(from_fn_with_state(
+            app_state.clone(),
+            middleware::rate_limit,
+        ));
+
+    let app = Router::new()
+        .route("/health", get(handlers::health::health_handler))
+        .route("/auth/bootstrap", post(auth::bootstrap_handler))
+        .merge(login_routes)
+        .merge(register_routes)
+        .merge(forgot_password_routes)
+        .merge(invite_accept_routes)
+        .route("/auth/verify-email", post(auth::verify_email_handler))
         .route("/auth/logout", post(auth::logout_handler))
         .merge(protected_routes)
         .route_layer(from_fn_with_state(

@@ -6,12 +6,20 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+aes-gcm = "0.10"
+argon2 = "0.5"
 async-trait.workspace = true
+chrono.workspace = true
+hex = "0.4"
+lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "builder"] }
 qryvanta-application = { path = "../application" }
 qryvanta-core = { path = "../core" }
 qryvanta-domain = { path = "../domain" }
+serde_json.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
+totp-rs = { version = "5", features = ["gen_secret", "otpauth"] }
+tracing.workspace = true
 uuid.workspace = true
 
 [lints]
