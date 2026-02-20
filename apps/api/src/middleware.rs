@@ -99,14 +99,23 @@ fn is_state_changing_method(method: &Method) -> bool {
 /// and password reset attempts per IP.
 pub async fn rate_limit(
     State(state): State<AppState>,
-    rule: axum::extract::Extension<RateLimitRule>,
     request: Request,
     next: Next,
 ) -> ApiResult<Response> {
+    let rule = request
+        .extensions()
+        .get::<RateLimitRule>()
+        .cloned()
+        .ok_or_else(|| {
+            AppError::Internal(
+                "rate limit middleware misconfigured: missing RateLimitRule extension".to_owned(),
+            )
+        })?;
+
     let ip = extract_client_ip(&request);
     state
         .rate_limit_service
-        .check_rate_limit(&rule.0, &ip)
+        .check_rate_limit(&rule, &ip)
         .await?;
 
     Ok(next.run(request).await)
