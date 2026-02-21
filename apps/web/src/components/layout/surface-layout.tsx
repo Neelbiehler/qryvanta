@@ -33,20 +33,27 @@ export function SurfaceLayout({
 }: SurfaceLayoutProps) {
   const accessibleSurfaces = readAccessibleSurfaces(user);
   const definition = SURFACES[surfaceId];
-  
-  // Initialize collapsed state from localStorage
-  const [collapsed, setCollapsed] = useState(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("sidebar-collapsed");
-      return saved === "true";
+
+  // Always start expanded for SSR consistency, then sync with localStorage
+  const [collapsed, setCollapsed] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  // Sync with localStorage after mount (client-side only)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Required for hydration handling
+    setMounted(true);
+    const saved = localStorage.getItem("sidebar-collapsed");
+    if (saved === "true") {
+      setCollapsed(true);
     }
-    return false;
-  });
+  }, []);
 
   // Save collapsed state to localStorage when it changes
   useEffect(() => {
-    localStorage.setItem("sidebar-collapsed", String(collapsed));
-  }, [collapsed]);
+    if (mounted) {
+      localStorage.setItem("sidebar-collapsed", String(collapsed));
+    }
+  }, [collapsed, mounted]);
 
   if (!hasSurfaceAccess(accessibleSurfaces, surfaceId)) {
     return (
@@ -66,6 +73,7 @@ export function SurfaceLayout({
         "grid min-h-screen grid-cols-1 bg-app transition-all duration-300 ease-in-out",
         collapsed ? "lg:grid-cols-[64px_1fr]" : "lg:grid-cols-[260px_1fr]"
       )}
+      suppressHydrationWarning
     >
       <SurfaceSidebar
         surface={surfaceId}
