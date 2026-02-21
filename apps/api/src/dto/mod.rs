@@ -2,7 +2,7 @@ mod apps;
 mod auth;
 mod common;
 mod entities;
-mod runtime;
+pub(crate) mod runtime;
 mod security;
 
 pub use apps::{
@@ -19,7 +19,8 @@ pub use entities::{
     CreateEntityRequest, CreateFieldRequest, EntityResponse, FieldResponse, PublishedSchemaResponse,
 };
 pub use runtime::{
-    CreateRuntimeRecordRequest, QueryRuntimeRecordsRequest, RuntimeRecordResponse,
+    CreateRuntimeRecordRequest, QueryRuntimeRecordsRequest, RuntimeRecordQueryFilterRequest,
+    RuntimeRecordQueryGroupRequest, RuntimeRecordQueryLinkEntityRequest, RuntimeRecordResponse,
     UpdateRuntimeRecordRequest,
 };
 pub use security::{
@@ -74,6 +75,8 @@ mod tests {
         UpdateAuditRetentionPolicyRequest::export(&config)?;
         UpdateRuntimeRecordRequest::export(&config)?;
         super::runtime::RuntimeRecordQueryFilterRequest::export(&config)?;
+        super::runtime::RuntimeRecordQueryGroupRequest::export(&config)?;
+        super::runtime::RuntimeRecordQueryLinkEntityRequest::export(&config)?;
         super::runtime::RuntimeRecordQuerySortRequest::export(&config)?;
         QueryRuntimeRecordsRequest::export(&config)?;
         EntityResponse::export(&config)?;

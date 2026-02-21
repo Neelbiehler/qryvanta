@@ -3,4 +3,4 @@
 /**
  * Incoming runtime record query payload.
  */
-export type RuntimeRecordQueryFilterRequest = { field_logical_name: string, operator: string, field_value: unknown, };
+export type RuntimeRecordQueryFilterRequest = { scope_alias: string | null, field_logical_name: string, operator: string, field_value: unknown, };

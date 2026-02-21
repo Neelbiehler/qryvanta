@@ -3,7 +3,9 @@
 /**
  * Incoming runtime record query payload.
  */
-export type QueryRuntimeRecordsRequest = { limit: number | null, offset: number | null, logical_mode: string | null, conditions: Array<RuntimeRecordQueryFilterRequest> | null, sort: Array<RuntimeRecordQuerySortRequest> | null, filters: Record<string, unknown> | null, };
+export type QueryRuntimeRecordsRequest = { limit: number | null, offset: number | null, logical_mode: string | null, where: RuntimeRecordQueryGroupRequest | null, conditions: Array<RuntimeRecordQueryFilterRequest> | null, link_entities: Array<RuntimeRecordQueryLinkEntityRequest> | null, sort: Array<RuntimeRecordQuerySortRequest> | null, filters: Record<string, unknown> | null, };
 
 import type { RuntimeRecordQueryFilterRequest } from "./runtime-record-query-filter-request";
+import type { RuntimeRecordQueryGroupRequest } from "./runtime-record-query-group-request";
+import type { RuntimeRecordQueryLinkEntityRequest } from "./runtime-record-query-link-entity-request";
 import type { RuntimeRecordQuerySortRequest } from "./runtime-record-query-sort-request";

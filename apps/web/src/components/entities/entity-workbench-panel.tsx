@@ -264,6 +264,10 @@ export function EntityWorkbenchPanel({
       }
 
       conditions.push({
+        scope_alias:
+          "scope_alias" in condition && typeof condition.scope_alias === "string"
+            ? condition.scope_alias
+            : null,
         field_logical_name: condition.field_logical_name,
         operator: condition.operator,
         field_value: condition.field_value,
@@ -317,6 +321,10 @@ export function EntityWorkbenchPanel({
       }
 
       sort.push({
+        scope_alias:
+          "scope_alias" in entry && typeof entry.scope_alias === "string"
+            ? entry.scope_alias
+            : null,
         field_logical_name: entry.field_logical_name,
         direction,
       });
@@ -620,7 +628,9 @@ export function EntityWorkbenchPanel({
         limit: parsedLimit,
         offset: parsedOffset,
         logical_mode: queryLogicalMode,
+        where: null,
         conditions: parsedConditions,
+        link_entities: null,
         sort: parsedSort,
         filters:
           Object.keys(parsedFilters).length > 0

@@ -30,7 +30,8 @@ pub use authorization_service::{
 };
 pub use contact_bootstrap_service::ContactBootstrapService;
 pub use metadata_ports::{
-    AuditEvent, AuditRepository, MetadataRepository, RecordListQuery, RuntimeRecordFilter,
+    AuditEvent, AuditRepository, MetadataRepository, RecordListQuery, RuntimeRecordConditionGroup,
+    RuntimeRecordConditionNode, RuntimeRecordFilter, RuntimeRecordJoinType, RuntimeRecordLink,
     RuntimeRecordLogicalMode, RuntimeRecordOperator, RuntimeRecordQuery, RuntimeRecordSort,
     RuntimeRecordSortDirection, SaveFieldInput, TenantRepository, UniqueFieldValue,
 };

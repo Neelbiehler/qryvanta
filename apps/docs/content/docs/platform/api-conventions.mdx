@@ -36,7 +36,7 @@ Keep handlers focused on:
 - `POST /api/entities/:entity_logical_name/publish` publishes immutable schema version.
 - `GET /api/entities/:entity_logical_name/published` returns latest published schema.
 - `GET /api/runtime/:entity_logical_name/records?limit=50&offset=0` lists runtime records.
-- `POST /api/runtime/:entity_logical_name/records/query` queries runtime records with logical condition arrays, typed operators, sorting, and pagination.
+- `POST /api/runtime/:entity_logical_name/records/query` queries runtime records with typed operators, alias-aware link entities, recursive `where` groups, sorting, and pagination.
 - `POST /api/runtime/:entity_logical_name/records` creates runtime record.
 - `GET /api/runtime/:entity_logical_name/records/:record_id` fetches one runtime record.
 - `PUT /api/runtime/:entity_logical_name/records/:record_id` updates runtime record.
@@ -55,7 +55,7 @@ Keep handlers focused on:
 - `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/capabilities` returns effective worker capabilities.
 - `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/schema` returns published schema for worker forms.
 - `GET|POST /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/records` lists/creates records with app-scoped permissions.
-- `POST /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/records/query` queries records with app-scoped permissions using runtime query grammar.
+- `POST /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/records/query` queries records with app-scoped permissions using alias-aware runtime query grammar.
 - `GET|PUT|DELETE /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/records/:record_id` reads/writes/deletes records with app-scoped permissions.
 
 ## Security Admin Endpoints

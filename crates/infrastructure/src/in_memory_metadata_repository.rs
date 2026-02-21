@@ -3,8 +3,9 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use qryvanta_application::{
-    MetadataRepository, RecordListQuery, RuntimeRecordFilter, RuntimeRecordLogicalMode,
-    RuntimeRecordOperator, RuntimeRecordQuery, RuntimeRecordSortDirection, UniqueFieldValue,
+    MetadataRepository, RecordListQuery, RuntimeRecordConditionGroup, RuntimeRecordConditionNode,
+    RuntimeRecordFilter, RuntimeRecordJoinType, RuntimeRecordLogicalMode, RuntimeRecordOperator,
+    RuntimeRecordQuery, RuntimeRecordSort, RuntimeRecordSortDirection, UniqueFieldValue,
 };
 use qryvanta_core::TenantId;
 use qryvanta_core::{AppError, AppResult};
@@ -332,6 +333,7 @@ impl MetadataRepository for InMemoryMetadataRepository {
     ) -> AppResult<Vec<RuntimeRecord>> {
         let records = self.runtime_records.read().await;
         let record_owners = self.record_owners.read().await;
+        let runtime_index = build_runtime_record_index(&records);
         let mut listed: Vec<RuntimeRecord> = records
             .iter()
             .filter_map(
@@ -353,21 +355,50 @@ impl MetadataRepository for InMemoryMetadataRepository {
                         .then_some(record.clone())
                 },
             )
-            .filter(|record| runtime_record_matches_filters(record, &query))
+            .filter(|record| {
+                let Some(scope_records) = resolve_runtime_query_scope_records(
+                    &query,
+                    tenant_id,
+                    entity_logical_name,
+                    record,
+                    &runtime_index,
+                ) else {
+                    return false;
+                };
+
+                runtime_record_matches_filters(&scope_records, &query)
+            })
             .collect();
 
         if query.sort.is_empty() {
             listed.sort_by(|left, right| left.record_id().as_str().cmp(right.record_id().as_str()));
         } else {
             listed.sort_by(|left, right| {
+                let left_scope_records = resolve_runtime_query_scope_records(
+                    &query,
+                    tenant_id,
+                    entity_logical_name,
+                    left,
+                    &runtime_index,
+                );
+                let right_scope_records = resolve_runtime_query_scope_records(
+                    &query,
+                    tenant_id,
+                    entity_logical_name,
+                    right,
+                    &runtime_index,
+                );
+
+                let Some(left_scope_records) = left_scope_records else {
+                    return Ordering::Greater;
+                };
+                let Some(right_scope_records) = right_scope_records else {
+                    return Ordering::Less;
+                };
+
                 for sort in &query.sort {
-                    let ordering = compare_values_for_sort(
-                        left,
-                        right,
-                        sort.field_logical_name.as_str(),
-                        sort.field_type,
-                        sort.direction,
-                    );
+                    let ordering =
+                        compare_values_for_sort(&left_scope_records, &right_scope_records, sort);
                     if ordering != Ordering::Equal {
                         return ordering;
                     }
@@ -530,24 +561,136 @@ impl MetadataRepository for InMemoryMetadataRepository {
     }
 }
 
-fn runtime_record_matches_filters(record: &RuntimeRecord, query: &RuntimeRecordQuery) -> bool {
-    if query.filters.is_empty() {
-        return true;
-    }
+fn build_runtime_record_index(
+    records: &HashMap<(TenantId, String, String), RuntimeRecord>,
+) -> HashMap<(TenantId, String, String), RuntimeRecord> {
+    records.clone()
+}
 
-    let evaluate = |filter: &RuntimeRecordFilter| {
-        let value = record
+fn resolve_runtime_query_scope_records(
+    query: &RuntimeRecordQuery,
+    tenant_id: TenantId,
+    root_entity_logical_name: &str,
+    root_record: &RuntimeRecord,
+    runtime_index: &HashMap<(TenantId, String, String), RuntimeRecord>,
+) -> Option<HashMap<String, Option<RuntimeRecord>>> {
+    let mut scope_records = HashMap::new();
+    scope_records.insert(String::new(), Some(root_record.clone()));
+
+    for link in &query.links {
+        let parent_scope_key = link.parent_alias.clone().unwrap_or_default();
+        let Some(parent_record) = scope_records
+            .get(parent_scope_key.as_str())
+            .and_then(|record| record.clone())
+        else {
+            if link.join_type == RuntimeRecordJoinType::Inner {
+                return None;
+            }
+
+            scope_records.insert(link.alias.clone(), None);
+            continue;
+        };
+
+        let relation_target_record_id = parent_record
             .data()
             .as_object()
-            .and_then(|data| data.get(filter.field_logical_name.as_str()));
+            .and_then(|data| data.get(link.relation_field_logical_name.as_str()))
+            .and_then(Value::as_str)
+            .map(str::to_owned);
 
-        runtime_record_filter_matches_value(value, filter)
+        let linked_record = relation_target_record_id.and_then(|record_id| {
+            runtime_index
+                .get(&(
+                    tenant_id,
+                    link.target_entity_logical_name.clone(),
+                    record_id,
+                ))
+                .cloned()
+        });
+
+        if linked_record.is_none() && link.join_type == RuntimeRecordJoinType::Inner {
+            return None;
+        }
+
+        scope_records.insert(link.alias.clone(), linked_record);
+    }
+
+    if root_entity_logical_name != root_record.entity_logical_name().as_str() {
+        return None;
+    }
+
+    Some(scope_records)
+}
+
+fn runtime_record_matches_filters(
+    scope_records: &HashMap<String, Option<RuntimeRecord>>,
+    query: &RuntimeRecordQuery,
+) -> bool {
+    let matches_flat_filters = if query.filters.is_empty() {
+        true
+    } else {
+        let evaluate = |filter: &RuntimeRecordFilter| {
+            let value = resolve_scope_value(
+                scope_records,
+                filter.scope_alias.as_deref(),
+                filter.field_logical_name.as_str(),
+            );
+
+            runtime_record_filter_matches_value(value, filter)
+        };
+
+        match query.logical_mode {
+            RuntimeRecordLogicalMode::And => query.filters.iter().all(evaluate),
+            RuntimeRecordLogicalMode::Or => query.filters.iter().any(evaluate),
+        }
     };
 
-    match query.logical_mode {
-        RuntimeRecordLogicalMode::And => query.filters.iter().all(evaluate),
-        RuntimeRecordLogicalMode::Or => query.filters.iter().any(evaluate),
+    if !matches_flat_filters {
+        return false;
     }
+
+    query
+        .where_clause
+        .as_ref()
+        .map(|group| runtime_record_group_matches(group, scope_records))
+        .unwrap_or(true)
+}
+
+fn runtime_record_group_matches(
+    group: &RuntimeRecordConditionGroup,
+    scope_records: &HashMap<String, Option<RuntimeRecord>>,
+) -> bool {
+    let evaluate = |node: &RuntimeRecordConditionNode| match node {
+        RuntimeRecordConditionNode::Filter(filter) => {
+            let value = resolve_scope_value(
+                scope_records,
+                filter.scope_alias.as_deref(),
+                filter.field_logical_name.as_str(),
+            );
+            runtime_record_filter_matches_value(value, filter)
+        }
+        RuntimeRecordConditionNode::Group(nested_group) => {
+            runtime_record_group_matches(nested_group, scope_records)
+        }
+    };
+
+    match group.logical_mode {
+        RuntimeRecordLogicalMode::And => group.nodes.iter().all(evaluate),
+        RuntimeRecordLogicalMode::Or => group.nodes.iter().any(evaluate),
+    }
+}
+
+fn resolve_scope_value<'a>(
+    scope_records: &'a HashMap<String, Option<RuntimeRecord>>,
+    scope_alias: Option<&str>,
+    field_logical_name: &str,
+) -> Option<&'a Value> {
+    let scope_key = scope_alias.unwrap_or_default();
+    scope_records
+        .get(scope_key)
+        .and_then(Option::as_ref)
+        .and_then(|record| record.data().as_object())
+        .and_then(|data| data.get(field_logical_name))
 }
 
 fn runtime_record_filter_matches_value(
@@ -614,23 +757,23 @@ fn compare_filter_values(
 }
 
 fn compare_values_for_sort(
-    left: &RuntimeRecord,
-    right: &RuntimeRecord,
-    field_logical_name: &str,
-    field_type: FieldType,
-    direction: RuntimeRecordSortDirection,
+    left_scope_records: &HashMap<String, Option<RuntimeRecord>>,
+    right_scope_records: &HashMap<String, Option<RuntimeRecord>>,
+    sort: &RuntimeRecordSort,
 ) -> Ordering {
-    let left_value = left
-        .data()
-        .as_object()
-        .and_then(|data| data.get(field_logical_name));
-    let right_value = right
-        .data()
-        .as_object()
-        .and_then(|data| data.get(field_logical_name));
+    let left_value = resolve_scope_value(
+        left_scope_records,
+        sort.scope_alias.as_deref(),
+        sort.field_logical_name.as_str(),
+    );
+    let right_value = resolve_scope_value(
+        right_scope_records,
+        sort.scope_alias.as_deref(),
+        sort.field_logical_name.as_str(),
+    );
 
     let mut ordering = match (left_value, right_value) {
-        (Some(left), Some(right)) => match field_type {
+        (Some(left), Some(right)) => match sort.field_type {
             FieldType::Number => left
                 .as_f64()
                 .zip(right.as_f64())
@@ -653,7 +796,7 @@ fn compare_values_for_sort(
         (None, None) => Ordering::Equal,
     };
 
-    if direction == RuntimeRecordSortDirection::Desc {
+    if sort.direction == RuntimeRecordSortDirection::Desc {
         ordering = ordering.reverse();
     }
 
