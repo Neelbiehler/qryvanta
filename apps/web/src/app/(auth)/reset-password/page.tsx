@@ -6,7 +6,9 @@ type ResetPasswordPageProps = {
   }>;
 };
 
-export default async function ResetPasswordPage({ searchParams }: ResetPasswordPageProps) {
+export default async function ResetPasswordPage({
+  searchParams,
+}: ResetPasswordPageProps) {
   const resolvedSearchParams = (await searchParams) ?? {};
   return <ResetPasswordForm token={resolvedSearchParams.token ?? ""} />;
 }

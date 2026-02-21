@@ -71,14 +71,17 @@ export default async function RolesPage() {
   }
 
   const roles = (await response.json()) as RoleResponse[];
-  const assignments = (await assignmentsResponse.json()) as RoleAssignmentResponse[];
+  const assignments =
+    (await assignmentsResponse.json()) as RoleAssignmentResponse[];
   const registrationMode =
     (await registrationModeResponse.json()) as TenantRegistrationModeResponse;
 
   return (
     <Card>
       <CardHeader>
-        <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Security</p>
+        <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
+          Security
+        </p>
         <CardTitle className="font-serif text-3xl">Roles</CardTitle>
       </CardHeader>
 
@@ -132,7 +135,9 @@ export default async function RolesPage() {
                 <TableRow key={`${assignment.subject}-${assignment.role_id}`}>
                   <TableCell>{assignment.subject}</TableCell>
                   <TableCell>{assignment.role_name}</TableCell>
-                  <TableCell className="font-mono text-xs">{assignment.assigned_at}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {assignment.assigned_at}
+                  </TableCell>
                 </TableRow>
               ))
             ) : (

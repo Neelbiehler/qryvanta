@@ -30,7 +30,9 @@ export function InviteCard({
     <Card>
       <CardHeader>
         <CardTitle>Invite Teammate</CardTitle>
-        <CardDescription>Send a workspace invite link to a teammate.</CardDescription>
+        <CardDescription>
+          Send a workspace invite link to a teammate.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="space-y-2">

@@ -2,7 +2,15 @@
 
 import { useEffect, useState } from "react";
 
-import { Button, Card, CardContent, CardHeader, CardTitle, Input, Label } from "@qryvanta/ui";
+import {
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  Input,
+  Label,
+} from "@qryvanta/ui";
 import { API_BASE_URL, type GenericMessageResponse } from "@/lib/api";
 
 type ErrorResponse = { message?: string };
@@ -48,7 +56,9 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
       });
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => ({}))) as ErrorResponse;
+        const payload = (await response
+          .json()
+          .catch(() => ({}))) as ErrorResponse;
         setStatus(payload.message ?? "Reset failed.");
         return;
       }

@@ -14,7 +14,9 @@ export function AccessDeniedCard({
   return (
     <Card>
       <CardHeader>
-        <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">{section}</p>
+        <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
+          {section}
+        </p>
         <CardTitle className="font-serif text-3xl">{title}</CardTitle>
       </CardHeader>
       <CardContent>

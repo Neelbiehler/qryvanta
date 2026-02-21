@@ -32,7 +32,10 @@ export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 
 function resolveApiUrl(path: string): string {
-  if (process.env.NODE_ENV === "production" && API_BASE_URL.startsWith("http://")) {
+  if (
+    process.env.NODE_ENV === "production" &&
+    API_BASE_URL.startsWith("http://")
+  ) {
     throw new Error("NEXT_PUBLIC_API_BASE_URL must use HTTPS in production");
   }
 
@@ -77,7 +80,10 @@ function shouldSetJsonContentType(body: BodyInit | null | undefined): boolean {
   return typeof body === "string";
 }
 
-function withDefaultHeaders(headers?: HeadersInit, body?: BodyInit | null): Headers {
+function withDefaultHeaders(
+  headers?: HeadersInit,
+  body?: BodyInit | null,
+): Headers {
   const requestHeaders = new Headers(headers);
   if (!requestHeaders.has("Content-Type") && shouldSetJsonContentType(body)) {
     requestHeaders.set("Content-Type", "application/json");

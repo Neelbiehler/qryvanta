@@ -63,6 +63,8 @@ Keep auth-related URLs on `localhost` during local development to avoid passkey 
 - `pnpm dev` - run API, web, and docs
 - `pnpm build` - build all workspaces
 - `pnpm lint` - run lint checks
+- `pnpm format:web` - format frontend files with Prettier
+- `pnpm format:web:check` - verify frontend formatting
 - `pnpm test` - run all tests
 - `pnpm check` - run static checks + API contract checks
 - `cargo xcheck` - Rust checks

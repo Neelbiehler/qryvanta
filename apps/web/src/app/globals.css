@@ -17,8 +17,16 @@
 body {
   margin: 0;
   background:
-    radial-gradient(circle at 85% 12%, rgba(72, 187, 120, 0.16), transparent 35%),
-    radial-gradient(circle at 12% 95%, rgba(16, 185, 129, 0.12), transparent 38%),
+    radial-gradient(
+      circle at 85% 12%,
+      rgba(72, 187, 120, 0.16),
+      transparent 35%
+    ),
+    radial-gradient(
+      circle at 12% 95%,
+      rgba(16, 185, 129, 0.12),
+      transparent 38%
+    ),
     var(--background);
   color: var(--foreground);
   font-family: "Source Sans 3", "Avenir Next", sans-serif;
@@ -26,7 +34,15 @@ body {
 
 .bg-app {
   background:
-    radial-gradient(circle at 85% 12%, rgba(72, 187, 120, 0.16), transparent 35%),
-    radial-gradient(circle at 12% 95%, rgba(16, 185, 129, 0.12), transparent 38%),
+    radial-gradient(
+      circle at 85% 12%,
+      rgba(72, 187, 120, 0.16),
+      transparent 35%
+    ),
+    radial-gradient(
+      circle at 12% 95%,
+      rgba(16, 185, 129, 0.12),
+      transparent 38%
+    ),
     var(--background);
 }

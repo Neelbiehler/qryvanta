@@ -29,13 +29,17 @@ import { cn } from "@/lib/utils";
 export default async function AppsPage() {
   const cookieHeader = (await cookies()).toString();
 
-  const [workspaceAppsResponse, adminAppsResponse, entitiesResponse, rolesResponse] =
-    await Promise.all([
-      apiServerFetch("/api/workspace/apps", cookieHeader),
-      apiServerFetch("/api/apps", cookieHeader),
-      apiServerFetch("/api/entities", cookieHeader),
-      apiServerFetch("/api/security/roles", cookieHeader),
-    ]);
+  const [
+    workspaceAppsResponse,
+    adminAppsResponse,
+    entitiesResponse,
+    rolesResponse,
+  ] = await Promise.all([
+    apiServerFetch("/api/workspace/apps", cookieHeader),
+    apiServerFetch("/api/apps", cookieHeader),
+    apiServerFetch("/api/entities", cookieHeader),
+    apiServerFetch("/api/security/roles", cookieHeader),
+  ]);
 
   if (workspaceAppsResponse.status === 401) {
     redirect("/login");
@@ -73,7 +77,9 @@ export default async function AppsPage() {
     <div className="space-y-8">
       <Card>
         <CardHeader>
-          <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Workspace</p>
+          <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
+            Workspace
+          </p>
           <CardTitle className="font-serif text-3xl">My Apps</CardTitle>
         </CardHeader>
 
@@ -91,13 +97,19 @@ export default async function AppsPage() {
                 workspaceApps.map((app) => (
                   <TableRow key={app.logical_name}>
                     <TableCell>
-                      <p className="font-medium text-zinc-900">{app.display_name}</p>
-                      <p className="font-mono text-xs text-zinc-500">{app.logical_name}</p>
+                      <p className="font-medium text-zinc-900">
+                        {app.display_name}
+                      </p>
+                      <p className="font-mono text-xs text-zinc-500">
+                        {app.logical_name}
+                      </p>
                     </TableCell>
                     <TableCell>{app.description ?? "-"}</TableCell>
                     <TableCell>
                       <Link
-                        className={cn(buttonVariants({ size: "sm", variant: "outline" }))}
+                        className={cn(
+                          buttonVariants({ size: "sm", variant: "outline" }),
+                        )}
                         href={`/apps/${app.logical_name}`}
                       >
                         Open
@@ -120,11 +132,17 @@ export default async function AppsPage() {
       {hasAppStudioAccess ? (
         <Card>
           <CardHeader>
-            <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Administration</p>
+            <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
+              Administration
+            </p>
             <CardTitle className="font-serif text-3xl">App Studio</CardTitle>
           </CardHeader>
           <CardContent>
-            <AppStudioPanel apps={adminApps} entities={entities} roles={roles} />
+            <AppStudioPanel
+              apps={adminApps}
+              entities={entities}
+              roles={roles}
+            />
           </CardContent>
         </Card>
       ) : null}

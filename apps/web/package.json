@@ -6,6 +6,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "check": "tsc --noEmit",
     "test": "echo \"no web tests yet\""
   },
@@ -28,6 +30,7 @@
     "@types/react-dom": "19.2.3",
     "eslint": "9.39.3",
     "eslint-config-next": "16.1.6",
+    "prettier": "^3.6.2",
     "typescript": "5.9.3"
   }
 }

@@ -20,6 +20,7 @@ description: Mandatory coding and review expectations for Qryvanta contributions
 
 - Keep React and React DOM versions aligned exactly; mismatches fail web builds.
 - Use `eslint .` for frontend linting to stay compatible across Next.js major upgrades.
+- Use Prettier for frontend formatting (`pnpm format:web` and `pnpm format:web:check`).
 - Keep the workspace `pnpm` version current (`packageManager` in root `package.json`) to avoid known CLI deprecations and install-time warnings.
 - Dependabot updates must be CI-green before merge; defer updates with known upstream incompatibilities until compatible releases exist.
 

@@ -12,6 +12,8 @@
     "check": "turbo run check && pnpm contracts:check",
     "lint": "turbo run lint",
     "test": "turbo run test",
+    "format:web": "pnpm --filter @qryvanta/web format",
+    "format:web:check": "pnpm --filter @qryvanta/web format:check",
     "contracts:generate": "cargo test -p qryvanta-api export_ts_bindings -- --nocapture",
     "contracts:check": "pnpm contracts:generate && git diff --exit-code -- packages/api-types/src/generated",
     "dev:web": "pnpm --filter @qryvanta/web dev",

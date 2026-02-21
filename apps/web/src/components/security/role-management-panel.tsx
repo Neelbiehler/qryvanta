@@ -141,7 +141,9 @@ export function RoleManagementPanel({
     }
   }
 
-  async function handleRegistrationModeSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleRegistrationModeSubmit(
+    event: FormEvent<HTMLFormElement>,
+  ) {
     event.preventDefault();
     setErrorMessage(null);
     setIsUpdatingRegistrationMode(true);
@@ -149,7 +151,8 @@ export function RoleManagementPanel({
     try {
       const formData = new FormData(event.currentTarget);
       const selectedMode =
-        formData.get("tenant_registration_mode")?.toString() ?? registrationMode;
+        formData.get("tenant_registration_mode")?.toString() ??
+        registrationMode;
 
       const payload: UpdateTenantRegistrationModeRequest = {
         registration_mode: selectedMode,
@@ -161,7 +164,9 @@ export function RoleManagementPanel({
 
       if (!response.ok) {
         const payload = (await response.json()) as { message?: string };
-        setErrorMessage(payload.message ?? "Unable to update registration mode.");
+        setErrorMessage(
+          payload.message ?? "Unable to update registration mode.",
+        );
         return;
       }
       router.refresh();
@@ -187,7 +192,9 @@ export function RoleManagementPanel({
         </div>
 
         <fieldset className="space-y-2">
-          <legend className="text-sm font-medium text-zinc-800">Permissions</legend>
+          <legend className="text-sm font-medium text-zinc-800">
+            Permissions
+          </legend>
           <div className="space-y-2 rounded-md border border-emerald-100 bg-white p-3">
             {PERMISSION_OPTIONS.map((permission) => (
               <label
@@ -243,9 +250,14 @@ export function RoleManagementPanel({
         </Button>
       </form>
 
-      <form className="space-y-4 md:col-span-2" onSubmit={handleRegistrationModeSubmit}>
+      <form
+        className="space-y-4 md:col-span-2"
+        onSubmit={handleRegistrationModeSubmit}
+      >
         <div className="space-y-2">
-          <Label htmlFor="tenant_registration_mode">Tenant Registration Mode</Label>
+          <Label htmlFor="tenant_registration_mode">
+            Tenant Registration Mode
+          </Label>
           <p className="text-sm text-zinc-600">
             Control whether users can self-register or only join by invite.
           </p>
@@ -259,7 +271,11 @@ export function RoleManagementPanel({
           </Select>
         </div>
 
-        <Button disabled={isUpdatingRegistrationMode} type="submit" variant="outline">
+        <Button
+          disabled={isUpdatingRegistrationMode}
+          type="submit"
+          variant="outline"
+        >
           {isUpdatingRegistrationMode ? "Saving..." : "Save Registration Mode"}
         </Button>
       </form>
@@ -274,12 +290,16 @@ export function RoleManagementPanel({
             >
               <div>
                 <p className="text-sm text-zinc-900">{assignment.subject}</p>
-                <p className="font-mono text-xs text-zinc-500">{assignment.role_name}</p>
+                <p className="font-mono text-xs text-zinc-500">
+                  {assignment.role_name}
+                </p>
               </div>
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => handleUnassign(assignment.subject, assignment.role_name)}
+                onClick={() =>
+                  handleUnassign(assignment.subject, assignment.role_name)
+                }
               >
                 Remove
               </Button>

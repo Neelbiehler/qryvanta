@@ -31,7 +31,10 @@ type AccountActionId =
   | "regenerate-codes"
   | "send-invite";
 
-async function readErrorMessage(response: Response, fallback: string): Promise<string> {
+async function readErrorMessage(
+  response: Response,
+  fallback: string,
+): Promise<string> {
   try {
     const payload = (await response.json()) as ErrorResponse;
     return payload.message ?? fallback;
@@ -42,13 +45,17 @@ async function readErrorMessage(response: Response, fallback: string): Promise<s
 
 export function useSecurityAccount() {
   const [status, setStatus] = useState("");
-  const [activeAction, setActiveAction] = useState<AccountActionId | null>(null);
+  const [activeAction, setActiveAction] = useState<AccountActionId | null>(
+    null,
+  );
   const [me, setMe] = useState<UserIdentityResponse | null>(null);
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
 
-  const [enrollment, setEnrollment] = useState<TotpEnrollmentResponse | null>(null);
+  const [enrollment, setEnrollment] = useState<TotpEnrollmentResponse | null>(
+    null,
+  );
   const [confirmCode, setConfirmCode] = useState("");
   const [disablePassword, setDisablePassword] = useState("");
   const [regeneratePassword, setRegeneratePassword] = useState("");
@@ -82,9 +89,16 @@ export function useSecurityAccount() {
 
   async function resendVerification() {
     await withAction("resend-verification", async () => {
-      const response = await apiFetch("/auth/resend-verification", { method: "POST" });
+      const response = await apiFetch("/auth/resend-verification", {
+        method: "POST",
+      });
       if (!response.ok) {
-        setStatus(await readErrorMessage(response, "Failed to send verification email."));
+        setStatus(
+          await readErrorMessage(
+            response,
+            "Failed to send verification email.",
+          ),
+        );
         return;
       }
       const body = (await response.json()) as GenericMessageResponse;
@@ -124,9 +138,13 @@ export function useSecurityAccount() {
 
   async function startMfaEnrollment() {
     await withAction("start-mfa", async () => {
-      const response = await apiFetch("/auth/mfa/totp/enroll", { method: "POST" });
+      const response = await apiFetch("/auth/mfa/totp/enroll", {
+        method: "POST",
+      });
       if (!response.ok) {
-        setStatus(await readErrorMessage(response, "MFA enrollment start failed."));
+        setStatus(
+          await readErrorMessage(response, "MFA enrollment start failed."),
+        );
         return;
       }
 
@@ -200,7 +218,10 @@ export function useSecurityAccount() {
 
       if (!response.ok) {
         setStatus(
-          await readErrorMessage(response, "Failed to regenerate recovery codes."),
+          await readErrorMessage(
+            response,
+            "Failed to regenerate recovery codes.",
+          ),
         );
         return;
       }

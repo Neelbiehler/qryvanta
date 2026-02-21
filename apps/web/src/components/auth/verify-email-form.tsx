@@ -47,7 +47,9 @@ export function VerifyEmailForm({ token }: VerifyEmailFormProps) {
       });
 
       if (!response.ok) {
-        const payload = (await response.json().catch(() => ({}))) as ErrorResponse;
+        const payload = (await response
+          .json()
+          .catch(() => ({}))) as ErrorResponse;
         setStatus(payload.message ?? "Verification failed.");
         return;
       }

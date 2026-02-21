@@ -52,16 +52,24 @@ export default async function AppHomePage({ params }: AppHomePageProps) {
     throw new Error("Failed to load app navigation");
   }
 
-  const navigation = (await navigationResponse.json()) as AppEntityBindingResponse[];
+  const navigation =
+    (await navigationResponse.json()) as AppEntityBindingResponse[];
 
   return (
     <Card>
       <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">App Workspace</p>
-          <CardTitle className="font-serif text-3xl">{appLogicalName}</CardTitle>
+          <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
+            App Workspace
+          </p>
+          <CardTitle className="font-serif text-3xl">
+            {appLogicalName}
+          </CardTitle>
         </div>
-        <Link href="/apps" className={cn(buttonVariants({ variant: "outline" }))}>
+        <Link
+          href="/apps"
+          className={cn(buttonVariants({ variant: "outline" }))}
+        >
           Back to apps
         </Link>
       </CardHeader>
@@ -78,12 +86,20 @@ export default async function AppHomePage({ params }: AppHomePageProps) {
           <TableBody>
             {navigation.length > 0 ? (
               navigation.map((item) => (
-                <TableRow key={`${item.app_logical_name}.${item.entity_logical_name}`}>
-                  <TableCell className="font-mono text-xs">{item.entity_logical_name}</TableCell>
-                  <TableCell>{item.navigation_label ?? item.entity_logical_name}</TableCell>
+                <TableRow
+                  key={`${item.app_logical_name}.${item.entity_logical_name}`}
+                >
+                  <TableCell className="font-mono text-xs">
+                    {item.entity_logical_name}
+                  </TableCell>
+                  <TableCell>
+                    {item.navigation_label ?? item.entity_logical_name}
+                  </TableCell>
                   <TableCell>
                     <Link
-                      className={cn(buttonVariants({ size: "sm", variant: "outline" }))}
+                      className={cn(
+                        buttonVariants({ size: "sm", variant: "outline" }),
+                      )}
                       href={`/apps/${appLogicalName}/${item.entity_logical_name}`}
                     >
                       Open

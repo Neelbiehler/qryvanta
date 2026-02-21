@@ -26,10 +26,17 @@ export function AccountSnapshotCard({
     <Card>
       <CardHeader>
         <CardTitle>Account Snapshot</CardTitle>
-        <CardDescription>Check the authenticated identity currently loaded.</CardDescription>
+        <CardDescription>
+          Check the authenticated identity currently loaded.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <Button onClick={onLoadMe} disabled={busy} variant="outline" className="w-full">
+        <Button
+          onClick={onLoadMe}
+          disabled={busy}
+          variant="outline"
+          className="w-full"
+        >
           Refresh account details
         </Button>
         {me ? (
@@ -48,7 +55,11 @@ export function AccountSnapshotCard({
             </p>
           </div>
         ) : null}
-        <Button onClick={onResendVerification} disabled={busy} className="w-full">
+        <Button
+          onClick={onResendVerification}
+          disabled={busy}
+          className="w-full"
+        >
           Resend verification email
         </Button>
       </CardContent>

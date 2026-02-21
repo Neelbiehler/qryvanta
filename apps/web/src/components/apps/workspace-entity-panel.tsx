@@ -33,7 +33,9 @@ type WorkspaceEntityPanelProps = {
   records: RuntimeRecordResponse[];
 };
 
-function buildInitialValues(schema: PublishedSchemaResponse): Record<string, unknown> {
+function buildInitialValues(
+  schema: PublishedSchemaResponse,
+): Record<string, unknown> {
   const values: Record<string, unknown> = {};
   for (const field of schema.fields) {
     if (field.default_value !== null) {
@@ -117,7 +119,9 @@ export function WorkspaceEntityPanel({
   async function handleCreateRecord(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!capabilities.can_create) {
-      setErrorMessage("You do not have create permission for this entity in this app.");
+      setErrorMessage(
+        "You do not have create permission for this entity in this app.",
+      );
       return;
     }
 
@@ -155,7 +159,9 @@ export function WorkspaceEntityPanel({
 
   async function handleDeleteRecord(recordId: string) {
     if (!capabilities.can_delete) {
-      setErrorMessage("You do not have delete permission for this entity in this app.");
+      setErrorMessage(
+        "You do not have delete permission for this entity in this app.",
+      );
       return;
     }
 
@@ -188,10 +194,17 @@ export function WorkspaceEntityPanel({
 
   return (
     <div className="space-y-6">
-      <form className="space-y-4 rounded-md border border-emerald-100 bg-white p-4" onSubmit={handleCreateRecord}>
+      <form
+        className="space-y-4 rounded-md border border-emerald-100 bg-white p-4"
+        onSubmit={handleCreateRecord}
+      >
         <div>
-          <p className="text-sm font-medium text-zinc-800">New {schema.entity_display_name} Record</p>
-          <p className="text-xs text-zinc-500">Schema version {schema.version}</p>
+          <p className="text-sm font-medium text-zinc-800">
+            New {schema.entity_display_name} Record
+          </p>
+          <p className="text-xs text-zinc-500">
+            Schema version {schema.version}
+          </p>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
@@ -207,7 +220,9 @@ export function WorkspaceEntityPanel({
                     <Checkbox
                       id={fieldId}
                       checked={Boolean(value)}
-                      onChange={(event) => setFieldValue(field.logical_name, event.target.checked)}
+                      onChange={(event) =>
+                        setFieldValue(field.logical_name, event.target.checked)
+                      }
                     />
                     {field.display_name}
                   </label>
@@ -217,13 +232,18 @@ export function WorkspaceEntityPanel({
 
             if (field.field_type === "json") {
               return (
-                <div className="space-y-2 md:col-span-2" key={field.logical_name}>
+                <div
+                  className="space-y-2 md:col-span-2"
+                  key={field.logical_name}
+                >
                   <Label htmlFor={fieldId}>{field.display_name}</Label>
                   <Textarea
                     id={fieldId}
                     className="font-mono text-xs"
                     value={String(value ?? "")}
-                    onChange={(event) => setFieldValue(field.logical_name, event.target.value)}
+                    onChange={(event) =>
+                      setFieldValue(field.logical_name, event.target.value)
+                    }
                     placeholder='{"value":"example"}'
                   />
                 </div>
@@ -235,9 +255,19 @@ export function WorkspaceEntityPanel({
                 <Label htmlFor={fieldId}>{field.display_name}</Label>
                 <Input
                   id={fieldId}
-                  type={field.field_type === "number" ? "number" : field.field_type === "date" ? "date" : field.field_type === "datetime" ? "datetime-local" : "text"}
+                  type={
+                    field.field_type === "number"
+                      ? "number"
+                      : field.field_type === "date"
+                        ? "date"
+                        : field.field_type === "datetime"
+                          ? "datetime-local"
+                          : "text"
+                  }
                   value={String(value ?? "")}
-                  onChange={(event) => setFieldValue(field.logical_name, event.target.value)}
+                  onChange={(event) =>
+                    setFieldValue(field.logical_name, event.target.value)
+                  }
                   required={field.is_required}
                 />
               </div>
@@ -262,8 +292,12 @@ export function WorkspaceEntityPanel({
           {records.length > 0 ? (
             records.map((record) => (
               <TableRow key={record.record_id}>
-                <TableCell className="font-mono text-xs">{record.record_id}</TableCell>
-                <TableCell className="font-mono text-xs">{JSON.stringify(record.data)}</TableCell>
+                <TableCell className="font-mono text-xs">
+                  {record.record_id}
+                </TableCell>
+                <TableCell className="font-mono text-xs">
+                  {JSON.stringify(record.data)}
+                </TableCell>
                 <TableCell>
                   {capabilities.can_delete ? (
                     <Button
@@ -273,10 +307,14 @@ export function WorkspaceEntityPanel({
                       type="button"
                       onClick={() => handleDeleteRecord(record.record_id)}
                     >
-                      {deletingRecordId === record.record_id ? "Deleting..." : "Delete"}
+                      {deletingRecordId === record.record_id
+                        ? "Deleting..."
+                        : "Delete"}
                     </Button>
                   ) : (
-                    <span className="text-xs text-zinc-500">No delete access</span>
+                    <span className="text-xs text-zinc-500">
+                      No delete access
+                    </span>
                   )}
                 </TableCell>
               </TableRow>
@@ -292,10 +330,14 @@ export function WorkspaceEntityPanel({
       </Table>
 
       {errorMessage ? (
-        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessage}</p>
+        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {errorMessage}
+        </p>
       ) : null}
       {statusMessage ? (
-        <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{statusMessage}</p>
+        <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          {statusMessage}
+        </p>
       ) : null}
     </div>
   );
