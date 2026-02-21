@@ -5,7 +5,9 @@ use async_trait::async_trait;
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
 
 use qryvanta_application::{
-    CreateRoleInput, RoleAssignment, RoleDefinition, SecurityAdminRepository,
+    AuditRetentionPolicy, CreateRoleInput, CreateTemporaryAccessGrantInput, RoleAssignment,
+    RoleDefinition, RuntimeFieldPermissionEntry, SaveRuntimeFieldPermissionsInput,
+    SecurityAdminRepository, TemporaryAccessGrant, TemporaryAccessGrantQuery,
 };
 use qryvanta_core::{AppError, AppResult, TenantId};
 use qryvanta_domain::{Permission, RegistrationMode};
@@ -38,6 +40,27 @@ struct RoleAssignmentRow {
     role_id: uuid::Uuid,
     role_name: String,
     assigned_at: String,
+}
+
+#[derive(Debug, FromRow)]
+struct RuntimeFieldPermissionRow {
+    subject: String,
+    entity_logical_name: String,
+    field_logical_name: String,
+    can_read: bool,
+    can_write: bool,
+    updated_at: String,
+}
+
+#[derive(Debug, FromRow)]
+struct TemporaryAccessGrantRow {
+    grant_id: uuid::Uuid,
+    subject: String,
+    reason: String,
+    created_by_subject: String,
+    expires_at: String,
+    revoked_at: Option<String>,
+    permission: Option<String>,
 }
 
 #[async_trait]
@@ -248,6 +271,331 @@ impl SecurityAdminRepository for PostgresSecurityAdminRepository {
             .collect())
     }
 
+    async fn save_runtime_field_permissions(
+        &self,
+        tenant_id: TenantId,
+        input: SaveRuntimeFieldPermissionsInput,
+    ) -> AppResult<Vec<RuntimeFieldPermissionEntry>> {
+        let mut transaction =
+            self.pool.begin().await.map_err(|error| {
+                AppError::Internal(format!("failed to begin transaction: {error}"))
+            })?;
+
+        sqlx::query(
+            r#"
+            DELETE FROM runtime_subject_field_permissions
+            WHERE tenant_id = $1
+              AND subject = $2
+              AND entity_logical_name = $3
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(input.subject.as_str())
+        .bind(input.entity_logical_name.as_str())
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to clear runtime field permissions for subject '{}' and entity '{}': {error}",
+                input.subject, input.entity_logical_name
+            ))
+        })?;
+
+        for field in &input.fields {
+            sqlx::query(
+                r#"
+                INSERT INTO runtime_subject_field_permissions (
+                    tenant_id,
+                    subject,
+                    entity_logical_name,
+                    field_logical_name,
+                    can_read,
+                    can_write
+                )
+                VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT (tenant_id, subject, entity_logical_name, field_logical_name)
+                DO UPDATE
+                SET can_read = EXCLUDED.can_read,
+                    can_write = EXCLUDED.can_write,
+                    updated_at = now()
+                "#,
+            )
+            .bind(tenant_id.as_uuid())
+            .bind(input.subject.as_str())
+            .bind(input.entity_logical_name.as_str())
+            .bind(field.field_logical_name.as_str())
+            .bind(field.can_read)
+            .bind(field.can_write)
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| {
+                AppError::Internal(format!(
+                    "failed to save runtime field permission for field '{}': {error}",
+                    field.field_logical_name
+                ))
+            })?;
+        }
+
+        let rows = sqlx::query_as::<_, RuntimeFieldPermissionRow>(
+            r#"
+            SELECT
+                subject,
+                entity_logical_name,
+                field_logical_name,
+                can_read,
+                can_write,
+                to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at
+            FROM runtime_subject_field_permissions
+            WHERE tenant_id = $1
+              AND subject = $2
+              AND entity_logical_name = $3
+            ORDER BY field_logical_name
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(input.subject.as_str())
+        .bind(input.entity_logical_name.as_str())
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to list saved runtime field permissions for subject '{}' and entity '{}': {error}",
+                input.subject, input.entity_logical_name
+            ))
+        })?;
+
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!("failed to commit transaction: {error}"))
+        })?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| RuntimeFieldPermissionEntry {
+                subject: row.subject,
+                entity_logical_name: row.entity_logical_name,
+                field_logical_name: row.field_logical_name,
+                can_read: row.can_read,
+                can_write: row.can_write,
+                updated_at: row.updated_at,
+            })
+            .collect())
+    }
+
+    async fn list_runtime_field_permissions(
+        &self,
+        tenant_id: TenantId,
+        subject: Option<&str>,
+        entity_logical_name: Option<&str>,
+    ) -> AppResult<Vec<RuntimeFieldPermissionEntry>> {
+        let rows = sqlx::query_as::<_, RuntimeFieldPermissionRow>(
+            r#"
+            SELECT
+                subject,
+                entity_logical_name,
+                field_logical_name,
+                can_read,
+                can_write,
+                to_char(updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS updated_at
+            FROM runtime_subject_field_permissions
+            WHERE tenant_id = $1
+              AND ($2::TEXT IS NULL OR subject = $2)
+              AND ($3::TEXT IS NULL OR entity_logical_name = $3)
+            ORDER BY subject, entity_logical_name, field_logical_name
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(subject)
+        .bind(entity_logical_name)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!("failed to list runtime field permissions: {error}"))
+        })?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| RuntimeFieldPermissionEntry {
+                subject: row.subject,
+                entity_logical_name: row.entity_logical_name,
+                field_logical_name: row.field_logical_name,
+                can_read: row.can_read,
+                can_write: row.can_write,
+                updated_at: row.updated_at,
+            })
+            .collect())
+    }
+
+    async fn create_temporary_access_grant(
+        &self,
+        tenant_id: TenantId,
+        created_by_subject: &str,
+        input: CreateTemporaryAccessGrantInput,
+    ) -> AppResult<TemporaryAccessGrant> {
+        let mut transaction =
+            self.pool.begin().await.map_err(|error| {
+                AppError::Internal(format!("failed to begin transaction: {error}"))
+            })?;
+
+        let grant_row = sqlx::query_as::<_, TemporaryAccessGrantRow>(
+            r#"
+            INSERT INTO security_temporary_access_grants (
+                tenant_id,
+                subject,
+                reason,
+                created_by_subject,
+                expires_at
+            )
+            VALUES ($1, $2, $3, $4, now() + make_interval(mins => $5::INTEGER))
+            RETURNING
+                id AS grant_id,
+                subject,
+                reason,
+                created_by_subject,
+                to_char(expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS expires_at,
+                NULL::TEXT AS revoked_at,
+                NULL::TEXT AS permission
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(input.subject.as_str())
+        .bind(input.reason.as_str())
+        .bind(created_by_subject)
+        .bind(i32::try_from(input.duration_minutes).map_err(|_| {
+            AppError::Validation(
+                "temporary access duration_minutes exceeds supported range".to_owned(),
+            )
+        })?)
+        .fetch_one(&mut *transaction)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!("failed to create temporary access grant: {error}"))
+        })?;
+
+        for permission in &input.permissions {
+            sqlx::query(
+                r#"
+                INSERT INTO security_temporary_access_grant_permissions (grant_id, permission)
+                VALUES ($1, $2)
+                ON CONFLICT (grant_id, permission) DO NOTHING
+                "#,
+            )
+            .bind(grant_row.grant_id)
+            .bind(permission.as_str())
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| {
+                AppError::Internal(format!(
+                    "failed to persist temporary access grant permissions: {error}"
+                ))
+            })?;
+        }
+
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!("failed to commit transaction: {error}"))
+        })?;
+
+        Ok(TemporaryAccessGrant {
+            grant_id: grant_row.grant_id.to_string(),
+            subject: input.subject,
+            permissions: input.permissions,
+            reason: input.reason,
+            created_by_subject: grant_row.created_by_subject,
+            expires_at: grant_row.expires_at,
+            revoked_at: None,
+        })
+    }
+
+    async fn revoke_temporary_access_grant(
+        &self,
+        tenant_id: TenantId,
+        revoked_by_subject: &str,
+        grant_id: &str,
+        revoke_reason: Option<&str>,
+    ) -> AppResult<()> {
+        let parsed_grant_id = uuid::Uuid::parse_str(grant_id)
+            .map_err(|_| AppError::Validation(format!("invalid grant_id '{}'", grant_id)))?;
+
+        let rows_affected = sqlx::query(
+            r#"
+            UPDATE security_temporary_access_grants
+            SET revoked_at = now(),
+                revoked_by_subject = $3,
+                revoke_reason = $4
+            WHERE tenant_id = $1
+              AND id = $2
+              AND revoked_at IS NULL
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(parsed_grant_id)
+        .bind(revoked_by_subject)
+        .bind(revoke_reason)
+        .execute(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!("failed to revoke temporary access grant: {error}"))
+        })?
+        .rows_affected();
+
+        if rows_affected == 0 {
+            return Err(AppError::NotFound(format!(
+                "temporary access grant '{}' was not found or already revoked",
+                grant_id
+            )));
+        }
+
+        Ok(())
+    }
+
+    async fn list_temporary_access_grants(
+        &self,
+        tenant_id: TenantId,
+        query: TemporaryAccessGrantQuery,
+    ) -> AppResult<Vec<TemporaryAccessGrant>> {
+        let capped_limit = query.limit.clamp(1, 200) as i64;
+        let capped_offset = query.offset.min(5_000) as i64;
+
+        let rows = sqlx::query_as::<_, TemporaryAccessGrantRow>(
+            r#"
+            SELECT
+                grants.id AS grant_id,
+                grants.subject,
+                grants.reason,
+                grants.created_by_subject,
+                to_char(grants.expires_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS expires_at,
+                CASE
+                    WHEN grants.revoked_at IS NULL THEN NULL
+                    ELSE to_char(grants.revoked_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+                END AS revoked_at,
+                permissions.permission
+            FROM security_temporary_access_grants AS grants
+            LEFT JOIN security_temporary_access_grant_permissions AS permissions
+                ON permissions.grant_id = grants.id
+            WHERE grants.tenant_id = $1
+              AND ($2::TEXT IS NULL OR grants.subject = $2)
+              AND (
+                  $3::BOOLEAN = false
+                  OR (grants.revoked_at IS NULL AND grants.expires_at > now())
+              )
+            ORDER BY grants.created_at DESC, permissions.permission
+            LIMIT $4
+            OFFSET $5
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(query.subject)
+        .bind(query.active_only)
+        .bind(capped_limit)
+        .bind(capped_offset)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!("failed to list temporary access grants: {error}"))
+        })?;
+
+        aggregate_temporary_access_grants(rows, tenant_id)
+    }
+
     async fn registration_mode(&self, tenant_id: TenantId) -> AppResult<RegistrationMode> {
         let stored_mode = sqlx::query_scalar::<_, String>(
             r#"
@@ -305,6 +653,68 @@ impl SecurityAdminRepository for PostgresSecurityAdminRepository {
             ))
         })
     }
+
+    async fn audit_retention_policy(&self, tenant_id: TenantId) -> AppResult<AuditRetentionPolicy> {
+        let retention_days = sqlx::query_scalar::<_, i32>(
+            r#"
+            SELECT audit_retention_days
+            FROM tenants
+            WHERE id = $1
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to resolve tenant audit retention policy: {error}"
+            ))
+        })?
+        .ok_or_else(|| AppError::NotFound(format!("tenant '{}' not found", tenant_id)))?;
+
+        Ok(AuditRetentionPolicy {
+            retention_days: u16::try_from(retention_days).map_err(|_| {
+                AppError::Internal(format!(
+                    "invalid stored audit retention_days '{}' for tenant '{}'",
+                    retention_days, tenant_id
+                ))
+            })?,
+        })
+    }
+
+    async fn set_audit_retention_policy(
+        &self,
+        tenant_id: TenantId,
+        retention_days: u16,
+    ) -> AppResult<AuditRetentionPolicy> {
+        let stored_days = sqlx::query_scalar::<_, i32>(
+            r#"
+            UPDATE tenants
+            SET audit_retention_days = $2
+            WHERE id = $1
+            RETURNING audit_retention_days
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(i32::from(retention_days))
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to update tenant audit retention policy: {error}"
+            ))
+        })?
+        .ok_or_else(|| AppError::NotFound(format!("tenant '{}' not found", tenant_id)))?;
+
+        Ok(AuditRetentionPolicy {
+            retention_days: u16::try_from(stored_days).map_err(|_| {
+                AppError::Internal(format!(
+                    "invalid stored audit retention_days '{}' for tenant '{}'",
+                    stored_days, tenant_id
+                ))
+            })?,
+        })
+    }
 }
 
 fn aggregate_roles(rows: Vec<RoleRow>, tenant_id: TenantId) -> AppResult<Vec<RoleDefinition>> {
@@ -343,6 +753,45 @@ fn map_role_conflict(error: sqlx::Error, role_name: &str) -> AppError {
     }
 
     AppError::Internal(format!("failed to create role: {error}"))
+}
+
+fn aggregate_temporary_access_grants(
+    rows: Vec<TemporaryAccessGrantRow>,
+    tenant_id: TenantId,
+) -> AppResult<Vec<TemporaryAccessGrant>> {
+    let mut grants = HashMap::<uuid::Uuid, TemporaryAccessGrant>::new();
+    let mut grant_order = Vec::<uuid::Uuid>::new();
+
+    for row in rows {
+        let grant_entry = grants.entry(row.grant_id).or_insert_with(|| {
+            grant_order.push(row.grant_id);
+            TemporaryAccessGrant {
+                grant_id: row.grant_id.to_string(),
+                subject: row.subject.clone(),
+                permissions: Vec::new(),
+                reason: row.reason.clone(),
+                created_by_subject: row.created_by_subject.clone(),
+                expires_at: row.expires_at.clone(),
+                revoked_at: row.revoked_at.clone(),
+            }
+        });
+
+        if let Some(permission_value) = row.permission {
+            let permission = Permission::from_str(permission_value.as_str()).map_err(|error| {
+                AppError::Internal(format!(
+                    "invalid temporary access permission '{}' for tenant '{}': {error}",
+                    permission_value, tenant_id
+                ))
+            })?;
+
+            grant_entry.permissions.push(permission);
+        }
+    }
+
+    Ok(grant_order
+        .into_iter()
+        .filter_map(|grant_id| grants.remove(&grant_id))
+        .collect())
 }
 
 /// Ensures the system owner role has full baseline grants.
@@ -397,3 +846,6 @@ pub async fn assign_owner_role_grants(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

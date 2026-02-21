@@ -31,11 +31,41 @@ pub struct UpdateRuntimeRecordRequest {
 #[derive(Debug, Deserialize, TS)]
 #[ts(
     export,
+    export_to = "../../../../packages/api-types/src/generated/runtime-record-query-filter-request.ts"
+)]
+pub struct RuntimeRecordQueryFilterRequest {
+    pub field_logical_name: String,
+    pub operator: String,
+    #[ts(type = "unknown")]
+    pub field_value: Value,
+}
+
+/// Incoming runtime record query sort payload.
+#[derive(Debug, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../../packages/api-types/src/generated/runtime-record-query-sort-request.ts"
+)]
+pub struct RuntimeRecordQuerySortRequest {
+    pub field_logical_name: String,
+    pub direction: Option<String>,
+}
+
+/// Incoming runtime record query payload.
+#[derive(Debug, Deserialize, TS)]
+#[ts(
+    export,
     export_to = "../../../../packages/api-types/src/generated/query-runtime-records-request.ts"
 )]
 pub struct QueryRuntimeRecordsRequest {
     pub limit: Option<usize>,
     pub offset: Option<usize>,
+    pub logical_mode: Option<String>,
+    #[ts(type = "Array<RuntimeRecordQueryFilterRequest> | null")]
+    pub conditions: Option<Vec<RuntimeRecordQueryFilterRequest>>,
+    #[ts(type = "Array<RuntimeRecordQuerySortRequest> | null")]
+    pub sort: Option<Vec<RuntimeRecordQuerySortRequest>>,
+    /// Legacy exact-match map; converted to `eq` conditions when present.
     #[ts(type = "Record<string, unknown> | null")]
     pub filters: Option<BTreeMap<String, Value>>,
 }

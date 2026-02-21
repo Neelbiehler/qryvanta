@@ -23,9 +23,12 @@ pub use runtime::{
     UpdateRuntimeRecordRequest,
 };
 pub use security::{
-    AssignRoleRequest, AuditLogEntryResponse, CreateRoleRequest, RemoveRoleAssignmentRequest,
-    RoleAssignmentResponse, RoleResponse, TenantRegistrationModeResponse,
-    UpdateTenantRegistrationModeRequest,
+    AssignRoleRequest, AuditLogEntryResponse, AuditPurgeResultResponse,
+    AuditRetentionPolicyResponse, CreateRoleRequest, CreateTemporaryAccessGrantRequest,
+    RemoveRoleAssignmentRequest, RevokeTemporaryAccessGrantRequest, RoleAssignmentResponse,
+    RoleResponse, RuntimeFieldPermissionResponse, SaveRuntimeFieldPermissionsRequest,
+    TemporaryAccessGrantResponse, TenantRegistrationModeResponse,
+    UpdateAuditRetentionPolicyRequest, UpdateTenantRegistrationModeRequest,
 };
 
 #[cfg(test)]
@@ -33,14 +36,17 @@ mod tests {
     use super::{
         AcceptInviteRequest, AppEntityBindingResponse, AppEntityCapabilitiesResponse, AppResponse,
         AppRoleEntityPermissionResponse, AssignRoleRequest, AuditLogEntryResponse,
-        AuthLoginRequest, AuthLoginResponse, AuthMfaVerifyRequest, AuthRegisterRequest,
-        BindAppEntityRequest, CreateAppRequest, CreateEntityRequest, CreateFieldRequest,
-        CreateRoleRequest, CreateRuntimeRecordRequest, EntityResponse, FieldResponse,
-        GenericMessageResponse, HealthResponse, InviteRequest, PublishedSchemaResponse,
-        QueryRuntimeRecordsRequest, RemoveRoleAssignmentRequest, RoleAssignmentResponse,
-        RoleResponse, RuntimeRecordResponse, SaveAppRoleEntityPermissionRequest,
-        TenantRegistrationModeResponse, UpdateRuntimeRecordRequest,
-        UpdateTenantRegistrationModeRequest, UserIdentityResponse,
+        AuditPurgeResultResponse, AuditRetentionPolicyResponse, AuthLoginRequest,
+        AuthLoginResponse, AuthMfaVerifyRequest, AuthRegisterRequest, BindAppEntityRequest,
+        CreateAppRequest, CreateEntityRequest, CreateFieldRequest, CreateRoleRequest,
+        CreateRuntimeRecordRequest, CreateTemporaryAccessGrantRequest, EntityResponse,
+        FieldResponse, GenericMessageResponse, HealthResponse, InviteRequest,
+        PublishedSchemaResponse, QueryRuntimeRecordsRequest, RemoveRoleAssignmentRequest,
+        RevokeTemporaryAccessGrantRequest, RoleAssignmentResponse, RoleResponse,
+        RuntimeFieldPermissionResponse, RuntimeRecordResponse, SaveAppRoleEntityPermissionRequest,
+        SaveRuntimeFieldPermissionsRequest, TemporaryAccessGrantResponse,
+        TenantRegistrationModeResponse, UpdateAuditRetentionPolicyRequest,
+        UpdateRuntimeRecordRequest, UpdateTenantRegistrationModeRequest, UserIdentityResponse,
     };
 
     use crate::error::ErrorResponse;
@@ -61,7 +67,14 @@ mod tests {
         AssignRoleRequest::export(&config)?;
         RemoveRoleAssignmentRequest::export(&config)?;
         UpdateTenantRegistrationModeRequest::export(&config)?;
+        super::security::RuntimeFieldPermissionInputRequest::export(&config)?;
+        SaveRuntimeFieldPermissionsRequest::export(&config)?;
+        CreateTemporaryAccessGrantRequest::export(&config)?;
+        RevokeTemporaryAccessGrantRequest::export(&config)?;
+        UpdateAuditRetentionPolicyRequest::export(&config)?;
         UpdateRuntimeRecordRequest::export(&config)?;
+        super::runtime::RuntimeRecordQueryFilterRequest::export(&config)?;
+        super::runtime::RuntimeRecordQuerySortRequest::export(&config)?;
         QueryRuntimeRecordsRequest::export(&config)?;
         EntityResponse::export(&config)?;
         AppResponse::export(&config)?;
@@ -75,6 +88,10 @@ mod tests {
         RoleAssignmentResponse::export(&config)?;
         TenantRegistrationModeResponse::export(&config)?;
         AuditLogEntryResponse::export(&config)?;
+        RuntimeFieldPermissionResponse::export(&config)?;
+        TemporaryAccessGrantResponse::export(&config)?;
+        AuditRetentionPolicyResponse::export(&config)?;
+        AuditPurgeResultResponse::export(&config)?;
         ErrorResponse::export(&config)?;
         HealthResponse::export(&config)?;
         UserIdentityResponse::export(&config)?;

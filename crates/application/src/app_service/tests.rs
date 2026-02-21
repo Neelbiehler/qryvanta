@@ -12,7 +12,8 @@ use qryvanta_domain::{
 
 use crate::{
     AppRepository, AuditEvent, AuditRepository, AuthorizationRepository, AuthorizationService,
-    CreateAppInput, RecordListQuery, RuntimeRecordService, SubjectEntityPermission,
+    CreateAppInput, RecordListQuery, RuntimeFieldGrant, RuntimeRecordService,
+    SubjectEntityPermission, TemporaryPermissionGrant,
 };
 
 use super::AppService;
@@ -46,6 +47,24 @@ impl AuthorizationRepository for FakeAuthorizationRepository {
             .get(&(tenant_id, subject.to_owned()))
             .cloned()
             .unwrap_or_default())
+    }
+
+    async fn list_runtime_field_grants_for_subject(
+        &self,
+        _tenant_id: TenantId,
+        _subject: &str,
+        _entity_logical_name: &str,
+    ) -> AppResult<Vec<RuntimeFieldGrant>> {
+        Ok(Vec::new())
+    }
+
+    async fn find_active_temporary_permission_grant(
+        &self,
+        _tenant_id: TenantId,
+        _subject: &str,
+        _permission: Permission,
+    ) -> AppResult<Option<TemporaryPermissionGrant>> {
+        Ok(None)
     }
 }
 
@@ -243,13 +262,16 @@ fn build_service(
     app_repository: Arc<FakeAppRepository>,
     runtime_record_service: Arc<FakeRuntimeRecordService>,
 ) -> AppService {
-    let authorization_service =
-        AuthorizationService::new(Arc::new(FakeAuthorizationRepository { grants }));
+    let audit_repository = Arc::new(FakeAuditRepository::default());
+    let authorization_service = AuthorizationService::new(
+        Arc::new(FakeAuthorizationRepository { grants }),
+        audit_repository.clone(),
+    );
     AppService::new(
         authorization_service,
         app_repository,
         runtime_record_service,
-        Arc::new(FakeAuditRepository::default()),
+        audit_repository,
     )
 }
 

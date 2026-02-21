@@ -1,5 +1,6 @@
 use qryvanta_application::{
-    MetadataRepository, RecordListQuery, RuntimeRecordFilter, RuntimeRecordQuery, UniqueFieldValue,
+    MetadataRepository, RecordListQuery, RuntimeRecordFilter, RuntimeRecordLogicalMode,
+    RuntimeRecordOperator, RuntimeRecordQuery, UniqueFieldValue,
 };
 use qryvanta_core::{AppError, TenantId};
 use qryvanta_domain::{EntityDefinition, EntityFieldDefinition, FieldType};
@@ -99,6 +100,7 @@ async fn runtime_record_unique_constraint_conflict() {
                 field_logical_name: "email".to_owned(),
                 field_value_hash: "same".to_owned(),
             }],
+            "alice",
         )
         .await;
     assert!(first.is_ok());
@@ -112,6 +114,7 @@ async fn runtime_record_unique_constraint_conflict() {
                 field_logical_name: "email".to_owned(),
                 field_value_hash: "same".to_owned(),
             }],
+            "alice",
         )
         .await;
     assert!(second.is_err());
@@ -123,12 +126,12 @@ async fn list_runtime_records_honors_offset_and_limit() {
     let tenant_id = TenantId::new();
 
     let first = repository
-        .create_runtime_record(tenant_id, "contact", json!({}), Vec::new())
+        .create_runtime_record(tenant_id, "contact", json!({}), Vec::new(), "alice")
         .await;
     assert!(first.is_ok());
 
     let second = repository
-        .create_runtime_record(tenant_id, "contact", json!({}), Vec::new())
+        .create_runtime_record(tenant_id, "contact", json!({}), Vec::new(), "alice")
         .await;
     assert!(second.is_ok());
 
@@ -139,6 +142,7 @@ async fn list_runtime_records_honors_offset_and_limit() {
             RecordListQuery {
                 limit: 1,
                 offset: 1,
+                owner_subject: None,
             },
         )
         .await;
@@ -174,7 +178,13 @@ async fn runtime_record_queries_do_not_leak_across_tenants() {
     );
 
     let left_record = repository
-        .create_runtime_record(left_tenant, "contact", json!({"name": "Alice"}), Vec::new())
+        .create_runtime_record(
+            left_tenant,
+            "contact",
+            json!({"name": "Alice"}),
+            Vec::new(),
+            "alice",
+        )
         .await;
     assert!(left_record.is_ok());
     let left_record = left_record.unwrap_or_else(|_| unreachable!());
@@ -186,6 +196,7 @@ async fn runtime_record_queries_do_not_leak_across_tenants() {
             RecordListQuery {
                 limit: 50,
                 offset: 0,
+                owner_subject: None,
             },
         )
         .await;
@@ -199,10 +210,15 @@ async fn runtime_record_queries_do_not_leak_across_tenants() {
             RuntimeRecordQuery {
                 limit: 50,
                 offset: 0,
+                logical_mode: RuntimeRecordLogicalMode::And,
                 filters: vec![RuntimeRecordFilter {
                     field_logical_name: "name".to_owned(),
+                    operator: RuntimeRecordOperator::Eq,
+                    field_type: FieldType::Text,
                     field_value: json!("Alice"),
                 }],
+                sort: Vec::new(),
+                owner_subject: None,
             },
         )
         .await;
@@ -238,7 +254,8 @@ async fn query_runtime_records_filters_and_paginates() {
                 tenant_id,
                 "contact",
                 json!({"name": "Alice", "active": true}),
-                Vec::new()
+                Vec::new(),
+                "alice"
             )
             .await
             .is_ok()
@@ -249,7 +266,8 @@ async fn query_runtime_records_filters_and_paginates() {
                 tenant_id,
                 "contact",
                 json!({"name": "Bob", "active": false}),
-                Vec::new()
+                Vec::new(),
+                "alice"
             )
             .await
             .is_ok()
@@ -260,7 +278,8 @@ async fn query_runtime_records_filters_and_paginates() {
                 tenant_id,
                 "contact",
                 json!({"name": "Carol", "active": true}),
-                Vec::new()
+                Vec::new(),
+                "alice"
             )
             .await
             .is_ok()
@@ -273,10 +292,15 @@ async fn query_runtime_records_filters_and_paginates() {
             RuntimeRecordQuery {
                 limit: 1,
                 offset: 1,
+                logical_mode: RuntimeRecordLogicalMode::And,
                 filters: vec![RuntimeRecordFilter {
                     field_logical_name: "active".to_owned(),
+                    operator: RuntimeRecordOperator::Eq,
+                    field_type: FieldType::Boolean,
                     field_value: json!(true),
                 }],
+                sort: Vec::new(),
+                owner_subject: None,
             },
         )
         .await;
@@ -376,7 +400,13 @@ async fn relation_reference_check_detects_incoming_reference() {
     assert!(deal_publish.is_ok());
 
     let contact_record = repository
-        .create_runtime_record(tenant_id, "contact", json!({"name": "Alice"}), Vec::new())
+        .create_runtime_record(
+            tenant_id,
+            "contact",
+            json!({"name": "Alice"}),
+            Vec::new(),
+            "alice",
+        )
         .await;
     assert!(contact_record.is_ok());
     let contact_record = contact_record.unwrap_or_else(|_| unreachable!());
@@ -387,6 +417,7 @@ async fn relation_reference_check_detects_incoming_reference() {
             "deal",
             json!({"owner_contact_id": contact_record.record_id().as_str()}),
             Vec::new(),
+            "alice",
         )
         .await;
     assert!(deal_record.is_ok());
@@ -502,7 +533,13 @@ async fn relation_reference_check_does_not_leak_across_tenants() {
     );
 
     let left_contact_record = repository
-        .create_runtime_record(left_tenant, "contact", json!({"name": "Alice"}), Vec::new())
+        .create_runtime_record(
+            left_tenant,
+            "contact",
+            json!({"name": "Alice"}),
+            Vec::new(),
+            "alice",
+        )
         .await;
     assert!(left_contact_record.is_ok());
     let left_contact_record = left_contact_record.unwrap_or_else(|_| unreachable!());
@@ -514,6 +551,7 @@ async fn relation_reference_check_does_not_leak_across_tenants() {
                 "deal",
                 json!({"owner_contact_id": left_contact_record.record_id().as_str()}),
                 Vec::new(),
+                "alice",
             )
             .await
             .is_ok()
@@ -536,6 +574,7 @@ async fn relation_reference_check_does_not_leak_across_tenants() {
                 "deal",
                 json!({"owner_contact_id": left_contact_record.record_id().as_str()}),
                 Vec::new(),
+                "alice",
             )
             .await
             .is_ok()

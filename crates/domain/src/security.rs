@@ -17,8 +17,12 @@ pub enum Permission {
     MetadataFieldWrite,
     /// Allows reading runtime records.
     RuntimeRecordRead,
+    /// Allows reading only runtime records owned by the subject.
+    RuntimeRecordReadOwn,
     /// Allows mutating runtime records.
     RuntimeRecordWrite,
+    /// Allows mutating only runtime records owned by the subject.
+    RuntimeRecordWriteOwn,
     /// Allows reading audit log entries.
     SecurityAuditRead,
     /// Allows managing roles and grants.
@@ -37,7 +41,9 @@ impl Permission {
             Self::MetadataFieldRead => "metadata.field.read",
             Self::MetadataFieldWrite => "metadata.field.write",
             Self::RuntimeRecordRead => "runtime.record.read",
+            Self::RuntimeRecordReadOwn => "runtime.record.read.own",
             Self::RuntimeRecordWrite => "runtime.record.write",
+            Self::RuntimeRecordWriteOwn => "runtime.record.write.own",
             Self::SecurityAuditRead => "security.audit.read",
             Self::SecurityRoleManage => "security.role.manage",
             Self::SecurityInviteSend => "security.invite.send",
@@ -53,7 +59,9 @@ impl Permission {
             Permission::MetadataFieldRead,
             Permission::MetadataFieldWrite,
             Permission::RuntimeRecordRead,
+            Permission::RuntimeRecordReadOwn,
             Permission::RuntimeRecordWrite,
+            Permission::RuntimeRecordWriteOwn,
             Permission::SecurityAuditRead,
             Permission::SecurityRoleManage,
             Permission::SecurityInviteSend,
@@ -78,7 +86,9 @@ impl FromStr for Permission {
             "metadata.field.read" => Ok(Self::MetadataFieldRead),
             "metadata.field.write" => Ok(Self::MetadataFieldWrite),
             "runtime.record.read" => Ok(Self::RuntimeRecordRead),
+            "runtime.record.read.own" => Ok(Self::RuntimeRecordReadOwn),
             "runtime.record.write" => Ok(Self::RuntimeRecordWrite),
+            "runtime.record.write.own" => Ok(Self::RuntimeRecordWriteOwn),
             "security.audit.read" => Ok(Self::SecurityAuditRead),
             "security.role.manage" => Ok(Self::SecurityRoleManage),
             "security.invite.send" => Ok(Self::SecurityInviteSend),
@@ -117,8 +127,20 @@ pub enum AuditAction {
     SecurityRoleAssigned,
     /// Emitted when a role is removed from a subject.
     SecurityRoleUnassigned,
+    /// Emitted when runtime field permissions are updated for a subject.
+    SecurityRuntimeFieldPermissionsSaved,
+    /// Emitted when temporary privileged access is granted.
+    SecurityTemporaryAccessGranted,
+    /// Emitted when temporary privileged access is revoked.
+    SecurityTemporaryAccessRevoked,
+    /// Emitted when temporary privileged access is used for authorization.
+    SecurityTemporaryAccessUsed,
     /// Emitted when tenant registration mode is updated.
     SecurityTenantRegistrationModeUpdated,
+    /// Emitted when audit retention policy is updated.
+    SecurityAuditRetentionUpdated,
+    /// Emitted when audit entries are purged by retention policy.
+    SecurityAuditEntriesPurged,
 }
 
 impl AuditAction {
@@ -138,9 +160,17 @@ impl AuditAction {
             Self::SecurityRoleCreated => "security.role.created",
             Self::SecurityRoleAssigned => "security.role.assigned",
             Self::SecurityRoleUnassigned => "security.role.unassigned",
+            Self::SecurityRuntimeFieldPermissionsSaved => {
+                "security.runtime.field_permissions.saved"
+            }
+            Self::SecurityTemporaryAccessGranted => "security.temporary_access.granted",
+            Self::SecurityTemporaryAccessRevoked => "security.temporary_access.revoked",
+            Self::SecurityTemporaryAccessUsed => "security.temporary_access.used",
             Self::SecurityTenantRegistrationModeUpdated => {
                 "security.tenant.registration_mode.updated"
             }
+            Self::SecurityAuditRetentionUpdated => "security.audit.retention.updated",
+            Self::SecurityAuditEntriesPurged => "security.audit.entries.purged",
         }
     }
 }

@@ -44,8 +44,11 @@ Current RBAC baseline:
 - Role administration endpoints allow custom role creation and subject assignment.
 - Security administration endpoints expose tenant registration mode read/update controls.
 - Baseline permissions now include metadata field and runtime record scopes.
+- Runtime permissions now include own-scope grants (`runtime.record.read.own`, `runtime.record.write.own`) for owner-constrained access.
 - Metadata writes now require both entity and field-write scopes.
 - Authenticated subjects are mapped to tenant-scoped runtime `contact` records during bootstrap/login flows without granting control-plane RBAC permissions.
+- Security administration now supports runtime field-level read/write grants per subject and entity.
+- Temporary privileged access grants can be created/revoked with explicit reason and expiration windows.
 
 ## Audit Requirements
 
@@ -64,5 +67,24 @@ Current audit baseline:
 - Event fields include tenant, subject, action, resource type/id, and detail.
 - Role creation and assignment emit security audit events.
 - Tenant registration mode updates emit `security.tenant.registration_mode.updated` audit events.
+- Temporary privileged access grant create/revoke/use paths emit security audit events.
+- Audit retention policy is tenant-configurable and enforced via explicit purge workflow.
 - Authentication lifecycle events (bootstrap, login, MFA, passkey registration/login, logout, registration) are appended to `auth_events`.
-- Audit log reads support action/subject filters with offset pagination for admin review workflows.
+- Audit log reads and exports support action/subject filters with offset pagination for admin review workflows.
+
+## Security Administration APIs
+
+- Role and assignment administration:
+  - `GET|POST /api/security/roles`
+  - `GET|POST /api/security/role-assignments`
+  - `POST /api/security/role-unassignments`
+- Runtime field-level permissions:
+  - `GET|PUT /api/security/runtime-field-permissions`
+- Temporary privileged access grants:
+  - `GET|POST /api/security/temporary-access-grants`
+  - `POST /api/security/temporary-access-grants/:grant_id/revoke`
+- Audit operations:
+  - `GET /api/security/audit-log`
+  - `GET /api/security/audit-log/export`
+  - `POST /api/security/audit-log/purge`
+  - `GET|PUT /api/security/audit-retention-policy`

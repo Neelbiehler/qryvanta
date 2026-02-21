@@ -97,6 +97,7 @@ pub async fn workspace_list_records_handler(
             qryvanta_application::RecordListQuery {
                 limit: query.limit.unwrap_or(50),
                 offset: query.offset.unwrap_or(0),
+                owner_subject: None,
             },
         )
         .await?

@@ -65,8 +65,9 @@ pub fn build_app_state(pool: PgPool, config: &ApiConfig) -> Result<AppState, App
     let metadata_repository = Arc::new(PostgresMetadataRepository::new(pool.clone()));
     let app_repository = Arc::new(PostgresAppRepository::new(pool.clone()));
     let authorization_repository = Arc::new(PostgresAuthorizationRepository::new(pool.clone()));
-    let authorization_service = AuthorizationService::new(authorization_repository);
     let audit_repository = Arc::new(PostgresAuditRepository::new(pool.clone()));
+    let authorization_service =
+        AuthorizationService::new(authorization_repository, audit_repository.clone());
     let security_admin_repository = Arc::new(PostgresSecurityAdminRepository::new(pool.clone()));
     let audit_log_repository = Arc::new(PostgresAuditLogRepository::new(pool.clone()));
     let security_admin_service = qryvanta_application::SecurityAdminService::new(

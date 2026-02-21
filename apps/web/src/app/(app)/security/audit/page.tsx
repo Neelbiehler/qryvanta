@@ -15,8 +15,13 @@ import {
   TableRow,
 } from "@qryvanta/ui";
 
+import { AuditControlsPanel } from "@/components/security/audit-controls-panel";
 import { AccessDeniedCard } from "@/components/shared/access-denied-card";
-import { apiServerFetch, type AuditLogEntryResponse } from "@/lib/api";
+import {
+  apiServerFetch,
+  type AuditLogEntryResponse,
+  type AuditRetentionPolicyResponse,
+} from "@/lib/api";
 
 type AuditLogPageProps = {
   searchParams?: Promise<{
@@ -49,10 +54,10 @@ export default async function AuditLogPage({
   if (subject) query.set("subject", subject);
 
   const cookieHeader = (await cookies()).toString();
-  const response = await apiServerFetch(
-    `/api/security/audit-log?${query.toString()}`,
-    cookieHeader,
-  );
+  const [response, retentionResponse] = await Promise.all([
+    apiServerFetch(`/api/security/audit-log?${query.toString()}`, cookieHeader),
+    apiServerFetch("/api/security/audit-retention-policy", cookieHeader),
+  ]);
 
   if (response.status === 401) {
     redirect("/login");
@@ -72,7 +77,18 @@ export default async function AuditLogPage({
     throw new Error("Failed to load audit log");
   }
 
+  if (retentionResponse.status === 401) {
+    redirect("/login");
+  }
+
+  if (retentionResponse.status !== 200 && retentionResponse.status !== 403) {
+    throw new Error("Failed to load audit retention policy");
+  }
+
   const entries = (await response.json()) as AuditLogEntryResponse[];
+  const retentionPolicy = retentionResponse.ok
+    ? ((await retentionResponse.json()) as AuditRetentionPolicyResponse)
+    : null;
   const previousOffset = Math.max(0, safeOffset - safeLimit);
   const nextOffset = safeOffset + safeLimit;
 
@@ -91,6 +107,11 @@ export default async function AuditLogPage({
         <CardTitle className="font-serif text-3xl">Audit Log</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        <AuditControlsPanel
+          queryString={query.toString()}
+          retentionDays={retentionPolicy?.retention_days ?? null}
+        />
+
         <form className="grid gap-3 rounded-md border border-emerald-100 bg-white p-3 md:grid-cols-4">
           <input
             className="rounded-md border border-emerald-100 px-3 py-2 text-sm"
