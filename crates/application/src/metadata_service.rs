@@ -11,8 +11,9 @@ use sha2::{Digest, Sha256};
 
 use crate::AuthorizationService;
 use crate::metadata_ports::{
-    AuditEvent, AuditRepository, MetadataRepository, RecordListQuery, RuntimeRecordFilter,
-    RuntimeRecordOperator, RuntimeRecordQuery, RuntimeRecordSort, SaveFieldInput, UniqueFieldValue,
+    AuditEvent, AuditRepository, MetadataRepository, RecordListQuery, RuntimeRecordConditionGroup,
+    RuntimeRecordConditionNode, RuntimeRecordFilter, RuntimeRecordOperator, RuntimeRecordQuery,
+    RuntimeRecordSort, SaveFieldInput, UniqueFieldValue,
 };
 
 /// Application service for metadata and runtime record operations.
@@ -575,55 +576,17 @@ impl MetadataService {
             query.owner_subject = Some(actor.subject().to_owned());
         }
 
-        if let Some(access) = &field_access {
-            Self::enforce_query_readable_fields(&query, access)?;
-        }
-
         let schema = self
             .published_schema_for_runtime(actor.tenant_id(), entity_logical_name)
             .await?;
-
-        if query.limit == 0 {
-            return Err(AppError::Validation(
-                "runtime record query limit must be greater than zero".to_owned(),
-            ));
-        }
-
-        let schema_fields: BTreeMap<&str, &EntityFieldDefinition> = schema
-            .fields()
-            .iter()
-            .map(|field| (field.logical_name().as_str(), field))
-            .collect();
-
-        for filter in &query.filters {
-            let Some(field) = schema_fields.get(filter.field_logical_name.as_str()) else {
-                return Err(AppError::Validation(format!(
-                    "unknown filter field '{}' for entity '{}'",
-                    filter.field_logical_name, entity_logical_name
-                )));
-            };
-
-            Self::validate_runtime_query_filter(field, filter)?;
-        }
-
-        let mut seen_sort_fields = BTreeSet::new();
-        for sort in &query.sort {
-            if !seen_sort_fields.insert(sort.field_logical_name.as_str()) {
-                return Err(AppError::Validation(format!(
-                    "duplicate runtime query sort field '{}'",
-                    sort.field_logical_name
-                )));
-            }
-
-            let Some(field) = schema_fields.get(sort.field_logical_name.as_str()) else {
-                return Err(AppError::Validation(format!(
-                    "unknown sort field '{}' for entity '{}'",
-                    sort.field_logical_name, entity_logical_name
-                )));
-            };
-
-            Self::validate_runtime_query_sort(field, sort)?;
-        }
+        self.validate_runtime_query(
+            actor,
+            entity_logical_name,
+            &schema,
+            &mut query,
+            field_access.as_ref(),
+        )
+        .await?;
 
         let records = self
             .repository
@@ -682,55 +645,17 @@ impl MetadataService {
             query.owner_subject = Some(actor.subject().to_owned());
         }
 
-        if let Some(access) = &field_access {
-            Self::enforce_query_readable_fields(&query, access)?;
-        }
-
         let schema = self
             .published_schema_for_runtime(actor.tenant_id(), entity_logical_name)
             .await?;
-
-        if query.limit == 0 {
-            return Err(AppError::Validation(
-                "runtime record query limit must be greater than zero".to_owned(),
-            ));
-        }
-
-        let schema_fields: BTreeMap<&str, &EntityFieldDefinition> = schema
-            .fields()
-            .iter()
-            .map(|field| (field.logical_name().as_str(), field))
-            .collect();
-
-        for filter in &query.filters {
-            let Some(field) = schema_fields.get(filter.field_logical_name.as_str()) else {
-                return Err(AppError::Validation(format!(
-                    "unknown filter field '{}' for entity '{}'",
-                    filter.field_logical_name, entity_logical_name
-                )));
-            };
-
-            Self::validate_runtime_query_filter(field, filter)?;
-        }
-
-        let mut seen_sort_fields = BTreeSet::new();
-        for sort in &query.sort {
-            if !seen_sort_fields.insert(sort.field_logical_name.as_str()) {
-                return Err(AppError::Validation(format!(
-                    "duplicate runtime query sort field '{}'",
-                    sort.field_logical_name
-                )));
-            }
-
-            let Some(field) = schema_fields.get(sort.field_logical_name.as_str()) else {
-                return Err(AppError::Validation(format!(
-                    "unknown sort field '{}' for entity '{}'",
-                    sort.field_logical_name, entity_logical_name
-                )));
-            };
-
-            Self::validate_runtime_query_sort(field, sort)?;
-        }
+        self.validate_runtime_query(
+            actor,
+            entity_logical_name,
+            &schema,
+            &mut query,
+            field_access.as_ref(),
+        )
+        .await?;
 
         let records = self
             .repository
@@ -1170,35 +1095,385 @@ impl MetadataService {
         Ok(())
     }
 
-    fn enforce_query_readable_fields(
-        query: &RuntimeRecordQuery,
-        field_access: &crate::RuntimeFieldAccess,
+    async fn validate_runtime_query(
+        &self,
+        actor: &UserIdentity,
+        root_entity_logical_name: &str,
+        root_schema: &PublishedEntitySchema,
+        query: &mut RuntimeRecordQuery,
+        root_field_access: Option<&crate::RuntimeFieldAccess>,
     ) -> AppResult<()> {
+        if query.limit == 0 {
+            return Err(AppError::Validation(
+                "runtime record query limit must be greater than zero".to_owned(),
+            ));
+        }
+
+        let mut schema_cache = BTreeMap::new();
+        schema_cache.insert(root_entity_logical_name.to_owned(), root_schema.clone());
+        let alias_entities = self
+            .resolve_runtime_query_links(actor, root_entity_logical_name, query, &mut schema_cache)
+            .await?;
+
+        let mut scope_field_access = BTreeMap::new();
+        if let Some(access) = root_field_access {
+            scope_field_access.insert(String::new(), access.clone());
+        }
+
+        let mut entity_field_access_cache = BTreeMap::new();
+        for entity_logical_name in alias_entities.values() {
+            if entity_field_access_cache.contains_key(entity_logical_name) {
+                continue;
+            }
+
+            let field_access = self
+                .runtime_field_access_for_actor(actor, entity_logical_name)
+                .await?;
+            entity_field_access_cache.insert(entity_logical_name.clone(), field_access);
+        }
+
+        for (alias, entity_logical_name) in &alias_entities {
+            let Some(field_access) = entity_field_access_cache
+                .get(entity_logical_name)
+                .and_then(Option::as_ref)
+            else {
+                continue;
+            };
+
+            scope_field_access.insert(alias.clone(), field_access.clone());
+        }
+
+        Self::enforce_query_readable_fields(query, &scope_field_access)?;
+
         for filter in &query.filters {
-            if !field_access
-                .readable_fields
-                .contains(filter.field_logical_name.as_str())
-            {
-                return Err(AppError::Forbidden(format!(
-                    "field '{}' is not readable for query filters",
-                    filter.field_logical_name
+            let field = Self::resolve_query_field_definition(
+                root_entity_logical_name,
+                &alias_entities,
+                &schema_cache,
+                filter.scope_alias.as_deref(),
+                filter.field_logical_name.as_str(),
+                "filter",
+            )?;
+            Self::validate_runtime_query_filter(field, filter)?;
+        }
+
+        if let Some(where_clause) = &query.where_clause {
+            Self::validate_runtime_query_group(
+                root_entity_logical_name,
+                &alias_entities,
+                &schema_cache,
+                where_clause,
+            )?;
+        }
+
+        let mut seen_sort_fields = BTreeSet::new();
+        for sort in &query.sort {
+            let sort_scope_key = sort.scope_alias.clone().unwrap_or_default();
+            if !seen_sort_fields.insert((sort_scope_key.clone(), sort.field_logical_name.clone())) {
+                return Err(AppError::Validation(format!(
+                    "duplicate runtime query sort field '{}' in scope '{}'",
+                    sort.field_logical_name,
+                    if sort_scope_key.is_empty() {
+                        root_entity_logical_name
+                    } else {
+                        sort_scope_key.as_str()
+                    }
                 )));
             }
+
+            let field = Self::resolve_query_field_definition(
+                root_entity_logical_name,
+                &alias_entities,
+                &schema_cache,
+                sort.scope_alias.as_deref(),
+                sort.field_logical_name.as_str(),
+                "sort",
+            )?;
+            Self::validate_runtime_query_sort(field, sort)?;
+        }
+
+        Ok(())
+    }
+
+    async fn resolve_runtime_query_links(
+        &self,
+        actor: &UserIdentity,
+        root_entity_logical_name: &str,
+        query: &mut RuntimeRecordQuery,
+        schema_cache: &mut BTreeMap<String, PublishedEntitySchema>,
+    ) -> AppResult<BTreeMap<String, String>> {
+        let mut alias_entities = BTreeMap::new();
+
+        for link in &mut query.links {
+            if link.alias.trim().is_empty() {
+                return Err(AppError::Validation(
+                    "runtime query link alias cannot be empty".to_owned(),
+                ));
+            }
+
+            if alias_entities.contains_key(link.alias.as_str()) {
+                return Err(AppError::Validation(format!(
+                    "duplicate runtime query link alias '{}'",
+                    link.alias
+                )));
+            }
+
+            let parent_entity_logical_name = match link.parent_alias.as_deref() {
+                Some(parent_alias) if !parent_alias.trim().is_empty() => alias_entities
+                    .get(parent_alias)
+                    .map(String::as_str)
+                    .ok_or_else(|| {
+                        AppError::Validation(format!(
+                            "unknown runtime query parent alias '{}'",
+                            parent_alias
+                        ))
+                    })?,
+                Some(_) => {
+                    return Err(AppError::Validation(
+                        "runtime query link parent_alias cannot be empty".to_owned(),
+                    ));
+                }
+                None => root_entity_logical_name,
+            };
+
+            let parent_schema = self
+                .load_runtime_query_schema(
+                    actor.tenant_id(),
+                    parent_entity_logical_name,
+                    schema_cache,
+                )
+                .await?;
+
+            let relation_field_name = link.relation_field_logical_name.trim();
+            if relation_field_name.is_empty() {
+                return Err(AppError::Validation(
+                    "runtime query link relation_field_logical_name cannot be empty".to_owned(),
+                ));
+            }
+
+            let Some(relation_field) = parent_schema
+                .fields()
+                .iter()
+                .find(|field| field.logical_name().as_str() == relation_field_name)
+            else {
+                return Err(AppError::Validation(format!(
+                    "unknown relation field '{}' for parent entity '{}'",
+                    relation_field_name, parent_entity_logical_name
+                )));
+            };
+
+            if relation_field.field_type() != FieldType::Relation {
+                return Err(AppError::Validation(format!(
+                    "link relation field '{}' on entity '{}' must be of type 'relation'",
+                    relation_field_name, parent_entity_logical_name
+                )));
+            }
+
+            let Some(target_entity) = relation_field.relation_target_entity() else {
+                return Err(AppError::Validation(format!(
+                    "relation field '{}' on entity '{}' is missing relation target metadata",
+                    relation_field_name, parent_entity_logical_name
+                )));
+            };
+
+            self.load_runtime_query_schema(actor.tenant_id(), target_entity.as_str(), schema_cache)
+                .await?;
+
+            if !link.target_entity_logical_name.is_empty()
+                && link.target_entity_logical_name.as_str() != target_entity.as_str()
+            {
+                return Err(AppError::Validation(format!(
+                    "runtime query link alias '{}' target entity mismatch: expected '{}', got '{}'",
+                    link.alias,
+                    target_entity.as_str(),
+                    link.target_entity_logical_name
+                )));
+            }
+
+            link.target_entity_logical_name = target_entity.as_str().to_owned();
+            link.relation_field_logical_name = relation_field_name.to_owned();
+            alias_entities.insert(link.alias.clone(), target_entity.as_str().to_owned());
+        }
+
+        Ok(alias_entities)
+    }
+
+    async fn load_runtime_query_schema(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        schema_cache: &mut BTreeMap<String, PublishedEntitySchema>,
+    ) -> AppResult<PublishedEntitySchema> {
+        if let Some(schema) = schema_cache.get(entity_logical_name) {
+            return Ok(schema.clone());
+        }
+
+        let schema = self
+            .published_schema_for_runtime(tenant_id, entity_logical_name)
+            .await?;
+        schema_cache.insert(entity_logical_name.to_owned(), schema.clone());
+        Ok(schema)
+    }
+
+    fn enforce_query_readable_fields(
+        query: &RuntimeRecordQuery,
+        scope_field_access: &BTreeMap<String, crate::RuntimeFieldAccess>,
+    ) -> AppResult<()> {
+        for filter in &query.filters {
+            Self::enforce_scope_readable_field(
+                scope_field_access,
+                filter.scope_alias.as_deref(),
+                filter.field_logical_name.as_str(),
+                "query filters",
+            )?;
+        }
+
+        if let Some(where_clause) = &query.where_clause {
+            Self::enforce_group_readable_fields(where_clause, scope_field_access)?;
         }
 
         for sort in &query.sort {
-            if !field_access
-                .readable_fields
-                .contains(sort.field_logical_name.as_str())
-            {
-                return Err(AppError::Forbidden(format!(
-                    "field '{}' is not readable for query sorting",
-                    sort.field_logical_name
-                )));
+            Self::enforce_scope_readable_field(
+                scope_field_access,
+                sort.scope_alias.as_deref(),
+                sort.field_logical_name.as_str(),
+                "query sorting",
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn enforce_group_readable_fields(
+        group: &RuntimeRecordConditionGroup,
+        scope_field_access: &BTreeMap<String, crate::RuntimeFieldAccess>,
+    ) -> AppResult<()> {
+        for node in &group.nodes {
+            match node {
+                RuntimeRecordConditionNode::Filter(filter) => Self::enforce_scope_readable_field(
+                    scope_field_access,
+                    filter.scope_alias.as_deref(),
+                    filter.field_logical_name.as_str(),
+                    "query filters",
+                )?,
+                RuntimeRecordConditionNode::Group(nested_group) => {
+                    Self::enforce_group_readable_fields(nested_group, scope_field_access)?;
+                }
             }
         }
 
         Ok(())
+    }
+
+    fn enforce_scope_readable_field(
+        scope_field_access: &BTreeMap<String, crate::RuntimeFieldAccess>,
+        scope_alias: Option<&str>,
+        field_logical_name: &str,
+        context: &str,
+    ) -> AppResult<()> {
+        let scope_key = scope_alias.unwrap_or_default();
+        let Some(field_access) = scope_field_access.get(scope_key) else {
+            return Ok(());
+        };
+
+        if field_access.readable_fields.contains(field_logical_name) {
+            return Ok(());
+        }
+
+        if scope_key.is_empty() {
+            return Err(AppError::Forbidden(format!(
+                "field '{}' is not readable for {}",
+                field_logical_name, context
+            )));
+        }
+
+        Err(AppError::Forbidden(format!(
+            "field '{}' is not readable for {} in alias '{}'",
+            field_logical_name, context, scope_key
+        )))
+    }
+
+    fn validate_runtime_query_group(
+        root_entity_logical_name: &str,
+        alias_entities: &BTreeMap<String, String>,
+        schema_cache: &BTreeMap<String, PublishedEntitySchema>,
+        group: &RuntimeRecordConditionGroup,
+    ) -> AppResult<()> {
+        if group.nodes.is_empty() {
+            return Err(AppError::Validation(
+                "runtime query where clause must include at least one condition or nested group"
+                    .to_owned(),
+            ));
+        }
+
+        for node in &group.nodes {
+            match node {
+                RuntimeRecordConditionNode::Filter(filter) => {
+                    let field = Self::resolve_query_field_definition(
+                        root_entity_logical_name,
+                        alias_entities,
+                        schema_cache,
+                        filter.scope_alias.as_deref(),
+                        filter.field_logical_name.as_str(),
+                        "filter",
+                    )?;
+                    Self::validate_runtime_query_filter(field, filter)?;
+                }
+                RuntimeRecordConditionNode::Group(nested_group) => {
+                    Self::validate_runtime_query_group(
+                        root_entity_logical_name,
+                        alias_entities,
+                        schema_cache,
+                        nested_group,
+                    )?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn resolve_query_field_definition<'a>(
+        root_entity_logical_name: &str,
+        alias_entities: &BTreeMap<String, String>,
+        schema_cache: &'a BTreeMap<String, PublishedEntitySchema>,
+        scope_alias: Option<&str>,
+        field_logical_name: &str,
+        context: &str,
+    ) -> AppResult<&'a EntityFieldDefinition> {
+        let scope_entity = match scope_alias {
+            Some(alias) => alias_entities
+                .get(alias)
+                .map(String::as_str)
+                .ok_or_else(|| {
+                    AppError::Validation(format!("unknown runtime query scope alias '{}'", alias))
+                })?,
+            None => root_entity_logical_name,
+        };
+
+        let schema = schema_cache.get(scope_entity).ok_or_else(|| {
+            AppError::Internal(format!(
+                "runtime query schema cache missing entity '{}'",
+                scope_entity
+            ))
+        })?;
+
+        let field = schema
+            .fields()
+            .iter()
+            .find(|field| field.logical_name().as_str() == field_logical_name)
+            .ok_or_else(|| match scope_alias {
+                Some(alias) => AppError::Validation(format!(
+                    "unknown {} field '{}' for alias '{}'",
+                    context, field_logical_name, alias
+                )),
+                None => AppError::Validation(format!(
+                    "unknown {} field '{}' for entity '{}'",
+                    context, field_logical_name, root_entity_logical_name
+                )),
+            })?;
+
+        Ok(field)
     }
 
     fn redact_runtime_records_if_needed(

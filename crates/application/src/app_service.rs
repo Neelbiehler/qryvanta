@@ -399,6 +399,16 @@ impl AppService {
         )
         .await?;
 
+        for link in &query.links {
+            self.require_entity_action(
+                actor,
+                app_logical_name,
+                link.target_entity_logical_name.as_str(),
+                AppEntityAction::Read,
+            )
+            .await?;
+        }
+
         self.runtime_record_service
             .query_runtime_records_unchecked(actor, entity_logical_name, query)
             .await

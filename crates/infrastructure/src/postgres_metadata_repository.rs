@@ -2,9 +2,9 @@ use std::str::FromStr;
 
 use async_trait::async_trait;
 use qryvanta_application::{
-    MetadataRepository, RecordListQuery, RuntimeRecordFilter, RuntimeRecordLogicalMode,
-    RuntimeRecordOperator, RuntimeRecordQuery, RuntimeRecordSort, RuntimeRecordSortDirection,
-    UniqueFieldValue,
+    MetadataRepository, RecordListQuery, RuntimeRecordConditionGroup, RuntimeRecordConditionNode,
+    RuntimeRecordFilter, RuntimeRecordJoinType, RuntimeRecordLogicalMode, RuntimeRecordOperator,
+    RuntimeRecordQuery, RuntimeRecordSort, RuntimeRecordSortDirection, UniqueFieldValue,
 };
 use qryvanta_core::{AppError, AppResult, TenantId};
 use qryvanta_domain::{
@@ -643,16 +643,74 @@ impl MetadataRepository for PostgresMetadataRepository {
             AppError::Validation(format!("invalid runtime record query offset: {error}"))
         })?;
 
+        let root_table_alias = "runtime_root";
+        let mut scope_table_aliases = std::collections::BTreeMap::new();
         let mut builder: QueryBuilder<'_, Postgres> = QueryBuilder::new(
-            "SELECT id, entity_logical_name, data FROM runtime_records WHERE tenant_id = ",
+            "SELECT runtime_root.id, runtime_root.entity_logical_name, runtime_root.data FROM runtime_records runtime_root",
         );
+
+        for (index, link) in query.links.iter().enumerate() {
+            let table_alias = format!("runtime_link_{index}");
+            let parent_table_alias = match link.parent_alias.as_deref() {
+                Some(parent_alias) => scope_table_aliases
+                    .get(parent_alias)
+                    .map(String::as_str)
+                    .ok_or_else(|| {
+                        AppError::Validation(format!(
+                            "unknown runtime query parent alias '{}'",
+                            parent_alias
+                        ))
+                    })?,
+                None => root_table_alias,
+            };
+
+            match link.join_type {
+                RuntimeRecordJoinType::Inner => builder.push(" JOIN runtime_records "),
+                RuntimeRecordJoinType::Left => builder.push(" LEFT JOIN runtime_records "),
+            };
+            builder.push(table_alias.as_str());
+            builder.push(" ON ");
+            builder.push(table_alias.as_str());
+            builder.push(".tenant_id = ");
+            builder.push(root_table_alias);
+            builder.push(".tenant_id AND ");
+            builder.push(table_alias.as_str());
+            builder.push(".entity_logical_name = ");
+            builder.push_bind(link.target_entity_logical_name.clone());
+            builder.push(" AND ");
+            builder.push(table_alias.as_str());
+            builder.push(".id::text = ");
+            builder.push(parent_table_alias);
+            builder.push(".data ->> ");
+            builder.push_bind(link.relation_field_logical_name.clone());
+
+            scope_table_aliases.insert(link.alias.clone(), table_alias);
+        }
+
+        builder.push(" WHERE ");
+        builder.push(root_table_alias);
+        builder.push(".tenant_id = ");
         builder.push_bind(tenant_id.as_uuid());
-        builder.push(" AND entity_logical_name = ");
+        builder.push(" AND ");
+        builder.push(root_table_alias);
+        builder.push(".entity_logical_name = ");
         builder.push_bind(entity_logical_name);
 
         if let Some(owner_subject) = query.owner_subject {
-            builder.push(" AND created_by_subject = ");
+            builder.push(" AND ");
+            builder.push(root_table_alias);
+            builder.push(".created_by_subject = ");
             builder.push_bind(owner_subject);
+        }
+
+        if let Some(where_clause) = &query.where_clause {
+            builder.push(" AND ");
+            push_runtime_group_condition(
+                &mut builder,
+                where_clause,
+                &scope_table_aliases,
+                root_table_alias,
+            )?;
         }
 
         if !query.filters.is_empty() {
@@ -669,22 +727,59 @@ impl MetadataRepository for PostgresMetadataRepository {
                     };
                 }
 
-                push_runtime_filter_condition(&mut builder, filter);
+                let scope_table_alias = filter
+                    .scope_alias
+                    .as_deref()
+                    .map(|alias| {
+                        scope_table_aliases
+                            .get(alias)
+                            .map(String::as_str)
+                            .ok_or_else(|| {
+                                AppError::Validation(format!(
+                                    "unknown runtime query scope alias '{}'",
+                                    alias
+                                ))
+                            })
+                    })
+                    .transpose()?
+                    .unwrap_or(root_table_alias);
+
+                push_runtime_filter_condition(&mut builder, filter, scope_table_alias);
             }
             builder.push(')');
         }
 
         if query.sort.is_empty() {
-            builder.push(" ORDER BY created_at DESC");
+            builder.push(" ORDER BY ");
+            builder.push(root_table_alias);
+            builder.push(".created_at DESC");
         } else {
             builder.push(" ORDER BY ");
             for (index, sort) in query.sort.iter().enumerate() {
                 if index > 0 {
                     builder.push(", ");
                 }
-                push_runtime_sort_clause(&mut builder, sort);
+                let scope_table_alias = sort
+                    .scope_alias
+                    .as_deref()
+                    .map(|alias| {
+                        scope_table_aliases
+                            .get(alias)
+                            .map(String::as_str)
+                            .ok_or_else(|| {
+                                AppError::Validation(format!(
+                                    "unknown runtime query scope alias '{}'",
+                                    alias
+                                ))
+                            })
+                    })
+                    .transpose()?
+                    .unwrap_or(root_table_alias);
+                push_runtime_sort_clause(&mut builder, sort, scope_table_alias);
             }
-            builder.push(", created_at DESC");
+            builder.push(", ");
+            builder.push(root_table_alias);
+            builder.push(".created_at DESC");
         }
 
         builder.push(" LIMIT ");
@@ -949,19 +1044,73 @@ impl MetadataRepository for PostgresMetadataRepository {
     }
 }
 
+fn push_runtime_group_condition(
+    builder: &mut QueryBuilder<'_, Postgres>,
+    group: &RuntimeRecordConditionGroup,
+    scope_table_aliases: &std::collections::BTreeMap<String, String>,
+    root_table_alias: &str,
+) -> AppResult<()> {
+    builder.push('(');
+
+    for (index, node) in group.nodes.iter().enumerate() {
+        if index > 0 {
+            match group.logical_mode {
+                RuntimeRecordLogicalMode::And => builder.push(" AND "),
+                RuntimeRecordLogicalMode::Or => builder.push(" OR "),
+            };
+        }
+
+        match node {
+            RuntimeRecordConditionNode::Filter(filter) => {
+                let scope_table_alias = filter
+                    .scope_alias
+                    .as_deref()
+                    .map(|alias| {
+                        scope_table_aliases
+                            .get(alias)
+                            .map(String::as_str)
+                            .ok_or_else(|| {
+                                AppError::Validation(format!(
+                                    "unknown runtime query scope alias '{}'",
+                                    alias
+                                ))
+                            })
+                    })
+                    .transpose()?
+                    .unwrap_or(root_table_alias);
+                push_runtime_filter_condition(builder, filter, scope_table_alias);
+            }
+            RuntimeRecordConditionNode::Group(nested_group) => {
+                push_runtime_group_condition(
+                    builder,
+                    nested_group,
+                    scope_table_aliases,
+                    root_table_alias,
+                )?;
+            }
+        }
+    }
+
+    builder.push(')');
+    Ok(())
+}
+
 fn push_runtime_filter_condition(
     builder: &mut QueryBuilder<'_, Postgres>,
     filter: &RuntimeRecordFilter,
+    scope_table_alias: &str,
 ) {
     match filter.operator {
         RuntimeRecordOperator::Eq => {
-            builder.push("data -> ");
+            builder.push(scope_table_alias);
+            builder.push(".data -> ");
             builder.push_bind(filter.field_logical_name.clone());
             builder.push(" = ");
             builder.push_bind(filter.field_value.clone());
         }
         RuntimeRecordOperator::Neq => {
-            builder.push("data -> ");
+            builder.push(scope_table_alias);
+            builder.push(".data -> ");
             builder.push_bind(filter.field_logical_name.clone());
             builder.push(" <> ");
             builder.push_bind(filter.field_value.clone());
@@ -980,7 +1129,9 @@ fn push_runtime_filter_condition(
 
             match filter.field_type {
                 FieldType::Number => {
-                    builder.push("(data ->> ");
+                    builder.push("(");
+                    builder.push(scope_table_alias);
+                    builder.push(".data ->> ");
                     builder.push_bind(filter.field_logical_name.clone());
                     builder.push(")::NUMERIC ");
                     builder.push(operator);
@@ -989,7 +1140,8 @@ fn push_runtime_filter_condition(
                     builder.push(")::NUMERIC");
                 }
                 _ => {
-                    builder.push("data ->> ");
+                    builder.push(scope_table_alias);
+                    builder.push(".data ->> ");
                     builder.push_bind(filter.field_logical_name.clone());
                     builder.push(' ');
                     builder.push(operator);
@@ -999,7 +1151,8 @@ fn push_runtime_filter_condition(
             }
         }
         RuntimeRecordOperator::Contains => {
-            builder.push("data ->> ");
+            builder.push(scope_table_alias);
+            builder.push(".data ->> ");
             builder.push_bind(filter.field_logical_name.clone());
             builder.push(" ILIKE ");
             builder.push_bind(format!(
@@ -1015,7 +1168,8 @@ fn push_runtime_filter_condition(
                     builder.push(" OR ");
                 }
 
-                builder.push("data -> ");
+                builder.push(scope_table_alias);
+                builder.push(".data -> ");
                 builder.push_bind(filter.field_logical_name.clone());
                 builder.push(" = ");
                 builder.push_bind(value.clone());
@@ -1025,15 +1179,22 @@ fn push_runtime_filter_condition(
     }
 }
 
-fn push_runtime_sort_clause(builder: &mut QueryBuilder<'_, Postgres>, sort: &RuntimeRecordSort) {
+fn push_runtime_sort_clause(
+    builder: &mut QueryBuilder<'_, Postgres>,
+    sort: &RuntimeRecordSort,
+    scope_table_alias: &str,
+) {
     match sort.field_type {
         FieldType::Number => {
-            builder.push("(data ->> ");
+            builder.push("(");
+            builder.push(scope_table_alias);
+            builder.push(".data ->> ");
             builder.push_bind(sort.field_logical_name.clone());
             builder.push(")::NUMERIC");
         }
         _ => {
-            builder.push("data ->> ");
+            builder.push(scope_table_alias);
+            builder.push(".data ->> ");
             builder.push_bind(sort.field_logical_name.clone());
         }
     }

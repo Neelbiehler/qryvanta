@@ -34,11 +34,43 @@ pub struct UpdateRuntimeRecordRequest {
     export_to = "../../../../packages/api-types/src/generated/runtime-record-query-filter-request.ts"
 )]
 pub struct RuntimeRecordQueryFilterRequest {
+    #[ts(type = "string | null")]
+    pub scope_alias: Option<String>,
     pub field_logical_name: String,
     #[ts(type = "\"eq\" | \"neq\" | \"gt\" | \"gte\" | \"lt\" | \"lte\" | \"contains\" | \"in\"")]
     pub operator: String,
     #[ts(type = "unknown")]
     pub field_value: Value,
+}
+
+/// Incoming runtime query where-clause group payload.
+#[derive(Debug, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../../packages/api-types/src/generated/runtime-record-query-group-request.ts"
+)]
+pub struct RuntimeRecordQueryGroupRequest {
+    #[ts(type = "\"and\" | \"or\" | null")]
+    pub logical_mode: Option<String>,
+    #[ts(type = "Array<RuntimeRecordQueryFilterRequest> | null")]
+    pub conditions: Option<Vec<RuntimeRecordQueryFilterRequest>>,
+    #[ts(type = "Array<RuntimeRecordQueryGroupRequest> | null")]
+    pub groups: Option<Vec<RuntimeRecordQueryGroupRequest>>,
+}
+
+/// Incoming runtime query link-entity payload.
+#[derive(Debug, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../../packages/api-types/src/generated/runtime-record-query-link-entity-request.ts"
+)]
+pub struct RuntimeRecordQueryLinkEntityRequest {
+    pub alias: String,
+    #[ts(type = "string | null")]
+    pub parent_alias: Option<String>,
+    pub relation_field_logical_name: String,
+    #[ts(type = "\"inner\" | \"left\" | null")]
+    pub join_type: Option<String>,
 }
 
 /// Incoming runtime record query sort payload.
@@ -48,6 +80,8 @@ pub struct RuntimeRecordQueryFilterRequest {
     export_to = "../../../../packages/api-types/src/generated/runtime-record-query-sort-request.ts"
 )]
 pub struct RuntimeRecordQuerySortRequest {
+    #[ts(type = "string | null")]
+    pub scope_alias: Option<String>,
     pub field_logical_name: String,
     #[ts(type = "\"asc\" | \"desc\" | null")]
     pub direction: Option<String>,
@@ -64,8 +98,13 @@ pub struct QueryRuntimeRecordsRequest {
     pub offset: Option<usize>,
     #[ts(type = "\"and\" | \"or\" | null")]
     pub logical_mode: Option<String>,
+    #[serde(rename = "where")]
+    #[ts(type = "RuntimeRecordQueryGroupRequest | null")]
+    pub where_clause: Option<RuntimeRecordQueryGroupRequest>,
     #[ts(type = "Array<RuntimeRecordQueryFilterRequest> | null")]
     pub conditions: Option<Vec<RuntimeRecordQueryFilterRequest>>,
+    #[ts(type = "Array<RuntimeRecordQueryLinkEntityRequest> | null")]
+    pub link_entities: Option<Vec<RuntimeRecordQueryLinkEntityRequest>>,
     #[ts(type = "Array<RuntimeRecordQuerySortRequest> | null")]
     pub sort: Option<Vec<RuntimeRecordQuerySortRequest>>,
     /// Legacy exact-match map; converted to `eq` conditions when present.

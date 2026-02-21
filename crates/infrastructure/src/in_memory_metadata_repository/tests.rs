@@ -1,5 +1,6 @@
 use qryvanta_application::{
-    MetadataRepository, RecordListQuery, RuntimeRecordFilter, RuntimeRecordLogicalMode,
+    MetadataRepository, RecordListQuery, RuntimeRecordConditionGroup, RuntimeRecordConditionNode,
+    RuntimeRecordFilter, RuntimeRecordJoinType, RuntimeRecordLink, RuntimeRecordLogicalMode,
     RuntimeRecordOperator, RuntimeRecordQuery, UniqueFieldValue,
 };
 use qryvanta_core::{AppError, TenantId};
@@ -211,12 +212,15 @@ async fn runtime_record_queries_do_not_leak_across_tenants() {
                 limit: 50,
                 offset: 0,
                 logical_mode: RuntimeRecordLogicalMode::And,
+                where_clause: None,
                 filters: vec![RuntimeRecordFilter {
+                    scope_alias: None,
                     field_logical_name: "name".to_owned(),
                     operator: RuntimeRecordOperator::Eq,
                     field_type: FieldType::Text,
                     field_value: json!("Alice"),
                 }],
+                links: Vec::new(),
                 sort: Vec::new(),
                 owner_subject: None,
             },
@@ -293,12 +297,15 @@ async fn query_runtime_records_filters_and_paginates() {
                 limit: 1,
                 offset: 1,
                 logical_mode: RuntimeRecordLogicalMode::And,
+                where_clause: None,
                 filters: vec![RuntimeRecordFilter {
+                    scope_alias: None,
                     field_logical_name: "active".to_owned(),
                     operator: RuntimeRecordOperator::Eq,
                     field_type: FieldType::Boolean,
                     field_value: json!(true),
                 }],
+                links: Vec::new(),
                 sort: Vec::new(),
                 owner_subject: None,
             },
@@ -314,6 +321,184 @@ async fn query_runtime_records_filters_and_paginates() {
             .as_object()
             .and_then(|value| value.get("active")),
         Some(&json!(true))
+    );
+}
+
+#[tokio::test]
+async fn query_runtime_records_supports_link_entity_alias_filters_and_where_groups() {
+    let repository = InMemoryMetadataRepository::new();
+    let tenant_id = TenantId::new();
+
+    let contact = EntityDefinition::new("contact", "Contact").unwrap_or_else(|_| unreachable!());
+    let deal = EntityDefinition::new("deal", "Deal").unwrap_or_else(|_| unreachable!());
+    assert!(
+        repository
+            .save_entity(tenant_id, contact.clone())
+            .await
+            .is_ok()
+    );
+    assert!(
+        repository
+            .save_entity(tenant_id, deal.clone())
+            .await
+            .is_ok()
+    );
+
+    let contact_name = EntityFieldDefinition::new(
+        "contact",
+        "name",
+        "Name",
+        FieldType::Text,
+        true,
+        false,
+        None,
+        None,
+    )
+    .unwrap_or_else(|_| unreachable!());
+    let deal_title = EntityFieldDefinition::new(
+        "deal",
+        "title",
+        "Title",
+        FieldType::Text,
+        true,
+        false,
+        None,
+        None,
+    )
+    .unwrap_or_else(|_| unreachable!());
+    let deal_owner = EntityFieldDefinition::new(
+        "deal",
+        "owner_contact_id",
+        "Owner",
+        FieldType::Relation,
+        true,
+        false,
+        None,
+        Some("contact".to_owned()),
+    )
+    .unwrap_or_else(|_| unreachable!());
+    assert!(repository.save_field(tenant_id, contact_name).await.is_ok());
+    assert!(repository.save_field(tenant_id, deal_title).await.is_ok());
+    assert!(repository.save_field(tenant_id, deal_owner).await.is_ok());
+
+    assert!(
+        repository
+            .publish_entity_schema(
+                tenant_id,
+                contact,
+                repository
+                    .list_fields(tenant_id, "contact")
+                    .await
+                    .unwrap_or_default(),
+                "alice",
+            )
+            .await
+            .is_ok()
+    );
+    assert!(
+        repository
+            .publish_entity_schema(
+                tenant_id,
+                deal,
+                repository
+                    .list_fields(tenant_id, "deal")
+                    .await
+                    .unwrap_or_default(),
+                "alice",
+            )
+            .await
+            .is_ok()
+    );
+
+    let alice_contact = repository
+        .create_runtime_record(
+            tenant_id,
+            "contact",
+            json!({"name": "Alice"}),
+            Vec::new(),
+            "alice",
+        )
+        .await;
+    assert!(alice_contact.is_ok());
+    let alice_contact = alice_contact.unwrap_or_else(|_| unreachable!());
+
+    let bob_contact = repository
+        .create_runtime_record(
+            tenant_id,
+            "contact",
+            json!({"name": "Bob"}),
+            Vec::new(),
+            "alice",
+        )
+        .await;
+    assert!(bob_contact.is_ok());
+    let bob_contact = bob_contact.unwrap_or_else(|_| unreachable!());
+
+    assert!(
+        repository
+            .create_runtime_record(
+                tenant_id,
+                "deal",
+                json!({"title": "Alpha", "owner_contact_id": alice_contact.record_id().as_str()}),
+                Vec::new(),
+                "alice",
+            )
+            .await
+            .is_ok()
+    );
+    assert!(
+        repository
+            .create_runtime_record(
+                tenant_id,
+                "deal",
+                json!({"title": "Beta", "owner_contact_id": bob_contact.record_id().as_str()}),
+                Vec::new(),
+                "alice",
+            )
+            .await
+            .is_ok()
+    );
+
+    let queried = repository
+        .query_runtime_records(
+            tenant_id,
+            "deal",
+            RuntimeRecordQuery {
+                limit: 50,
+                offset: 0,
+                logical_mode: RuntimeRecordLogicalMode::And,
+                where_clause: Some(RuntimeRecordConditionGroup {
+                    logical_mode: RuntimeRecordLogicalMode::And,
+                    nodes: vec![RuntimeRecordConditionNode::Filter(RuntimeRecordFilter {
+                        scope_alias: Some("owner".to_owned()),
+                        field_logical_name: "name".to_owned(),
+                        operator: RuntimeRecordOperator::Eq,
+                        field_type: FieldType::Text,
+                        field_value: json!("Alice"),
+                    })],
+                }),
+                filters: Vec::new(),
+                links: vec![RuntimeRecordLink {
+                    alias: "owner".to_owned(),
+                    parent_alias: None,
+                    relation_field_logical_name: "owner_contact_id".to_owned(),
+                    target_entity_logical_name: "contact".to_owned(),
+                    join_type: RuntimeRecordJoinType::Inner,
+                }],
+                sort: Vec::new(),
+                owner_subject: None,
+            },
+        )
+        .await;
+    assert!(queried.is_ok());
+    let queried = queried.unwrap_or_default();
+    assert_eq!(queried.len(), 1);
+    assert_eq!(
+        queried[0]
+            .data()
+            .as_object()
+            .and_then(|value| value.get("title")),
+        Some(&json!("Alpha"))
     );
 }
 

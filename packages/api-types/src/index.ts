@@ -34,6 +34,8 @@ export * from "./generated/runtime-record-response";
 export * from "./generated/runtime-field-permission-input-request";
 export * from "./generated/runtime-field-permission-response";
 export * from "./generated/runtime-record-query-filter-request";
+export * from "./generated/runtime-record-query-group-request";
+export * from "./generated/runtime-record-query-link-entity-request";
 export * from "./generated/runtime-record-query-sort-request";
 export * from "./generated/save-runtime-field-permissions-request";
 export * from "./generated/save-app-role-entity-permission-request";
