@@ -1,60 +1,52 @@
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
+"use client";
+
+import { useState, useEffect } from "react";
 
 import { Header } from "@/components/layout/header";
 import { SurfaceSidebar } from "@/components/layout/surface-sidebar";
 import { AccessDeniedCard } from "@/components/shared/access-denied-card";
-import { apiServerFetch, type UserIdentityResponse } from "@/lib/api";
+import { apiFetch, type UserIdentityResponse } from "@/lib/api";
 import {
   type SurfaceId,
   SURFACES,
   hasSurfaceAccess,
   readAccessibleSurfaces,
 } from "@/lib/surfaces";
+import { cn } from "@/lib/utils";
 
 type SurfaceLayoutProps = {
   children: React.ReactNode;
   surfaceId: SurfaceId;
+  user: UserIdentityResponse;
 };
 
 /**
  * Shared layout for surface-scoped route groups.
  *
- * Resolves the authenticated user, checks surface access, and renders the
- * surface-specific sidebar, header, and content area. Redirects to login
- * if unauthenticated and shows an access-denied card when the user lacks
- * permissions for the requested surface.
+ * Renders the surface-specific sidebar, header, and content area.
+ * Note: Auth check should be done at the page level before rendering this layout.
  */
-export async function SurfaceLayout({
+export function SurfaceLayout({
   children,
   surfaceId,
+  user,
 }: SurfaceLayoutProps) {
-  const cookieHeader = (await cookies()).toString();
-  const meResponse = await apiServerFetch("/auth/me", cookieHeader);
-
-  if (meResponse.status === 401) {
-    redirect("/login");
-  }
-
-  if (meResponse.status === 403) {
-    return (
-      <div className="mx-auto flex min-h-screen w-full max-w-3xl items-center p-6">
-        <AccessDeniedCard
-          section="Workspace"
-          title="Access Restricted"
-          message="Your account is authenticated but does not have access to this workspace."
-        />
-      </div>
-    );
-  }
-
-  if (!meResponse.ok) {
-    throw new Error("Failed to load current user");
-  }
-
-  const user = (await meResponse.json()) as UserIdentityResponse;
   const accessibleSurfaces = readAccessibleSurfaces(user);
   const definition = SURFACES[surfaceId];
+  
+  // Initialize collapsed state from localStorage
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("sidebar-collapsed");
+      return saved === "true";
+    }
+    return false;
+  });
+
+  // Save collapsed state to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem("sidebar-collapsed", String(collapsed));
+  }, [collapsed]);
 
   if (!hasSurfaceAccess(accessibleSurfaces, surfaceId)) {
     return (
@@ -69,10 +61,17 @@ export async function SurfaceLayout({
   }
 
   return (
-    <div className="grid min-h-screen grid-cols-1 bg-app lg:grid-cols-[300px_1fr]">
+    <div 
+      className={cn(
+        "grid min-h-screen grid-cols-1 bg-app transition-all duration-300 ease-in-out",
+        collapsed ? "lg:grid-cols-[64px_1fr]" : "lg:grid-cols-[260px_1fr]"
+      )}
+    >
       <SurfaceSidebar
         surface={surfaceId}
         accessibleSurfaces={accessibleSurfaces}
+        collapsed={collapsed}
+        onToggle={() => setCollapsed(!collapsed)}
       />
       <div className="flex min-h-screen min-w-0 flex-col">
         <Header user={user} surfaceId={surfaceId} />

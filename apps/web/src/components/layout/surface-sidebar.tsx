@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
+
 import {
   ChevronLeft,
   ChevronRight,
@@ -49,28 +49,18 @@ const navigationIcons: Record<string, LucideIcon> = {
 type SurfaceSidebarProps = {
   surface: SurfaceId;
   accessibleSurfaces: string[];
+  collapsed: boolean;
+  onToggle: () => void;
 };
 
 export function SurfaceSidebar({
   surface,
   accessibleSurfaces,
+  collapsed,
+  onToggle,
 }: SurfaceSidebarProps) {
   const pathname = usePathname();
   const definition: SurfaceDefinition = SURFACES[surface];
-  
-  // Initialize state from localStorage
-  const [collapsed, setCollapsed] = useState(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("sidebar-collapsed");
-      return saved === "true";
-    }
-    return false;
-  });
-
-  // Save collapsed state to localStorage when it changes
-  useEffect(() => {
-    localStorage.setItem("sidebar-collapsed", String(collapsed));
-  }, [collapsed]);
 
   return (
     <SidebarContainer
@@ -249,7 +239,7 @@ export function SurfaceSidebar({
         )}
       >
         <button
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={onToggle}
           className={cn(
             "flex items-center rounded-md text-zinc-400 transition hover:bg-emerald-50 hover:text-zinc-600",
             collapsed
