@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -57,7 +57,20 @@ export function SurfaceSidebar({
 }: SurfaceSidebarProps) {
   const pathname = usePathname();
   const definition: SurfaceDefinition = SURFACES[surface];
-  const [collapsed, setCollapsed] = useState(false);
+  
+  // Initialize state from localStorage
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("sidebar-collapsed");
+      return saved === "true";
+    }
+    return false;
+  });
+
+  // Save collapsed state to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem("sidebar-collapsed", String(collapsed));
+  }, [collapsed]);
 
   return (
     <SidebarContainer
@@ -68,7 +81,7 @@ export function SurfaceSidebar({
       <div
         className={cn(
           "flex items-center border-b border-emerald-100/60",
-          collapsed ? "justify-center px-2 py-4" : "justify-between p-4",
+          collapsed ? "justify-center p-4" : "justify-between p-4",
         )}
       >
         {!collapsed && (
@@ -85,14 +98,6 @@ export function SurfaceSidebar({
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-emerald-700">
             <span className="text-sm font-bold text-white">Q</span>
           </div>
-        )}
-        {!collapsed && (
-          <button
-            onClick={() => setCollapsed(!collapsed)}
-            className="rounded-md p-1 text-zinc-400 transition hover:bg-emerald-50 hover:text-zinc-600"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </button>
         )}
       </div>
 
@@ -234,6 +239,34 @@ export function SurfaceSidebar({
             },
           )}
         </nav>
+      </div>
+
+      {/* Toggle Button at Bottom */}
+      <div
+        className={cn(
+          "border-t border-emerald-100/60",
+          collapsed ? "p-2" : "p-3",
+        )}
+      >
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className={cn(
+            "flex items-center rounded-md text-zinc-400 transition hover:bg-emerald-50 hover:text-zinc-600",
+            collapsed
+              ? "w-full justify-center p-2"
+              : "w-full justify-center gap-2 p-2",
+          )}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {collapsed ? (
+            <ChevronRight className="h-4 w-4" />
+          ) : (
+            <>
+              <ChevronLeft className="h-4 w-4" />
+              <span className="text-xs">Collapse</span>
+            </>
+          )}
+        </button>
       </div>
     </SidebarContainer>
   );
