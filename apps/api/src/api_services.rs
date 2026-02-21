@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use qryvanta_application::{
-    AppService, AuthEventService, AuthTokenService, AuthorizationService, EmailService,
-    MetadataService, MfaService, TenantRepository, UserService,
+    AppService, AuthEventService, AuthTokenService, AuthorizationService, ContactBootstrapService,
+    EmailService, MetadataService, MfaService, TenantRepository, UserService,
 };
 use qryvanta_core::AppError;
 use qryvanta_infrastructure::{
@@ -141,9 +141,13 @@ pub fn build_app_state(pool: PgPool, config: &ApiConfig) -> Result<AppState, App
             audit_repository.clone(),
         ),
         metadata_service: MetadataService::new(
-            metadata_repository,
+            metadata_repository.clone(),
             authorization_service.clone(),
-            audit_repository,
+            audit_repository.clone(),
+        ),
+        contact_bootstrap_service: ContactBootstrapService::new(
+            metadata_repository.clone(),
+            tenant_repository.clone(),
         ),
         security_admin_service,
         authorization_service,

@@ -7,6 +7,7 @@ mod app_service;
 mod auth_event_service;
 mod auth_token_service;
 mod authorization_service;
+mod contact_bootstrap_service;
 mod metadata_ports;
 mod metadata_service;
 mod mfa_service;
@@ -24,6 +25,7 @@ pub use auth_token_service::{
     AuthTokenRecord, AuthTokenRepository, AuthTokenService, EmailService,
 };
 pub use authorization_service::{AuthorizationRepository, AuthorizationService};
+pub use contact_bootstrap_service::ContactBootstrapService;
 pub use metadata_ports::{
     AuditEvent, AuditRepository, MetadataRepository, RecordListQuery, RuntimeRecordFilter,
     RuntimeRecordQuery, SaveFieldInput, TenantRepository, UniqueFieldValue,

@@ -84,21 +84,21 @@ pub async fn accept_invite_handler(
 
     let tenant_id = tenant_id_from_invite_metadata(token_record.metadata.as_ref())?;
     let invited_email = token_record.email.clone();
+    let display_name = payload
+        .display_name
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| default_display_name(&invited_email))
+        .to_owned();
 
     let user_id =
         if let Some(existing_user) = state.user_service.find_by_email(&invited_email).await? {
-            let display_name = payload
-                .display_name
-                .as_deref()
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| default_display_name(&invited_email));
-
             state
                 .tenant_repository
                 .create_membership(
                     tenant_id,
                     &existing_user.id.to_string(),
-                    display_name,
+                    display_name.as_str(),
                     Some(invited_email.as_str()),
                 )
                 .await?;
@@ -109,18 +109,12 @@ pub async fn accept_invite_handler(
                 AppError::Validation("password is required for new invited users".to_owned())
             })?;
 
-            let display_name = payload
-                .display_name
-                .as_deref()
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| default_display_name(&invited_email));
-
             state
                 .user_service
                 .register(qryvanta_application::RegisterParams {
                     email: invited_email.clone(),
                     password: password.to_owned(),
-                    display_name: display_name.to_owned(),
+                    display_name: display_name.clone(),
                     registration_mode: RegistrationMode::Open,
                     preferred_tenant_id: Some(tenant_id),
                     ip_address: None,
@@ -128,6 +122,18 @@ pub async fn accept_invite_handler(
                 })
                 .await?
         };
+
+    let user_subject = user_id.to_string();
+
+    state
+        .contact_bootstrap_service
+        .ensure_subject_contact(
+            tenant_id,
+            user_subject.as_str(),
+            display_name.as_str(),
+            Some(invited_email.as_str()),
+        )
+        .await?;
 
     state
         .user_service

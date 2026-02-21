@@ -13,6 +13,7 @@ Represent business models as metadata and execute runtime behavior from publishe
 - Field metadata is managed per entity (`/api/entities/:entity_logical_name/fields`).
 - Publish lifecycle is versioned and immutable (`/api/entities/:entity_logical_name/publish`).
 - Runtime record APIs read only the latest published schema (`/api/runtime/:entity_logical_name/records`).
+- Tenant identity bootstrap ensures a default published `contact` entity and subject-to-contact runtime mapping.
 
 ## Field Model (v1)
 

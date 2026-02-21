@@ -228,4 +228,19 @@ pub trait TenantRepository: Send + Sync {
         email: Option<&str>,
         preferred_tenant_id: Option<TenantId>,
     ) -> AppResult<TenantId>;
+
+    /// Returns the runtime contact record mapped to the subject in tenant scope.
+    async fn contact_record_for_subject(
+        &self,
+        tenant_id: TenantId,
+        subject: &str,
+    ) -> AppResult<Option<String>>;
+
+    /// Saves or replaces the runtime contact record mapping for a tenant subject.
+    async fn save_contact_record_for_subject(
+        &self,
+        tenant_id: TenantId,
+        subject: &str,
+        contact_record_id: &str,
+    ) -> AppResult<()>;
 }

@@ -210,6 +210,11 @@ pub async fn webauthn_login_finish_handler(
         .create_membership(tenant_id, &subject, &subject, None)
         .await?;
 
+    state
+        .contact_bootstrap_service
+        .ensure_subject_contact(tenant_id, subject.as_str(), subject.as_str(), None)
+        .await?;
+
     let identity = UserIdentity::new(subject.clone(), subject.clone(), None, tenant_id);
 
     session

@@ -45,6 +45,7 @@ Current RBAC baseline:
 - Security administration endpoints expose tenant registration mode read/update controls.
 - Baseline permissions now include metadata field and runtime record scopes.
 - Metadata writes now require both entity and field-write scopes.
+- Authenticated subjects are mapped to tenant-scoped runtime `contact` records during bootstrap/login flows without granting control-plane RBAC permissions.
 
 ## Audit Requirements
 
