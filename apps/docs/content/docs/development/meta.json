@@ -2,6 +2,7 @@
   "title": "Development",
   "pages": [
     "engineering-standards",
+    "backend-modularization",
     "documentation-policy",
     "open-source-contributing",
     "ui-library",
