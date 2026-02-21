@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use qryvanta_core::{AppError, AppResult, TenantId};
-use qryvanta_domain::{AuditAction, Permission};
+use qryvanta_domain::{AuditAction, Permission, Surface};
 
 use crate::{AuditEvent, AuditRepository};
 
@@ -128,6 +128,34 @@ impl AuthorizationService {
         }
     }
 
+    /// Returns the set of surfaces a subject may access in a tenant.
+    ///
+    /// A surface is accessible when the subject holds at least one of the
+    /// permissions required by that surface (logical OR).
+    pub async fn resolve_accessible_surfaces(
+        &self,
+        tenant_id: TenantId,
+        subject: &str,
+    ) -> AppResult<Vec<Surface>> {
+        let permissions = self
+            .repository
+            .list_permissions_for_subject(tenant_id, subject)
+            .await?;
+
+        let mut surfaces = Vec::new();
+        for surface in Surface::all() {
+            let has_access = surface
+                .required_permissions()
+                .iter()
+                .any(|required| permissions.contains(required));
+            if has_access {
+                surfaces.push(*surface);
+            }
+        }
+
+        Ok(surfaces)
+    }
+
     /// Returns effective field-level runtime access for a subject and entity.
     pub async fn runtime_field_access(
         &self,
@@ -230,6 +258,8 @@ mod tests {
     use tokio::sync::Mutex;
 
     use crate::{AuditEvent, AuditRepository};
+
+    use qryvanta_domain::Surface;
 
     use super::{
         AuthorizationRepository, AuthorizationService, RuntimeFieldGrant, TemporaryPermissionGrant,
@@ -338,6 +368,54 @@ mod tests {
             .require_permission(tenant_id, "alice", Permission::MetadataEntityCreate)
             .await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn resolve_accessible_surfaces_returns_matching_surfaces() {
+        let tenant_id = TenantId::new();
+        let repository = FakeAuthorizationRepository {
+            map: HashMap::from([(
+                (tenant_id, "alice".to_owned()),
+                vec![
+                    Permission::SecurityRoleManage,
+                    Permission::MetadataEntityRead,
+                ],
+            )]),
+            runtime_field_grants: HashMap::new(),
+            temporary_permission_grants: HashMap::new(),
+        };
+        let service = AuthorizationService::new(
+            Arc::new(repository),
+            Arc::new(FakeAuditRepository::default()),
+        );
+
+        let surfaces = service
+            .resolve_accessible_surfaces(tenant_id, "alice")
+            .await;
+        assert!(surfaces.is_ok());
+
+        let surfaces = surfaces.unwrap_or_default();
+        assert!(surfaces.contains(&Surface::Admin));
+        assert!(surfaces.contains(&Surface::Maker));
+        assert!(!surfaces.contains(&Surface::Worker));
+    }
+
+    #[tokio::test]
+    async fn resolve_accessible_surfaces_empty_for_no_permissions() {
+        let tenant_id = TenantId::new();
+        let repository = FakeAuthorizationRepository {
+            map: HashMap::new(),
+            runtime_field_grants: HashMap::new(),
+            temporary_permission_grants: HashMap::new(),
+        };
+        let service = AuthorizationService::new(
+            Arc::new(repository),
+            Arc::new(FakeAuditRepository::default()),
+        );
+
+        let surfaces = service.resolve_accessible_surfaces(tenant_id, "bob").await;
+        assert!(surfaces.is_ok());
+        assert!(surfaces.unwrap_or_default().is_empty());
     }
 
     #[tokio::test]

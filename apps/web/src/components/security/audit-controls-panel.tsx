@@ -35,7 +35,9 @@ export function AuditControlsPanel({
     setIsExporting(true);
 
     try {
-      const response = await apiFetch(`/api/security/audit-log/export?${queryString}`);
+      const response = await apiFetch(
+        `/api/security/audit-log/export?${queryString}`,
+      );
       if (!response.ok) {
         const payload = (await response.json()) as { message?: string };
         setErrorMessage(payload.message ?? "Unable to export audit log.");
@@ -80,7 +82,9 @@ export function AuditControlsPanel({
 
       if (!response.ok) {
         const payload = (await response.json()) as { message?: string };
-        setErrorMessage(payload.message ?? "Unable to update retention policy.");
+        setErrorMessage(
+          payload.message ?? "Unable to update retention policy.",
+        );
       }
     } catch {
       setErrorMessage("Unable to update retention policy.");

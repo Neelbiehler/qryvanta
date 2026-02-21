@@ -3,6 +3,83 @@ use std::str::FromStr;
 use qryvanta_core::AppError;
 use serde::{Deserialize, Serialize};
 
+/// Product surfaces that partition the Qryvanta UX.
+///
+/// Each surface targets a distinct persona:
+/// - **Admin**: tenant administrators managing roles, audit, and security.
+/// - **Maker**: low-code builders defining entities, fields, and app configuration.
+/// - **Worker**: operational end-users interacting with published apps and records.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Surface {
+    /// Tenant administration: roles, audit log, security settings.
+    Admin,
+    /// Low-code configuration: entities, fields, schema publishing, app studio.
+    Maker,
+    /// Operational end-user apps: published app navigation, runtime records.
+    Worker,
+}
+
+impl Surface {
+    /// Returns a stable transport value for this surface.
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Admin => "admin",
+            Self::Maker => "maker",
+            Self::Worker => "worker",
+        }
+    }
+
+    /// Returns all known surfaces.
+    #[must_use]
+    pub fn all() -> &'static [Self] {
+        &[Self::Admin, Self::Maker, Self::Worker]
+    }
+
+    /// Returns the permissions that grant access to this surface.
+    ///
+    /// A subject may enter a surface if they hold **any** of the returned
+    /// permissions (logical OR).
+    #[must_use]
+    pub fn required_permissions(&self) -> &'static [Permission] {
+        match self {
+            Self::Admin => &[
+                Permission::SecurityRoleManage,
+                Permission::SecurityAuditRead,
+                Permission::SecurityInviteSend,
+            ],
+            Self::Maker => &[
+                Permission::MetadataEntityRead,
+                Permission::MetadataEntityCreate,
+                Permission::MetadataFieldRead,
+                Permission::MetadataFieldWrite,
+            ],
+            Self::Worker => &[
+                Permission::RuntimeRecordRead,
+                Permission::RuntimeRecordReadOwn,
+                Permission::RuntimeRecordWrite,
+                Permission::RuntimeRecordWriteOwn,
+            ],
+        }
+    }
+}
+
+impl FromStr for Surface {
+    type Err = AppError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "admin" => Ok(Self::Admin),
+            "maker" => Ok(Self::Maker),
+            "worker" => Ok(Self::Worker),
+            _ => Err(AppError::Validation(format!(
+                "unknown surface value '{value}'"
+            ))),
+        }
+    }
+}
+
 /// Permissions enforced by application policy checks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -179,7 +256,7 @@ impl AuditAction {
 mod tests {
     use std::str::FromStr;
 
-    use super::Permission;
+    use super::{Permission, Surface};
 
     #[test]
     fn permission_roundtrip_storage_value() {
@@ -196,5 +273,31 @@ mod tests {
     fn unknown_permission_is_rejected() {
         let parsed = Permission::from_str("metadata.entity.unknown");
         assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn surface_roundtrip_storage_value() {
+        for surface in Surface::all() {
+            let restored = Surface::from_str(surface.as_str());
+            assert!(restored.is_ok());
+            assert_eq!(restored.unwrap_or(Surface::Worker), *surface);
+        }
+    }
+
+    #[test]
+    fn unknown_surface_is_rejected() {
+        let parsed = Surface::from_str("unknown_surface");
+        assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn every_surface_has_at_least_one_permission() {
+        for surface in Surface::all() {
+            assert!(
+                !surface.required_permissions().is_empty(),
+                "surface {:?} must have at least one required permission",
+                surface
+            );
+        }
     }
 }

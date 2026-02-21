@@ -6,7 +6,7 @@ import {
   Card,
   CardContent,
   CardHeader,
-  CardTitle,
+  PageHeader,
   Table,
   TableBody,
   TableCell,
@@ -19,7 +19,7 @@ import { apiServerFetch, type EntityResponse } from "@/lib/api";
 import { AccessDeniedCard } from "@/components/shared/access-denied-card";
 import { cn } from "@/lib/utils";
 
-export default async function EntitiesPage() {
+export default async function MakerEntitiesPage() {
   const cookieHeader = (await cookies()).toString();
   const response = await apiServerFetch("/api/entities", cookieHeader);
 
@@ -30,9 +30,9 @@ export default async function EntitiesPage() {
   if (response.status === 403) {
     return (
       <AccessDeniedCard
-        section="Metadata"
+        section="Maker Center"
         title="Entities"
-        message="Your account is authenticated but does not have metadata read permissions yet."
+        message="Your account does not have metadata read permissions."
       />
     );
   }
@@ -46,15 +46,16 @@ export default async function EntitiesPage() {
   return (
     <Card>
       <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-            Metadata
-          </p>
-          <CardTitle className="font-serif text-3xl">Entities</CardTitle>
-        </div>
-        <Link href="/entities/new" className={cn(buttonVariants())}>
-          New Entity
-        </Link>
+        <PageHeader
+          eyebrow="Maker Center"
+          title="Entities"
+          description="Model tenant entities and open the runtime workbench."
+          actions={
+            <Link href="/maker/entities/new" className={cn(buttonVariants())}>
+              New Entity
+            </Link>
+          }
+        />
       </CardHeader>
 
       <CardContent>
@@ -79,7 +80,7 @@ export default async function EntitiesPage() {
                       className={cn(
                         buttonVariants({ size: "sm", variant: "outline" }),
                       )}
-                      href={`/entities/${entity.logical_name}`}
+                      href={`/maker/entities/${entity.logical_name}`}
                     >
                       Open
                     </Link>

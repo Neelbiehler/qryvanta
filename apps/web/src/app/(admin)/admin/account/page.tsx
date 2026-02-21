@@ -1,12 +1,14 @@
 "use client";
 
+import { PageHeader } from "@qryvanta/ui";
+
 import { AccountSnapshotCard } from "@/components/security/account/account-snapshot-card";
 import { InviteCard } from "@/components/security/account/invite-card";
 import { MfaCard } from "@/components/security/account/mfa-card";
 import { PasswordCard } from "@/components/security/account/password-card";
 import { useSecurityAccount } from "@/components/security/account/use-security-account";
 
-export default function SecurityAccountPage() {
+export default function AdminSecurityAccountPage() {
   const {
     activeAction,
     confirmCode,
@@ -41,12 +43,11 @@ export default function SecurityAccountPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-serif text-3xl text-zinc-900">Security Settings</h1>
-        <p className="mt-2 text-sm text-zinc-600">
-          Manage your account verification, password, MFA, and tenant invites.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Admin Center"
+        title="Security Settings"
+        description="Manage account verification, password, MFA, and tenant invites."
+      />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <AccountSnapshotCard

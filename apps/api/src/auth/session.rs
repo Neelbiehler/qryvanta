@@ -44,12 +44,22 @@ pub async fn logout_handler(
     Ok(StatusCode::NO_CONTENT)
 }
 
-pub async fn me_handler(session: Session) -> ApiResult<Json<UserIdentityResponse>> {
+pub async fn me_handler(
+    State(state): State<AppState>,
+    session: Session,
+) -> ApiResult<Json<UserIdentityResponse>> {
     let identity = session
         .get::<UserIdentity>(SESSION_USER_KEY)
         .await
         .map_err(|error| AppError::Internal(format!("failed to read session identity: {error}")))?
         .ok_or_else(|| AppError::Unauthorized("authentication required".to_owned()))?;
 
-    Ok(Json(UserIdentityResponse::from(identity)))
+    let surfaces = state
+        .authorization_service
+        .resolve_accessible_surfaces(identity.tenant_id(), identity.subject())
+        .await?;
+
+    Ok(Json(UserIdentityResponse::from_identity_with_surfaces(
+        identity, surfaces,
+    )))
 }

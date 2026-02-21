@@ -16,9 +16,11 @@ export {
 } from "./components/dropdown-menu";
 export { Input } from "./components/input";
 export { Label } from "./components/label";
+export { PageHeader } from "./components/page-header";
 export { Select } from "./components/select";
 export { Separator } from "./components/separator";
 export { Sidebar } from "./components/sidebar";
+export { StatusBadge, type StatusBadgeProps } from "./components/status-badge";
 export {
   Table,
   TableBody,

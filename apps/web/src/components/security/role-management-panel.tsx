@@ -44,6 +44,12 @@ type RoleManagementPanelProps = {
   temporaryAccessGrants: TemporaryAccessGrantResponse[];
 };
 
+type SecurityAdminSection =
+  | "roles"
+  | "registration"
+  | "fieldPermissions"
+  | "temporaryAccess";
+
 export function RoleManagementPanel({
   roles,
   assignments,
@@ -86,6 +92,12 @@ export function RoleManagementPanel({
   ]);
   const [isCreatingTemporaryGrant, setIsCreatingTemporaryGrant] =
     useState(false);
+  const [grantToRevokeId, setGrantToRevokeId] = useState<string | null>(null);
+  const [revokeReason, setRevokeReason] = useState("");
+  const [isRevokingTemporaryGrant, setIsRevokingTemporaryGrant] =
+    useState(false);
+  const [activeSection, setActiveSection] =
+    useState<SecurityAdminSection>("roles");
 
   function togglePermission(permission: string) {
     setSelectedPermissions((current) =>
@@ -281,10 +293,13 @@ export function RoleManagementPanel({
         })),
       };
 
-      const response = await apiFetch("/api/security/runtime-field-permissions", {
-        method: "PUT",
-        body: JSON.stringify(payload),
-      });
+      const response = await apiFetch(
+        "/api/security/runtime-field-permissions",
+        {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        },
+      );
 
       if (!response.ok) {
         const payload = (await response.json()) as { message?: string };
@@ -350,20 +365,25 @@ export function RoleManagementPanel({
     }
   }
 
-  async function handleRevokeTemporaryGrant(grantId: string) {
+  function startRevokeTemporaryGrant(grantId: string) {
+    setGrantToRevokeId(grantId);
+    setRevokeReason("");
+  }
+
+  async function handleRevokeTemporaryGrant() {
     setErrorMessage(null);
+    if (!grantToRevokeId) {
+      setErrorMessage("Select a temporary grant before revoking.");
+      return;
+    }
 
-    const revokeReason = window.prompt(
-      "Optional revoke reason (leave empty to skip):",
-      "",
-    );
-
+    setIsRevokingTemporaryGrant(true);
     try {
       const payload = {
-        revoke_reason: revokeReason?.trim() ? revokeReason.trim() : null,
+        revoke_reason: revokeReason.trim() ? revokeReason.trim() : null,
       };
       const response = await apiFetch(
-        `/api/security/temporary-access-grants/${grantId}/revoke`,
+        `/api/security/temporary-access-grants/${grantToRevokeId}/revoke`,
         {
           method: "POST",
           body: JSON.stringify(payload),
@@ -378,357 +398,482 @@ export function RoleManagementPanel({
         return;
       }
 
+      setGrantToRevokeId(null);
+      setRevokeReason("");
       router.refresh();
     } catch {
       setErrorMessage("Unable to revoke temporary access grant.");
+    } finally {
+      setIsRevokingTemporaryGrant(false);
     }
   }
 
   return (
     <div className="grid gap-8 md:grid-cols-2">
-      <form className="space-y-4" onSubmit={handleRoleSubmit}>
-        <div className="space-y-2">
-          <Label htmlFor="role_name">Role Name</Label>
-          <Input
-            id="role_name"
-            value={roleName}
-            onChange={(event) => setRoleName(event.target.value)}
-            placeholder="operations_editor"
-            required
-          />
-        </div>
-
-        <fieldset className="space-y-2">
-          <legend className="text-sm font-medium text-zinc-800">
-            Permissions
-          </legend>
-          <div className="space-y-2 rounded-md border border-emerald-100 bg-white p-3">
-            {PERMISSION_OPTIONS.map((permission) => (
-              <label
-                key={permission}
-                className="flex items-center gap-2 text-sm text-zinc-700"
-              >
-                <Checkbox
-                  checked={selectedPermissions.includes(permission)}
-                  onChange={() => togglePermission(permission)}
-                />
-                <span className="font-mono text-xs">{permission}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
-
-        <Button disabled={isSubmittingRole} type="submit">
-          {isSubmittingRole ? "Creating..." : "Create Role"}
-        </Button>
-      </form>
-
-      <form className="space-y-4" onSubmit={handleAssignSubmit}>
-        <div className="space-y-2">
-          <Label htmlFor="assign_subject">Subject</Label>
-          <Input
-            id="assign_subject"
-            value={assignSubject}
-            onChange={(event) => setAssignSubject(event.target.value)}
-            placeholder="alice"
-            required
-          />
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="assign_role_name">Role Name</Label>
-          <Input
-            id="assign_role_name"
-            value={assignRoleName}
-            onChange={(event) => setAssignRoleName(event.target.value)}
-            list="role_names"
-            placeholder="tenant_owner"
-            required
-          />
-          <datalist id="role_names">
-            {roleNames.map((name) => (
-              <option key={name} value={name} />
-            ))}
-          </datalist>
-        </div>
-
-        <Button disabled={isAssigning} type="submit" variant="outline">
-          {isAssigning ? "Assigning..." : "Assign Role"}
-        </Button>
-      </form>
-
-      <form
-        className="space-y-4 md:col-span-2"
-        onSubmit={handleRegistrationModeSubmit}
-      >
-        <div className="space-y-2">
-          <Label htmlFor="tenant_registration_mode">
-            Tenant Registration Mode
-          </Label>
-          <p className="text-sm text-zinc-600">
-            Control whether users can self-register or only join by invite.
-          </p>
-          <Select
-            id="tenant_registration_mode"
-            defaultValue={registrationMode}
-            name="tenant_registration_mode"
-          >
-            <option value="invite_only">Invite only</option>
-            <option value="open">Open registration</option>
-          </Select>
-        </div>
-
+      <div className="md:col-span-2 flex flex-wrap gap-2 rounded-md border border-emerald-100 bg-white/90 p-3">
         <Button
-          disabled={isUpdatingRegistrationMode}
-          type="submit"
-          variant="outline"
+          type="button"
+          variant={activeSection === "roles" ? "default" : "outline"}
+          onClick={() => setActiveSection("roles")}
         >
-          {isUpdatingRegistrationMode ? "Saving..." : "Save Registration Mode"}
+          Roles & Assignments
         </Button>
-      </form>
+        <Button
+          type="button"
+          variant={activeSection === "registration" ? "default" : "outline"}
+          onClick={() => setActiveSection("registration")}
+        >
+          Registration Mode
+        </Button>
+        <Button
+          type="button"
+          variant={activeSection === "fieldPermissions" ? "default" : "outline"}
+          onClick={() => setActiveSection("fieldPermissions")}
+        >
+          Field Permissions
+        </Button>
+        <Button
+          type="button"
+          variant={activeSection === "temporaryAccess" ? "default" : "outline"}
+          onClick={() => setActiveSection("temporaryAccess")}
+        >
+          Temporary Access
+        </Button>
+      </div>
 
-      <form
-        className="space-y-4 rounded-md border border-emerald-100 bg-white p-4 md:col-span-2"
-        onSubmit={handleSaveFieldPermissions}
-      >
-        <p className="text-sm font-medium text-zinc-900">Runtime Field Permissions</p>
-        <div className="grid gap-3 md:grid-cols-2">
+      {activeSection === "roles" ? (
+        <form className="space-y-4" onSubmit={handleRoleSubmit}>
           <div className="space-y-2">
-            <Label htmlFor="field_permission_subject">Subject</Label>
+            <Label htmlFor="role_name">Role Name</Label>
             <Input
-              id="field_permission_subject"
-              value={fieldPermissionSubject}
-              onChange={(event) => setFieldPermissionSubject(event.target.value)}
+              id="role_name"
+              value={roleName}
+              onChange={(event) => setRoleName(event.target.value)}
+              placeholder="operations_editor"
+              required
+            />
+          </div>
+
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium text-zinc-800">
+              Permissions
+            </legend>
+            <div className="space-y-2 rounded-md border border-emerald-100 bg-white p-3">
+              {PERMISSION_OPTIONS.map((permission) => (
+                <label
+                  key={permission}
+                  className="flex items-center gap-2 text-sm text-zinc-700"
+                >
+                  <Checkbox
+                    checked={selectedPermissions.includes(permission)}
+                    onChange={() => togglePermission(permission)}
+                  />
+                  <span className="font-mono text-xs">{permission}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          <Button disabled={isSubmittingRole} type="submit">
+            {isSubmittingRole ? "Creating..." : "Create Role"}
+          </Button>
+        </form>
+      ) : null}
+
+      {activeSection === "roles" ? (
+        <form className="space-y-4" onSubmit={handleAssignSubmit}>
+          <div className="space-y-2">
+            <Label htmlFor="assign_subject">Subject</Label>
+            <Input
+              id="assign_subject"
+              value={assignSubject}
+              onChange={(event) => setAssignSubject(event.target.value)}
               placeholder="alice"
               required
             />
           </div>
+
           <div className="space-y-2">
-            <Label htmlFor="field_permission_entity">Entity</Label>
+            <Label htmlFor="assign_role_name">Role Name</Label>
             <Input
-              id="field_permission_entity"
-              value={fieldPermissionEntity}
-              onChange={(event) => setFieldPermissionEntity(event.target.value)}
-              placeholder="contact"
+              id="assign_role_name"
+              value={assignRoleName}
+              onChange={(event) => setAssignRoleName(event.target.value)}
+              list="role_names"
+              placeholder="tenant_owner"
               required
             />
+            <datalist id="role_names">
+              {roleNames.map((name) => (
+                <option key={name} value={name} />
+              ))}
+            </datalist>
           </div>
-        </div>
 
-        <div className="grid gap-3 rounded-md border border-emerald-100 bg-emerald-50/40 p-3 md:grid-cols-4">
-          <div className="space-y-2 md:col-span-2">
-            <Label htmlFor="field_permission_field_name">Field</Label>
-            <Input
-              id="field_permission_field_name"
-              value={fieldPermissionFieldName}
-              onChange={(event) => setFieldPermissionFieldName(event.target.value)}
-              placeholder="email"
-            />
+          <Button disabled={isAssigning} type="submit" variant="outline">
+            {isAssigning ? "Assigning..." : "Assign Role"}
+          </Button>
+        </form>
+      ) : null}
+
+      {activeSection === "registration" ? (
+        <form
+          className="space-y-4 md:col-span-2"
+          onSubmit={handleRegistrationModeSubmit}
+        >
+          <div className="space-y-2">
+            <Label htmlFor="tenant_registration_mode">
+              Tenant Registration Mode
+            </Label>
+            <p className="text-sm text-zinc-600">
+              Control whether users can self-register or only join by invite.
+            </p>
+            <Select
+              id="tenant_registration_mode"
+              defaultValue={registrationMode}
+              name="tenant_registration_mode"
+            >
+              <option value="invite_only">Invite only</option>
+              <option value="open">Open registration</option>
+            </Select>
           </div>
-          <label className="flex items-center gap-2 text-sm text-zinc-700 md:mt-7">
-            <Checkbox
-              checked={fieldPermissionCanRead}
-              onChange={() => setFieldPermissionCanRead((current) => !current)}
-            />
-            Read
-          </label>
-          <label className="flex items-center gap-2 text-sm text-zinc-700 md:mt-7">
-            <Checkbox
-              checked={fieldPermissionCanWrite}
-              onChange={() => setFieldPermissionCanWrite((current) => !current)}
-            />
-            Write
-          </label>
+
           <Button
-            className="md:col-span-4"
-            onClick={addFieldPermissionDraft}
-            type="button"
+            disabled={isUpdatingRegistrationMode}
+            type="submit"
             variant="outline"
           >
-            Add Field Rule
+            {isUpdatingRegistrationMode
+              ? "Saving..."
+              : "Save Registration Mode"}
           </Button>
-        </div>
+        </form>
+      ) : null}
 
-        <div className="space-y-2">
-          {fieldPermissionsDraft.map((entry) => (
-            <div
-              key={entry.fieldLogicalName}
-              className="flex items-center justify-between rounded-md border border-emerald-100 px-3 py-2"
-            >
-              <p className="font-mono text-xs text-zinc-700">
-                {entry.fieldLogicalName} (read={String(entry.canRead)}, write=
-                {String(entry.canWrite)})
-              </p>
-              <Button
-                onClick={() => removeFieldPermissionDraft(entry.fieldLogicalName)}
-                type="button"
-                variant="outline"
-              >
-                Remove
-              </Button>
-            </div>
-          ))}
-          {fieldPermissionsDraft.length === 0 ? (
-            <p className="text-sm text-zinc-500">No field rules staged.</p>
-          ) : null}
-        </div>
-
-        <Button disabled={isSavingFieldPermissions} type="submit">
-          {isSavingFieldPermissions ? "Saving..." : "Save Field Permissions"}
-        </Button>
-      </form>
-
-      <form
-        className="space-y-4 rounded-md border border-emerald-100 bg-white p-4 md:col-span-2"
-        onSubmit={handleCreateTemporaryGrant}
-      >
-        <p className="text-sm font-medium text-zinc-900">Temporary Access Grants</p>
-
-        <div className="grid gap-3 md:grid-cols-3">
-          <div className="space-y-2">
-            <Label htmlFor="temporary_subject">Subject</Label>
-            <Input
-              id="temporary_subject"
-              value={temporarySubject}
-              onChange={(event) => setTemporarySubject(event.target.value)}
-              placeholder="oncall-user"
-              required
-            />
-          </div>
-          <div className="space-y-2 md:col-span-2">
-            <Label htmlFor="temporary_reason">Reason</Label>
-            <Input
-              id="temporary_reason"
-              value={temporaryReason}
-              onChange={(event) => setTemporaryReason(event.target.value)}
-              placeholder="Incident triage"
-              required
-            />
-          </div>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="temporary_duration">Duration (minutes)</Label>
-          <Input
-            id="temporary_duration"
-            value={temporaryDurationMinutes}
-            onChange={(event) => setTemporaryDurationMinutes(event.target.value)}
-            placeholder="60"
-            type="number"
-          />
-        </div>
-
-        <fieldset className="space-y-2">
-          <legend className="text-sm font-medium text-zinc-800">Permissions</legend>
-          <div className="grid gap-2 rounded-md border border-emerald-100 bg-emerald-50/40 p-3 md:grid-cols-2">
-            {PERMISSION_OPTIONS.map((permission) => (
-              <label
-                key={`temporary-${permission}`}
-                className="flex items-center gap-2 text-sm text-zinc-700"
-              >
-                <Checkbox
-                  checked={temporaryPermissions.includes(permission)}
-                  onChange={() => toggleTemporaryPermission(permission)}
-                />
-                <span className="font-mono text-xs">{permission}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
-
-        <Button disabled={isCreatingTemporaryGrant} type="submit" variant="outline">
-          {isCreatingTemporaryGrant ? "Creating..." : "Create Temporary Grant"}
-        </Button>
-      </form>
-
-      <div className="space-y-3 md:col-span-2">
-        <p className="text-sm font-medium text-zinc-800">Quick Unassign</p>
-        <div className="grid gap-2">
-          {assignments.slice(0, 8).map((assignment) => (
-            <div
-              key={`${assignment.subject}-${assignment.role_id}`}
-              className="flex items-center justify-between rounded-md border border-emerald-100 bg-white px-3 py-2"
-            >
-              <div>
-                <p className="text-sm text-zinc-900">{assignment.subject}</p>
-                <p className="font-mono text-xs text-zinc-500">
-                  {assignment.role_name}
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() =>
-                  handleUnassign(assignment.subject, assignment.role_name)
+      {activeSection === "fieldPermissions" ? (
+        <form
+          className="space-y-4 rounded-md border border-emerald-100 bg-white p-4 md:col-span-2"
+          onSubmit={handleSaveFieldPermissions}
+        >
+          <p className="text-sm font-medium text-zinc-900">
+            Runtime Field Permissions
+          </p>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="field_permission_subject">Subject</Label>
+              <Input
+                id="field_permission_subject"
+                value={fieldPermissionSubject}
+                onChange={(event) =>
+                  setFieldPermissionSubject(event.target.value)
                 }
-              >
-                Remove
-              </Button>
+                placeholder="alice"
+                required
+              />
             </div>
-          ))}
+            <div className="space-y-2">
+              <Label htmlFor="field_permission_entity">Entity</Label>
+              <Input
+                id="field_permission_entity"
+                value={fieldPermissionEntity}
+                onChange={(event) =>
+                  setFieldPermissionEntity(event.target.value)
+                }
+                placeholder="contact"
+                required
+              />
+            </div>
+          </div>
 
-          {assignments.length === 0 ? (
-            <p className="text-sm text-zinc-500">No assignments available.</p>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="space-y-3 md:col-span-2">
-        <p className="text-sm font-medium text-zinc-800">Temporary Grants</p>
-        <div className="grid gap-2">
-          {temporaryAccessGrants.slice(0, 12).map((grant) => (
-            <div
-              key={grant.grant_id}
-              className="flex items-center justify-between rounded-md border border-emerald-100 bg-white px-3 py-2"
+          <div className="grid gap-3 rounded-md border border-emerald-100 bg-emerald-50/40 p-3 md:grid-cols-4">
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="field_permission_field_name">Field</Label>
+              <Input
+                id="field_permission_field_name"
+                value={fieldPermissionFieldName}
+                onChange={(event) =>
+                  setFieldPermissionFieldName(event.target.value)
+                }
+                placeholder="email"
+              />
+            </div>
+            <label className="flex items-center gap-2 text-sm text-zinc-700 md:mt-7">
+              <Checkbox
+                checked={fieldPermissionCanRead}
+                onChange={() =>
+                  setFieldPermissionCanRead((current) => !current)
+                }
+              />
+              Read
+            </label>
+            <label className="flex items-center gap-2 text-sm text-zinc-700 md:mt-7">
+              <Checkbox
+                checked={fieldPermissionCanWrite}
+                onChange={() =>
+                  setFieldPermissionCanWrite((current) => !current)
+                }
+              />
+              Write
+            </label>
+            <Button
+              className="md:col-span-4"
+              onClick={addFieldPermissionDraft}
+              type="button"
+              variant="outline"
             >
-              <div className="space-y-1">
-                <p className="text-sm text-zinc-900">{grant.subject}</p>
-                <p className="font-mono text-xs text-zinc-500">
-                  {grant.permissions.join(", ")} | expires {grant.expires_at}
+              Add Field Rule
+            </Button>
+          </div>
+
+          <div className="space-y-2">
+            {fieldPermissionsDraft.map((entry) => (
+              <div
+                key={entry.fieldLogicalName}
+                className="flex items-center justify-between rounded-md border border-emerald-100 px-3 py-2"
+              >
+                <p className="font-mono text-xs text-zinc-700">
+                  {entry.fieldLogicalName} (read={String(entry.canRead)}, write=
+                  {String(entry.canWrite)})
                 </p>
-                <p className="text-xs text-zinc-600">{grant.reason}</p>
-              </div>
-              {grant.revoked_at ? (
-                <p className="text-xs text-zinc-500">Revoked</p>
-              ) : (
                 <Button
-                  onClick={() => handleRevokeTemporaryGrant(grant.grant_id)}
+                  onClick={() =>
+                    removeFieldPermissionDraft(entry.fieldLogicalName)
+                  }
                   type="button"
                   variant="outline"
                 >
-                  Revoke
+                  Remove
                 </Button>
-              )}
-            </div>
-          ))}
-          {temporaryAccessGrants.length === 0 ? (
-            <p className="text-sm text-zinc-500">No temporary grants found.</p>
-          ) : null}
-        </div>
-      </div>
+              </div>
+            ))}
+            {fieldPermissionsDraft.length === 0 ? (
+              <p className="text-sm text-zinc-500">No field rules staged.</p>
+            ) : null}
+          </div>
 
-      <div className="space-y-3 md:col-span-2">
-        <p className="text-sm font-medium text-zinc-800">Runtime Field Permission Entries</p>
-        <div className="grid gap-2">
-          {runtimeFieldPermissions.slice(0, 20).map((entry) => (
-            <div
-              key={`${entry.subject}-${entry.entity_logical_name}-${entry.field_logical_name}`}
-              className="rounded-md border border-emerald-100 bg-white px-3 py-2"
-            >
-              <p className="text-sm text-zinc-900">
-                {entry.subject} / {entry.entity_logical_name}
-              </p>
-              <p className="font-mono text-xs text-zinc-600">
-                {entry.field_logical_name} (read={String(entry.can_read)}, write=
-                {String(entry.can_write)})
-              </p>
+          <Button disabled={isSavingFieldPermissions} type="submit">
+            {isSavingFieldPermissions ? "Saving..." : "Save Field Permissions"}
+          </Button>
+        </form>
+      ) : null}
+
+      {activeSection === "temporaryAccess" ? (
+        <form
+          className="space-y-4 rounded-md border border-emerald-100 bg-white p-4 md:col-span-2"
+          onSubmit={handleCreateTemporaryGrant}
+        >
+          <p className="text-sm font-medium text-zinc-900">
+            Temporary Access Grants
+          </p>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <div className="space-y-2">
+              <Label htmlFor="temporary_subject">Subject</Label>
+              <Input
+                id="temporary_subject"
+                value={temporarySubject}
+                onChange={(event) => setTemporarySubject(event.target.value)}
+                placeholder="oncall-user"
+                required
+              />
             </div>
-          ))}
-          {runtimeFieldPermissions.length === 0 ? (
-            <p className="text-sm text-zinc-500">No runtime field permissions found.</p>
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="temporary_reason">Reason</Label>
+              <Input
+                id="temporary_reason"
+                value={temporaryReason}
+                onChange={(event) => setTemporaryReason(event.target.value)}
+                placeholder="Incident triage"
+                required
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="temporary_duration">Duration (minutes)</Label>
+            <Input
+              id="temporary_duration"
+              value={temporaryDurationMinutes}
+              onChange={(event) =>
+                setTemporaryDurationMinutes(event.target.value)
+              }
+              placeholder="60"
+              type="number"
+            />
+          </div>
+
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium text-zinc-800">
+              Permissions
+            </legend>
+            <div className="grid gap-2 rounded-md border border-emerald-100 bg-emerald-50/40 p-3 md:grid-cols-2">
+              {PERMISSION_OPTIONS.map((permission) => (
+                <label
+                  key={`temporary-${permission}`}
+                  className="flex items-center gap-2 text-sm text-zinc-700"
+                >
+                  <Checkbox
+                    checked={temporaryPermissions.includes(permission)}
+                    onChange={() => toggleTemporaryPermission(permission)}
+                  />
+                  <span className="font-mono text-xs">{permission}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          <Button
+            disabled={isCreatingTemporaryGrant}
+            type="submit"
+            variant="outline"
+          >
+            {isCreatingTemporaryGrant
+              ? "Creating..."
+              : "Create Temporary Grant"}
+          </Button>
+        </form>
+      ) : null}
+
+      {activeSection === "roles" ? (
+        <div className="space-y-3 md:col-span-2">
+          <p className="text-sm font-medium text-zinc-800">Quick Unassign</p>
+          <div className="grid gap-2">
+            {assignments.slice(0, 8).map((assignment) => (
+              <div
+                key={`${assignment.subject}-${assignment.role_id}`}
+                className="flex items-center justify-between rounded-md border border-emerald-100 bg-white px-3 py-2"
+              >
+                <div>
+                  <p className="text-sm text-zinc-900">{assignment.subject}</p>
+                  <p className="font-mono text-xs text-zinc-500">
+                    {assignment.role_name}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() =>
+                    handleUnassign(assignment.subject, assignment.role_name)
+                  }
+                >
+                  Remove
+                </Button>
+              </div>
+            ))}
+
+            {assignments.length === 0 ? (
+              <p className="text-sm text-zinc-500">No assignments available.</p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {activeSection === "temporaryAccess" ? (
+        <div className="space-y-3 md:col-span-2">
+          <p className="text-sm font-medium text-zinc-800">Temporary Grants</p>
+          <div className="grid gap-2">
+            {temporaryAccessGrants.slice(0, 12).map((grant) => (
+              <div
+                key={grant.grant_id}
+                className="flex items-center justify-between rounded-md border border-emerald-100 bg-white px-3 py-2"
+              >
+                <div className="space-y-1">
+                  <p className="text-sm text-zinc-900">{grant.subject}</p>
+                  <p className="font-mono text-xs text-zinc-500">
+                    {grant.permissions.join(", ")} | expires {grant.expires_at}
+                  </p>
+                  <p className="text-xs text-zinc-600">{grant.reason}</p>
+                </div>
+                {grant.revoked_at ? (
+                  <p className="text-xs text-zinc-500">Revoked</p>
+                ) : (
+                  <Button
+                    onClick={() => startRevokeTemporaryGrant(grant.grant_id)}
+                    type="button"
+                    variant="outline"
+                  >
+                    Revoke
+                  </Button>
+                )}
+              </div>
+            ))}
+            {temporaryAccessGrants.length === 0 ? (
+              <p className="text-sm text-zinc-500">
+                No temporary grants found.
+              </p>
+            ) : null}
+          </div>
+
+          {grantToRevokeId ? (
+            <div className="space-y-3 rounded-md border border-amber-200 bg-amber-50 p-3">
+              <p className="text-sm font-medium text-amber-900">
+                Revoke temporary grant {grantToRevokeId}
+              </p>
+              <div className="space-y-2">
+                <Label htmlFor="revoke_grant_reason">
+                  Revoke reason (optional)
+                </Label>
+                <Input
+                  id="revoke_grant_reason"
+                  value={revokeReason}
+                  onChange={(event) => setRevokeReason(event.target.value)}
+                  placeholder="Reason for revoking this grant"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={handleRevokeTemporaryGrant}
+                  type="button"
+                  variant="outline"
+                  disabled={isRevokingTemporaryGrant}
+                >
+                  {isRevokingTemporaryGrant ? "Revoking..." : "Confirm Revoke"}
+                </Button>
+                <Button
+                  onClick={() => {
+                    setGrantToRevokeId(null);
+                    setRevokeReason("");
+                  }}
+                  type="button"
+                  variant="ghost"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
           ) : null}
         </div>
-      </div>
+      ) : null}
+
+      {activeSection === "fieldPermissions" ? (
+        <div className="space-y-3 md:col-span-2">
+          <p className="text-sm font-medium text-zinc-800">
+            Runtime Field Permission Entries
+          </p>
+          <div className="grid gap-2">
+            {runtimeFieldPermissions.slice(0, 20).map((entry) => (
+              <div
+                key={`${entry.subject}-${entry.entity_logical_name}-${entry.field_logical_name}`}
+                className="rounded-md border border-emerald-100 bg-white px-3 py-2"
+              >
+                <p className="text-sm text-zinc-900">
+                  {entry.subject} / {entry.entity_logical_name}
+                </p>
+                <p className="font-mono text-xs text-zinc-600">
+                  {entry.field_logical_name} (read={String(entry.can_read)},
+                  write=
+                  {String(entry.can_write)})
+                </p>
+              </div>
+            ))}
+            {runtimeFieldPermissions.length === 0 ? (
+              <p className="text-sm text-zinc-500">
+                No runtime field permissions found.
+              </p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       {errorMessage ? (
         <p className="md:col-span-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
