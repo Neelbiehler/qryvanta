@@ -1,7 +1,15 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@qryvanta/ui";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  PageHeader,
+  StatusBadge,
+} from "@qryvanta/ui";
 
 import { AppStudioPanel } from "@/components/apps/app-studio-panel";
 import { AccessDeniedCard } from "@/components/shared/access-denied-card";
@@ -49,16 +57,40 @@ export default async function MakerAppStudioPage() {
   const roles = (await rolesResponse.json()) as RoleResponse[];
 
   return (
-    <Card>
-      <CardHeader>
-        <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-          Maker Center
-        </p>
-        <CardTitle className="font-serif text-3xl">App Studio</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <AppStudioPanel apps={apps} entities={entities} roles={roles} />
-      </CardContent>
-    </Card>
+    <div className="space-y-4">
+      <PageHeader
+        eyebrow="Maker Center"
+        title="App Studio"
+        description="Model app navigation and role permissions with a task-driven builder flow."
+      />
+
+      <div className="grid gap-4 xl:grid-cols-[300px_1fr]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Builder Checklist</CardTitle>
+            <CardDescription>
+              Recommended sequence for delivery-ready apps.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <StatusBadge tone="neutral">Apps {apps.length}</StatusBadge>
+            <StatusBadge tone="neutral">Entities {entities.length}</StatusBadge>
+            <StatusBadge tone="neutral">Roles {roles.length}</StatusBadge>
+            <ol className="space-y-2 text-sm text-zinc-700">
+              <li>1. Create app shell</li>
+              <li>2. Bind entities to navigation</li>
+              <li>3. Assign role entity permissions</li>
+              <li>4. Validate in Worker Apps</li>
+            </ol>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <AppStudioPanel apps={apps} entities={entities} roles={roles} />
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
 }

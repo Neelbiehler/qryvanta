@@ -6,7 +6,7 @@ description: Shared UI component package for consistent app surfaces.
 Qryvanta ships reusable web primitives from `@qryvanta/ui` in `packages/ui`.
 The package is based on shadcn patterns and is the default source for shared application components.
 
-The current package includes standardized form primitives (`Input`, `Textarea`, `Checkbox`, `Select`), card/layout primitives, table primitives, and accessible menu/avatar controls.
+The current package includes standardized form primitives (`Input`, `Textarea`, `Checkbox`, `Select`), card/layout primitives, table primitives, accessible menu/avatar controls, and workspace experience primitives (`PageHeader`, `StatusBadge`).
 
 ## Usage
 
@@ -31,6 +31,12 @@ Do not import from `apps/web/src/components/ui` for shared primitives.
 - Use `Label` with an explicit `htmlFor` for every control.
 - Keep control styling centralized in the UI package to avoid style drift between pages.
 - Use typed API DTOs from `@qryvanta/api-types` when wiring form submissions.
+
+## Workspace Standards
+
+- Use `PageHeader` for page-level title/description/action layout in all persona surfaces.
+- Use `StatusBadge` for short status labels instead of ad-hoc badge styles in app code.
+- Keep command-surface patterns (header search bars, sidebar status chips, action rows) composed from `@qryvanta/ui` primitives.
 
 ## Integration Notes
 

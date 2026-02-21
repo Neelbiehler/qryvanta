@@ -34,6 +34,7 @@ export const SURFACES: Record<SurfaceId, SurfaceDefinition> = {
     description: "Tenant administration, security, and compliance",
     basePath: "/admin",
     navigationItems: [
+      { label: "Overview", href: "/admin" },
       { label: "Roles", href: "/admin/roles" },
       { label: "Audit Log", href: "/admin/audit" },
       { label: "Security Settings", href: "/admin/account" },
@@ -45,6 +46,7 @@ export const SURFACES: Record<SurfaceId, SurfaceDefinition> = {
     description: "Entity modeling, field configuration, and app studio",
     basePath: "/maker",
     navigationItems: [
+      { label: "Overview", href: "/maker" },
       { label: "Entities", href: "/maker/entities" },
       { label: "App Studio", href: "/maker/apps" },
     ],
@@ -55,6 +57,7 @@ export const SURFACES: Record<SurfaceId, SurfaceDefinition> = {
     description: "Operational apps and runtime record management",
     basePath: "/worker",
     navigationItems: [
+      { label: "Overview", href: "/worker" },
       { label: "My Apps", href: "/worker/apps" },
     ],
   },
@@ -104,5 +107,7 @@ export function readAccessibleSurfaces(user: UserIdentityResponse): string[] {
     return [];
   }
 
-  return candidate.filter((value): value is string => typeof value === "string");
+  return candidate.filter(
+    (value): value is string => typeof value === "string",
+  );
 }

@@ -2,14 +2,20 @@ import * as React from "react";
 
 import { cn } from "../lib/cn";
 
+export interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {
+  collapsed?: boolean;
+}
+
 export function Sidebar({
   className,
+  collapsed,
   ...props
-}: React.HTMLAttributes<HTMLDivElement>) {
+}: SidebarProps) {
   return (
     <aside
       className={cn(
-        "w-full border-r border-emerald-100 bg-gradient-to-b from-emerald-50 to-lime-50",
+        "flex h-full flex-col border-r border-emerald-200/60 bg-white/80 backdrop-blur-sm",
+        collapsed ? "w-16" : "w-full",
         className,
       )}
       {...props}

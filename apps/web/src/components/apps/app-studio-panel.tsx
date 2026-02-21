@@ -9,6 +9,7 @@ import {
   Input,
   Label,
   Select,
+  StatusBadge,
   Table,
   TableBody,
   TableCell,
@@ -34,6 +35,8 @@ type AppStudioPanelProps = {
   entities: EntityResponse[];
   roles: RoleResponse[];
 };
+
+type AppStudioSection = "apps" | "navigation" | "permissions";
 
 export function AppStudioPanel({ apps, entities, roles }: AppStudioPanelProps) {
   const router = useRouter();
@@ -73,6 +76,9 @@ export function AppStudioPanel({ apps, entities, roles }: AppStudioPanelProps) {
   const [isBindingEntity, setIsBindingEntity] = useState(false);
   const [isSavingPermission, setIsSavingPermission] = useState(false);
   const [isLoadingAppData, setIsLoadingAppData] = useState(false);
+  const [activeSection, setActiveSection] = useState<AppStudioSection>(
+    apps.length > 0 ? "navigation" : "apps",
+  );
 
   const hasStudioData =
     apps.length > 0 && entities.length > 0 && roles.length > 0;
@@ -242,271 +248,367 @@ export function AppStudioPanel({ apps, entities, roles }: AppStudioPanelProps) {
         </p>
       ) : null}
 
-      <form
-        className="grid gap-3 rounded-md border border-emerald-100 bg-white p-4 md:grid-cols-3"
-        onSubmit={handleCreateApp}
-      >
-        <div className="space-y-2">
-          <Label htmlFor="new_app_logical_name">App Logical Name</Label>
-          <Input
-            id="new_app_logical_name"
-            value={newAppLogicalName}
-            onChange={(event) => setNewAppLogicalName(event.target.value)}
-            placeholder="sales"
-            required
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="new_app_display_name">App Display Name</Label>
-          <Input
-            id="new_app_display_name"
-            value={newAppDisplayName}
-            onChange={(event) => setNewAppDisplayName(event.target.value)}
-            placeholder="Sales App"
-            required
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="new_app_description">Description</Label>
-          <Input
-            id="new_app_description"
-            value={newAppDescription}
-            onChange={(event) => setNewAppDescription(event.target.value)}
-            placeholder="Lead and account workflows"
-          />
-        </div>
-        <div className="md:col-span-3">
-          <Button disabled={isCreatingApp} type="submit">
-            {isCreatingApp ? "Creating..." : "Create App"}
-          </Button>
-        </div>
-      </form>
-
-      <div className="space-y-3 rounded-md border border-emerald-100 bg-white p-4">
-        <div className="space-y-2">
-          <Label htmlFor="studio_app_selector">Active App</Label>
-          <Select
-            id="studio_app_selector"
-            value={selectedApp}
-            onChange={(event) => setSelectedApp(event.target.value)}
-          >
-            {apps.map((app) => (
-              <option key={app.logical_name} value={app.logical_name}>
-                {app.display_name} ({app.logical_name})
-              </option>
-            ))}
-          </Select>
-        </div>
-
-        <form className="grid gap-3 md:grid-cols-3" onSubmit={handleBindEntity}>
-          <div className="space-y-2">
-            <Label htmlFor="bind_entity_name">Entity</Label>
-            <Select
-              id="bind_entity_name"
-              value={entityToBind}
-              onChange={(event) => setEntityToBind(event.target.value)}
-            >
-              {entities.map((entity) => (
-                <option key={entity.logical_name} value={entity.logical_name}>
-                  {entity.display_name} ({entity.logical_name})
-                </option>
-              ))}
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="bind_navigation_label">Navigation Label</Label>
-            <Input
-              id="bind_navigation_label"
-              value={navigationLabel}
-              onChange={(event) => setNavigationLabel(event.target.value)}
-              placeholder="Accounts"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="bind_navigation_order">Navigation Order</Label>
-            <Input
-              id="bind_navigation_order"
-              value={String(navigationOrder)}
-              onChange={(event) =>
-                setNavigationOrder(
-                  Number.parseInt(event.target.value || "0", 10),
-                )
-              }
-              type="number"
-              min={0}
-            />
-          </div>
-
-          <div className="md:col-span-3">
-            <Button
-              disabled={isBindingEntity || isLoadingAppData}
-              type="submit"
-              variant="outline"
-            >
-              {isBindingEntity
-                ? "Saving..."
-                : `Bind Entity to ${selectedAppDisplayName}`}
-            </Button>
-          </div>
-        </form>
-
-        <form
-          className="grid gap-3 md:grid-cols-4"
-          onSubmit={handleSavePermission}
-        >
-          <div className="space-y-2">
-            <Label htmlFor="permission_role_name">Role</Label>
-            <Select
-              id="permission_role_name"
-              value={permissionRoleName}
-              onChange={(event) => setPermissionRoleName(event.target.value)}
-            >
-              {roles.map((role) => (
-                <option key={role.role_id} value={role.name}>
-                  {role.name}
-                </option>
-              ))}
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="permission_entity_name">Entity</Label>
-            <Select
-              id="permission_entity_name"
-              value={permissionEntityName}
-              onChange={(event) => setPermissionEntityName(event.target.value)}
-            >
-              {entities.map((entity) => (
-                <option key={entity.logical_name} value={entity.logical_name}>
-                  {entity.display_name} ({entity.logical_name})
-                </option>
-              ))}
-            </Select>
-          </div>
-
-          <div className="space-y-1 pt-6 md:col-span-2">
-            <div className="mr-3 inline-flex items-center gap-1 text-sm">
-              <Checkbox
-                id="permission_can_read"
-                checked={canRead}
-                onChange={(event) => setCanRead(event.target.checked)}
-              />
-              <Label htmlFor="permission_can_read">Read</Label>
-            </div>
-            <div className="mr-3 inline-flex items-center gap-1 text-sm">
-              <Checkbox
-                id="permission_can_create"
-                checked={canCreate}
-                onChange={(event) => setCanCreate(event.target.checked)}
-              />
-              <Label htmlFor="permission_can_create">Create</Label>
-            </div>
-            <div className="mr-3 inline-flex items-center gap-1 text-sm">
-              <Checkbox
-                id="permission_can_update"
-                checked={canUpdate}
-                onChange={(event) => setCanUpdate(event.target.checked)}
-              />
-              <Label htmlFor="permission_can_update">Update</Label>
-            </div>
-            <div className="inline-flex items-center gap-1 text-sm">
-              <Checkbox
-                id="permission_can_delete"
-                checked={canDelete}
-                onChange={(event) => setCanDelete(event.target.checked)}
-              />
-              <Label htmlFor="permission_can_delete">Delete</Label>
-            </div>
-          </div>
-
-          <div className="md:col-span-4">
-            <Button
-              disabled={isSavingPermission || isLoadingAppData}
-              type="submit"
-              variant="outline"
-            >
-              {isSavingPermission
-                ? "Saving..."
-                : "Save Role Entity Permissions"}
-            </Button>
-          </div>
-        </form>
-
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Bound Entity</TableHead>
-              <TableHead>Label</TableHead>
-              <TableHead>Order</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {bindings.length > 0 ? (
-              bindings.map((binding) => (
-                <TableRow
-                  key={`${binding.app_logical_name}.${binding.entity_logical_name}`}
-                >
-                  <TableCell className="font-mono text-xs">
-                    {binding.entity_logical_name}
-                  </TableCell>
-                  <TableCell>
-                    {binding.navigation_label ?? binding.entity_logical_name}
-                  </TableCell>
-                  <TableCell>{binding.navigation_order}</TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={3} className="text-zinc-500">
-                  No entity bindings for this app.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Role</TableHead>
-              <TableHead>Entity</TableHead>
-              <TableHead>Permissions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {permissions.length > 0 ? (
-              permissions.map((permission) => (
-                <TableRow
-                  key={`${permission.app_logical_name}.${permission.role_name}.${permission.entity_logical_name}`}
-                >
-                  <TableCell>{permission.role_name}</TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {permission.entity_logical_name}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {[
-                      permission.can_read ? "read" : null,
-                      permission.can_create ? "create" : null,
-                      permission.can_update ? "update" : null,
-                      permission.can_delete ? "delete" : null,
-                    ]
-                      .filter((value): value is string => value !== null)
-                      .join(", ") || "none"}
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell colSpan={3} className="text-zinc-500">
-                  No role entity permissions configured for this app.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+      <div className="flex flex-wrap items-center gap-2 rounded-md border border-emerald-100 bg-white/90 p-3">
+        <StatusBadge tone="neutral">Apps {apps.length}</StatusBadge>
+        <StatusBadge tone="neutral">Entities {entities.length}</StatusBadge>
+        <StatusBadge tone="neutral">Roles {roles.length}</StatusBadge>
+        <StatusBadge tone="success">
+          Active {selectedAppDisplayName}
+        </StatusBadge>
       </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant={activeSection === "apps" ? "default" : "outline"}
+          onClick={() => setActiveSection("apps")}
+        >
+          App Catalog
+        </Button>
+        <Button
+          type="button"
+          variant={activeSection === "navigation" ? "default" : "outline"}
+          onClick={() => setActiveSection("navigation")}
+          disabled={apps.length === 0 || entities.length === 0}
+        >
+          Navigation Binding
+        </Button>
+        <Button
+          type="button"
+          variant={activeSection === "permissions" ? "default" : "outline"}
+          onClick={() => setActiveSection("permissions")}
+          disabled={
+            apps.length === 0 || entities.length === 0 || roles.length === 0
+          }
+        >
+          Role Permissions
+        </Button>
+      </div>
+
+      {activeSection === "apps" ? (
+        <div className="space-y-3 rounded-md border border-emerald-100 bg-white p-4">
+          <form
+            className="grid gap-3 md:grid-cols-3"
+            onSubmit={handleCreateApp}
+          >
+            <div className="space-y-2">
+              <Label htmlFor="new_app_logical_name">App Logical Name</Label>
+              <Input
+                id="new_app_logical_name"
+                value={newAppLogicalName}
+                onChange={(event) => setNewAppLogicalName(event.target.value)}
+                placeholder="sales"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new_app_display_name">App Display Name</Label>
+              <Input
+                id="new_app_display_name"
+                value={newAppDisplayName}
+                onChange={(event) => setNewAppDisplayName(event.target.value)}
+                placeholder="Sales App"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new_app_description">Description</Label>
+              <Input
+                id="new_app_description"
+                value={newAppDescription}
+                onChange={(event) => setNewAppDescription(event.target.value)}
+                placeholder="Lead and account workflows"
+              />
+            </div>
+            <div className="md:col-span-3">
+              <Button disabled={isCreatingApp} type="submit">
+                {isCreatingApp ? "Creating..." : "Create App"}
+              </Button>
+            </div>
+          </form>
+
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>App</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead>Logical Name</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {apps.length > 0 ? (
+                apps.map((app) => (
+                  <TableRow key={app.logical_name}>
+                    <TableCell>{app.display_name}</TableCell>
+                    <TableCell>{app.description ?? "-"}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {app.logical_name}
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={3} className="text-zinc-500">
+                    No apps yet.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      ) : null}
+
+      {activeSection === "navigation" ? (
+        <div className="space-y-3 rounded-md border border-emerald-100 bg-white p-4">
+          <div className="space-y-2">
+            <Label htmlFor="studio_app_selector">Active App</Label>
+            <Select
+              id="studio_app_selector"
+              value={selectedApp}
+              onChange={(event) => setSelectedApp(event.target.value)}
+            >
+              {apps.map((app) => (
+                <option key={app.logical_name} value={app.logical_name}>
+                  {app.display_name} ({app.logical_name})
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <form
+            className="grid gap-3 md:grid-cols-3"
+            onSubmit={handleBindEntity}
+          >
+            <div className="space-y-2">
+              <Label htmlFor="bind_entity_name">Entity</Label>
+              <Select
+                id="bind_entity_name"
+                value={entityToBind}
+                onChange={(event) => setEntityToBind(event.target.value)}
+              >
+                {entities.map((entity) => (
+                  <option key={entity.logical_name} value={entity.logical_name}>
+                    {entity.display_name} ({entity.logical_name})
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="bind_navigation_label">Navigation Label</Label>
+              <Input
+                id="bind_navigation_label"
+                value={navigationLabel}
+                onChange={(event) => setNavigationLabel(event.target.value)}
+                placeholder="Accounts"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="bind_navigation_order">Navigation Order</Label>
+              <Input
+                id="bind_navigation_order"
+                value={String(navigationOrder)}
+                onChange={(event) =>
+                  setNavigationOrder(
+                    Number.parseInt(event.target.value || "0", 10),
+                  )
+                }
+                type="number"
+                min={0}
+              />
+            </div>
+
+            <div className="md:col-span-3">
+              <Button
+                disabled={isBindingEntity || isLoadingAppData}
+                type="submit"
+                variant="outline"
+              >
+                {isBindingEntity
+                  ? "Saving..."
+                  : `Bind Entity to ${selectedAppDisplayName}`}
+              </Button>
+            </div>
+          </form>
+
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Bound Entity</TableHead>
+                <TableHead>Label</TableHead>
+                <TableHead>Order</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {bindings.length > 0 ? (
+                bindings.map((binding) => (
+                  <TableRow
+                    key={`${binding.app_logical_name}.${binding.entity_logical_name}`}
+                  >
+                    <TableCell className="font-mono text-xs">
+                      {binding.entity_logical_name}
+                    </TableCell>
+                    <TableCell>
+                      {binding.navigation_label ?? binding.entity_logical_name}
+                    </TableCell>
+                    <TableCell>{binding.navigation_order}</TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={3} className="text-zinc-500">
+                    No entity bindings for this app.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      ) : null}
+
+      {activeSection === "permissions" ? (
+        <div className="space-y-3 rounded-md border border-emerald-100 bg-white p-4">
+          <div className="space-y-2">
+            <Label htmlFor="studio_permissions_app_selector">Active App</Label>
+            <Select
+              id="studio_permissions_app_selector"
+              value={selectedApp}
+              onChange={(event) => setSelectedApp(event.target.value)}
+            >
+              {apps.map((app) => (
+                <option key={app.logical_name} value={app.logical_name}>
+                  {app.display_name} ({app.logical_name})
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <form
+            className="grid gap-3 md:grid-cols-4"
+            onSubmit={handleSavePermission}
+          >
+            <div className="space-y-2">
+              <Label htmlFor="permission_role_name">Role</Label>
+              <Select
+                id="permission_role_name"
+                value={permissionRoleName}
+                onChange={(event) => setPermissionRoleName(event.target.value)}
+              >
+                {roles.map((role) => (
+                  <option key={role.role_id} value={role.name}>
+                    {role.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="permission_entity_name">Entity</Label>
+              <Select
+                id="permission_entity_name"
+                value={permissionEntityName}
+                onChange={(event) =>
+                  setPermissionEntityName(event.target.value)
+                }
+              >
+                {entities.map((entity) => (
+                  <option key={entity.logical_name} value={entity.logical_name}>
+                    {entity.display_name} ({entity.logical_name})
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            <div className="space-y-1 pt-6 md:col-span-2">
+              <div className="mr-3 inline-flex items-center gap-1 text-sm">
+                <Checkbox
+                  id="permission_can_read"
+                  checked={canRead}
+                  onChange={(event) => setCanRead(event.target.checked)}
+                />
+                <Label htmlFor="permission_can_read">Read</Label>
+              </div>
+              <div className="mr-3 inline-flex items-center gap-1 text-sm">
+                <Checkbox
+                  id="permission_can_create"
+                  checked={canCreate}
+                  onChange={(event) => setCanCreate(event.target.checked)}
+                />
+                <Label htmlFor="permission_can_create">Create</Label>
+              </div>
+              <div className="mr-3 inline-flex items-center gap-1 text-sm">
+                <Checkbox
+                  id="permission_can_update"
+                  checked={canUpdate}
+                  onChange={(event) => setCanUpdate(event.target.checked)}
+                />
+                <Label htmlFor="permission_can_update">Update</Label>
+              </div>
+              <div className="inline-flex items-center gap-1 text-sm">
+                <Checkbox
+                  id="permission_can_delete"
+                  checked={canDelete}
+                  onChange={(event) => setCanDelete(event.target.checked)}
+                />
+                <Label htmlFor="permission_can_delete">Delete</Label>
+              </div>
+            </div>
+
+            <div className="md:col-span-4">
+              <Button
+                disabled={isSavingPermission || isLoadingAppData}
+                type="submit"
+                variant="outline"
+              >
+                {isSavingPermission
+                  ? "Saving..."
+                  : "Save Role Entity Permissions"}
+              </Button>
+            </div>
+          </form>
+
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Role</TableHead>
+                <TableHead>Entity</TableHead>
+                <TableHead>Permissions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {permissions.length > 0 ? (
+                permissions.map((permission) => (
+                  <TableRow
+                    key={`${permission.app_logical_name}.${permission.role_name}.${permission.entity_logical_name}`}
+                  >
+                    <TableCell>{permission.role_name}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {permission.entity_logical_name}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {[
+                        permission.can_read ? "read" : null,
+                        permission.can_create ? "create" : null,
+                        permission.can_update ? "update" : null,
+                        permission.can_delete ? "delete" : null,
+                      ]
+                        .filter((value): value is string => value !== null)
+                        .join(", ") || "none"}
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={3} className="text-zinc-500">
+                    No role entity permissions configured for this app.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      ) : null}
 
       {errorMessage ? (
         <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">

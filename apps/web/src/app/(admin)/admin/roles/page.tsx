@@ -4,8 +4,11 @@ import { redirect } from "next/navigation";
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
+  PageHeader,
+  StatusBadge,
   Table,
   TableBody,
   TableCell,
@@ -95,81 +98,117 @@ export default async function AdminRolesPage() {
     (await temporaryAccessGrantsResponse.json()) as TemporaryAccessGrantResponse[];
 
   return (
-    <Card>
-      <CardHeader>
-        <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-          Admin Center
-        </p>
-        <CardTitle className="font-serif text-3xl">Roles</CardTitle>
-      </CardHeader>
+    <div className="space-y-4">
+      <PageHeader
+        eyebrow="Admin Center"
+        title="Roles"
+        description="Manage tenant access, assignments, and temporary elevation."
+      />
 
-      <CardContent className="space-y-8">
-        <RoleManagementPanel
-          roles={roles}
-          assignments={assignments}
-          registrationMode={registrationMode.registration_mode}
-          runtimeFieldPermissions={runtimeFieldPermissions}
-          temporaryAccessGrants={temporaryAccessGrants}
-        />
+      <div className="grid gap-4 xl:grid-cols-[300px_1fr]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Governance Snapshot</CardTitle>
+            <CardDescription>Current authorization inventory.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <StatusBadge tone="neutral">Roles {roles.length}</StatusBadge>
+            <StatusBadge tone="neutral">
+              Assignments {assignments.length}
+            </StatusBadge>
+            <StatusBadge tone="warning">
+              Temporary Grants {temporaryAccessGrants.length}
+            </StatusBadge>
+            <StatusBadge tone="neutral">
+              Registration {registrationMode.registration_mode}
+            </StatusBadge>
+          </CardContent>
+        </Card>
 
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Role Name</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Permissions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {roles.length > 0 ? (
-              roles.map((role) => (
-                <TableRow key={role.role_id}>
-                  <TableCell className="font-medium">{role.name}</TableCell>
-                  <TableCell>{role.is_system ? "System" : "Custom"}</TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {role.permissions.join(", ") || "No permissions"}
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell className="text-zinc-500" colSpan={3}>
-                  No roles found.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+        <Card>
+          <CardContent className="space-y-8 pt-6">
+            <RoleManagementPanel
+              roles={roles}
+              assignments={assignments}
+              registrationMode={registrationMode.registration_mode}
+              runtimeFieldPermissions={runtimeFieldPermissions}
+              temporaryAccessGrants={temporaryAccessGrants}
+            />
 
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Subject</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Assigned At</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {assignments.length > 0 ? (
-              assignments.map((assignment) => (
-                <TableRow key={`${assignment.subject}-${assignment.role_id}`}>
-                  <TableCell>{assignment.subject}</TableCell>
-                  <TableCell>{assignment.role_name}</TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {assignment.assigned_at}
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell className="text-zinc-500" colSpan={3}>
-                  No assignments found.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+            <div className="space-y-3">
+              <p className="text-sm font-medium text-zinc-900">Role Catalog</p>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Role Name</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Permissions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {roles.length > 0 ? (
+                    roles.map((role) => (
+                      <TableRow key={role.role_id}>
+                        <TableCell className="font-medium">
+                          {role.name}
+                        </TableCell>
+                        <TableCell>
+                          {role.is_system ? "System" : "Custom"}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {role.permissions.join(", ") || "No permissions"}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell className="text-zinc-500" colSpan={3}>
+                        No roles found.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-sm font-medium text-zinc-900">
+                Assignment Ledger
+              </p>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Subject</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Assigned At</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {assignments.length > 0 ? (
+                    assignments.map((assignment) => (
+                      <TableRow
+                        key={`${assignment.subject}-${assignment.role_id}`}
+                      >
+                        <TableCell>{assignment.subject}</TableCell>
+                        <TableCell>{assignment.role_name}</TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {assignment.assigned_at}
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell className="text-zinc-500" colSpan={3}>
+                        No assignments found.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
 }

@@ -5,8 +5,11 @@ import { redirect } from "next/navigation";
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
+  PageHeader,
+  StatusBadge,
   buttonVariants,
 } from "@qryvanta/ui";
 
@@ -73,32 +76,60 @@ export default async function WorkerAppEntityPage({
   const records = (await recordsResponse.json()) as RuntimeRecordResponse[];
 
   return (
-    <Card>
-      <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-            Worker Apps
-          </p>
-          <CardTitle className="font-serif text-3xl">
-            {schema.entity_display_name} &middot; {appLogicalName}
-          </CardTitle>
-        </div>
-        <Link
-          href={`/worker/apps/${appLogicalName}`}
-          className={cn(buttonVariants({ variant: "outline" }))}
-        >
-          Back to app
-        </Link>
-      </CardHeader>
-      <CardContent>
-        <WorkspaceEntityPanel
-          appLogicalName={appLogicalName}
-          entityLogicalName={entityLogicalName}
-          schema={schema}
-          capabilities={capabilities}
-          records={records}
-        />
-      </CardContent>
-    </Card>
+    <div className="space-y-4">
+      <PageHeader
+        eyebrow="Worker Apps"
+        title={`${schema.entity_display_name} | ${appLogicalName}`}
+        description="Operate records using app-scoped capabilities and fast grid workflows."
+        actions={
+          <Link
+            href={`/worker/apps/${appLogicalName}`}
+            className={cn(buttonVariants({ variant: "outline" }))}
+          >
+            Back to app
+          </Link>
+        }
+      />
+
+      <div className="grid gap-4 xl:grid-cols-[300px_1fr]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Entity Workspace</CardTitle>
+            <CardDescription>
+              Record operations for {schema.entity_display_name}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <StatusBadge tone="success">
+              Published v{schema.version}
+            </StatusBadge>
+            <StatusBadge tone={capabilities.can_create ? "success" : "warning"}>
+              Create {capabilities.can_create ? "Allowed" : "Blocked"}
+            </StatusBadge>
+            <StatusBadge tone={capabilities.can_update ? "success" : "warning"}>
+              Update {capabilities.can_update ? "Allowed" : "Blocked"}
+            </StatusBadge>
+            <StatusBadge tone={capabilities.can_delete ? "warning" : "neutral"}>
+              Delete {capabilities.can_delete ? "Allowed" : "Blocked"}
+            </StatusBadge>
+            <p className="text-xs text-zinc-500">
+              Loaded {records.length} row(s) for initial grid view.
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <WorkspaceEntityPanel
+              appLogicalName={appLogicalName}
+              entityLogicalName={entityLogicalName}
+              schema={schema}
+              capabilities={capabilities}
+              records={records}
+            />
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
 }

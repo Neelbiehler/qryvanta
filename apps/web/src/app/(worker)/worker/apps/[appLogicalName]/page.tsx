@@ -5,8 +5,11 @@ import { redirect } from "next/navigation";
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
+  PageHeader,
+  StatusBadge,
   Table,
   TableBody,
   TableCell,
@@ -58,67 +61,86 @@ export default async function WorkerAppHomePage({
     (await navigationResponse.json()) as AppEntityBindingResponse[];
 
   return (
-    <Card>
-      <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-            Worker Apps
-          </p>
-          <CardTitle className="font-serif text-3xl">
-            {appLogicalName}
-          </CardTitle>
-        </div>
-        <Link
-          href="/worker/apps"
-          className={cn(buttonVariants({ variant: "outline" }))}
-        >
-          Back to apps
-        </Link>
-      </CardHeader>
+    <div className="space-y-4">
+      <PageHeader
+        eyebrow="Worker Apps"
+        title={appLogicalName}
+        description="Select an entity area to view records and execute tasks."
+        actions={
+          <Link
+            href="/worker/apps"
+            className={cn(buttonVariants({ variant: "outline" }))}
+          >
+            Back to apps
+          </Link>
+        }
+      />
 
-      <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Entity</TableHead>
-              <TableHead>Label</TableHead>
-              <TableHead>Open</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {navigation.length > 0 ? (
-              navigation.map((item) => (
-                <TableRow
-                  key={`${item.app_logical_name}.${item.entity_logical_name}`}
-                >
-                  <TableCell className="font-mono text-xs">
-                    {item.entity_logical_name}
-                  </TableCell>
-                  <TableCell>
-                    {item.navigation_label ?? item.entity_logical_name}
-                  </TableCell>
-                  <TableCell>
-                    <Link
-                      className={cn(
-                        buttonVariants({ size: "sm", variant: "outline" }),
-                      )}
-                      href={`/worker/apps/${appLogicalName}/${item.entity_logical_name}`}
-                    >
-                      Open
-                    </Link>
-                  </TableCell>
+      <div className="grid gap-4 xl:grid-cols-[300px_1fr]">
+        <Card>
+          <CardHeader>
+            <CardTitle>App Queue</CardTitle>
+            <CardDescription>
+              Entity work areas available to your role.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <StatusBadge tone="neutral">
+              Entities {navigation.length}
+            </StatusBadge>
+            <p className="text-sm text-zinc-600">
+              Open an entity workspace to create, update, or inspect runtime
+              records.
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Entity</TableHead>
+                  <TableHead>Label</TableHead>
+                  <TableHead>Open</TableHead>
                 </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell className="text-zinc-500" colSpan={3}>
-                  No entities are configured for this app yet.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+              </TableHeader>
+              <TableBody>
+                {navigation.length > 0 ? (
+                  navigation.map((item) => (
+                    <TableRow
+                      key={`${item.app_logical_name}.${item.entity_logical_name}`}
+                    >
+                      <TableCell className="font-mono text-xs">
+                        {item.entity_logical_name}
+                      </TableCell>
+                      <TableCell>
+                        {item.navigation_label ?? item.entity_logical_name}
+                      </TableCell>
+                      <TableCell>
+                        <Link
+                          className={cn(
+                            buttonVariants({ size: "sm", variant: "outline" }),
+                          )}
+                          href={`/worker/apps/${appLogicalName}/${item.entity_logical_name}`}
+                        >
+                          Open
+                        </Link>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell className="text-zinc-500" colSpan={3}>
+                      No entities are configured for this app yet.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
 }

@@ -9,6 +9,7 @@ import {
   Input,
   Label,
   Select,
+  StatusBadge,
   Table,
   TableBody,
   TableCell,
@@ -51,6 +52,9 @@ type QueryPreset = {
   offsetText: string;
   filtersText: string;
 };
+
+type WorkbenchSection = "schema" | "runtime";
+type RuntimeSection = "create" | "query";
 
 function normalizeQueryPresets(rawValue: unknown): QueryPreset[] {
   if (!Array.isArray(rawValue)) {
@@ -115,6 +119,10 @@ export function EntityWorkbenchPanel({
   const [isSavingPreset, setIsSavingPreset] = useState(false);
   const [isQueryingRecords, setIsQueryingRecords] = useState(false);
   const [deletingRecordId, setDeletingRecordId] = useState<string | null>(null);
+  const [activeSection, setActiveSection] =
+    useState<WorkbenchSection>("schema");
+  const [activeRuntimeSection, setActiveRuntimeSection] =
+    useState<RuntimeSection>("create");
   const presetCopiedTimeoutRef = useRef<number | null>(null);
 
   const queryPresetsStorageKey = `entity-workbench-query-presets:${entityLogicalName}`;
@@ -531,390 +539,454 @@ export function EntityWorkbenchPanel({
 
   return (
     <div className="space-y-8">
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-medium text-zinc-800">Draft Fields</p>
-          <Button
-            disabled={isPublishing}
-            onClick={handlePublish}
-            type="button"
-            variant="outline"
-          >
-            {isPublishing
-              ? "Publishing..."
-              : initialPublishedSchema
-                ? `Publish v${initialPublishedSchema.version + 1}`
-                : "Publish v1"}
-          </Button>
-        </div>
+      <div className="flex flex-wrap items-center gap-2 rounded-md border border-emerald-100 bg-white/90 p-3">
+        <StatusBadge tone="neutral">Fields {initialFields.length}</StatusBadge>
+        <StatusBadge tone="neutral">
+          Records {displayedRecords.length}
+        </StatusBadge>
+        <StatusBadge tone={initialPublishedSchema ? "success" : "warning"}>
+          {initialPublishedSchema
+            ? `Published v${initialPublishedSchema.version}`
+            : "Not Published"}
+        </StatusBadge>
+      </div>
 
-        <form
-          className="grid gap-3 rounded-md border border-emerald-100 bg-white p-4 md:grid-cols-2"
-          onSubmit={handleSaveField}
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant={activeSection === "schema" ? "default" : "outline"}
+          onClick={() => setActiveSection("schema")}
         >
-          <div className="space-y-2">
-            <Label htmlFor="field_logical_name">Logical Name</Label>
-            <Input
-              id="field_logical_name"
-              onChange={(event) => setLogicalName(event.target.value)}
-              placeholder="name"
-              required
-              value={logicalName}
-            />
-          </div>
+          Schema Design
+        </Button>
+        <Button
+          type="button"
+          variant={activeSection === "runtime" ? "default" : "outline"}
+          onClick={() => setActiveSection("runtime")}
+        >
+          Runtime Operations
+        </Button>
+      </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="field_display_name">Display Name</Label>
-            <Input
-              id="field_display_name"
-              onChange={(event) => setDisplayName(event.target.value)}
-              placeholder="Name"
-              required
-              value={displayName}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="field_type">Field Type</Label>
-            <Select
-              id="field_type"
-              onChange={(event) =>
-                setFieldType(
-                  event.target.value as (typeof FIELD_TYPE_OPTIONS)[number],
-                )
-              }
-              value={fieldType}
+      {activeSection === "schema" ? (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-medium text-zinc-800">Draft Fields</p>
+            <Button
+              disabled={isPublishing}
+              onClick={handlePublish}
+              type="button"
+              variant="outline"
             >
-              {FIELD_TYPE_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option}
-                </option>
-              ))}
-            </Select>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="relation_target_entity">
-              Relation Target Entity
-            </Label>
-            <Input
-              id="relation_target_entity"
-              onChange={(event) => setRelationTargetEntity(event.target.value)}
-              placeholder="contact"
-              value={relationTargetEntity}
-            />
-          </div>
-
-          <div className="space-y-2 md:col-span-2">
-            <Label htmlFor="default_value">Default Value (JSON)</Label>
-            <Textarea
-              id="default_value"
-              onChange={(event) => setDefaultValueText(event.target.value)}
-              placeholder='"Acme" or true or {"enabled":true}'
-              value={defaultValueText}
-            />
-          </div>
-
-          <div className="flex items-center gap-2 text-sm text-zinc-700">
-            <Checkbox
-              id="field_is_required"
-              checked={isRequired}
-              onChange={(event) => setIsRequired(event.target.checked)}
-            />
-            <Label htmlFor="field_is_required">Required</Label>
-          </div>
-
-          <div className="flex items-center gap-2 text-sm text-zinc-700">
-            <Checkbox
-              id="field_is_unique"
-              checked={isUnique}
-              onChange={(event) => setIsUnique(event.target.checked)}
-            />
-            <Label htmlFor="field_is_unique">Unique</Label>
-          </div>
-
-          <div className="md:col-span-2">
-            <Button disabled={isSavingField} type="submit">
-              {isSavingField ? "Saving..." : "Save Field"}
+              {isPublishing
+                ? "Publishing..."
+                : initialPublishedSchema
+                  ? `Publish v${initialPublishedSchema.version + 1}`
+                  : "Publish v1"}
             </Button>
           </div>
-        </form>
 
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Logical Name</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Required</TableHead>
-              <TableHead>Unique</TableHead>
-              <TableHead>Default</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {initialFields.length > 0 ? (
-              initialFields.map((field) => (
-                <TableRow
-                  key={`${field.entity_logical_name}.${field.logical_name}`}
-                >
-                  <TableCell className="font-mono text-xs">
-                    {field.logical_name}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {field.field_type}
-                  </TableCell>
-                  <TableCell>{field.is_required ? "Yes" : "No"}</TableCell>
-                  <TableCell>{field.is_unique ? "Yes" : "No"}</TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {field.default_value === null
-                      ? "-"
-                      : JSON.stringify(field.default_value)}
-                  </TableCell>
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell className="text-zinc-500" colSpan={5}>
-                  No fields defined yet.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </section>
-
-      <section className="space-y-3">
-        <div>
-          <p className="text-sm font-medium text-zinc-800">Runtime Records</p>
-          <p className="text-xs text-zinc-500">
-            {initialPublishedSchema
-              ? `Using published schema version ${initialPublishedSchema.version}.`
-              : "Publish this entity before creating runtime records."}
-          </p>
-        </div>
-
-        <form
-          className="space-y-3 rounded-md border border-emerald-100 bg-white p-4"
-          onSubmit={handleCreateRecord}
-        >
-          <Label htmlFor="record_payload">Record Payload (JSON object)</Label>
-          <Textarea
-            id="record_payload"
-            className="font-mono text-xs"
-            onChange={(event) => setRecordPayload(event.target.value)}
-            placeholder='{"name":"Alice"}'
-            value={recordPayload}
-          />
-          <Button
-            disabled={isCreatingRecord || !initialPublishedSchema}
-            type="submit"
+          <form
+            className="grid gap-3 rounded-md border border-emerald-100 bg-white p-4 md:grid-cols-2"
+            onSubmit={handleSaveField}
           >
-            {isCreatingRecord ? "Creating..." : "Create Runtime Record"}
-          </Button>
-        </form>
-
-        <form
-          className="space-y-3 rounded-md border border-zinc-200 bg-zinc-50 p-4"
-          onSubmit={handleQueryRecords}
-        >
-          <div className="grid gap-3 md:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="query_limit">Query Limit</Label>
+              <Label htmlFor="field_logical_name">Logical Name</Label>
               <Input
-                id="query_limit"
-                min={1}
-                onChange={(event) => setQueryLimitText(event.target.value)}
-                type="number"
-                value={queryLimitText}
+                id="field_logical_name"
+                onChange={(event) => setLogicalName(event.target.value)}
+                placeholder="name"
+                required
+                value={logicalName}
               />
             </div>
+
             <div className="space-y-2">
-              <Label htmlFor="query_offset">Query Offset</Label>
+              <Label htmlFor="field_display_name">Display Name</Label>
               <Input
-                id="query_offset"
-                min={0}
-                onChange={(event) => setQueryOffsetText(event.target.value)}
-                type="number"
-                value={queryOffsetText}
+                id="field_display_name"
+                onChange={(event) => setDisplayName(event.target.value)}
+                placeholder="Name"
+                required
+                value={displayName}
               />
             </div>
-          </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="query_filters">
-              Exact-Match Filters (JSON object)
-            </Label>
-            <Textarea
-              id="query_filters"
-              className="font-mono text-xs"
-              onChange={(event) => setQueryFiltersText(event.target.value)}
-              placeholder='{"name":"Alice","active":true}'
-              value={queryFiltersText}
-            />
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-[1fr_auto]">
             <div className="space-y-2">
-              <Label htmlFor="query_preset_name">Preset Name</Label>
-              <Input
-                id="query_preset_name"
-                onChange={(event) => setQueryPresetName(event.target.value)}
-                placeholder="active-contacts"
-                value={queryPresetName}
-              />
-            </div>
-            <div className="flex items-end">
-              <Button
-                disabled={isSavingPreset}
-                onClick={handleSaveQueryPreset}
-                type="button"
-                variant="outline"
-              >
-                {isSavingPreset ? "Saving..." : "Save Preset"}
-              </Button>
-            </div>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
-            <div className="space-y-2">
-              <Label htmlFor="saved_query_presets">Saved Presets</Label>
+              <Label htmlFor="field_type">Field Type</Label>
               <Select
-                id="saved_query_presets"
-                onChange={(event) => setSelectedPresetName(event.target.value)}
-                value={selectedPresetName}
+                id="field_type"
+                onChange={(event) =>
+                  setFieldType(
+                    event.target.value as (typeof FIELD_TYPE_OPTIONS)[number],
+                  )
+                }
+                value={fieldType}
               >
-                <option value="">Select preset...</option>
-                {queryPresets.map((preset) => (
-                  <option key={preset.name} value={preset.name}>
-                    {preset.name}
+                {FIELD_TYPE_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
                   </option>
                 ))}
               </Select>
             </div>
-            <div className="flex items-end">
-              <Button
-                disabled={selectedPresetName.length === 0}
-                onClick={() => {
-                  clearMessages();
-                  loadPreset(selectedPresetName);
-                }}
-                type="button"
-                variant="outline"
-              >
-                Load
+
+            <div className="space-y-2">
+              <Label htmlFor="relation_target_entity">
+                Relation Target Entity
+              </Label>
+              <Input
+                id="relation_target_entity"
+                onChange={(event) =>
+                  setRelationTargetEntity(event.target.value)
+                }
+                placeholder="contact"
+                value={relationTargetEntity}
+              />
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="default_value">Default Value (JSON)</Label>
+              <Textarea
+                id="default_value"
+                onChange={(event) => setDefaultValueText(event.target.value)}
+                placeholder='"Acme" or true or {"enabled":true}'
+                value={defaultValueText}
+              />
+            </div>
+
+            <div className="flex items-center gap-2 text-sm text-zinc-700">
+              <Checkbox
+                id="field_is_required"
+                checked={isRequired}
+                onChange={(event) => setIsRequired(event.target.checked)}
+              />
+              <Label htmlFor="field_is_required">Required</Label>
+            </div>
+
+            <div className="flex items-center gap-2 text-sm text-zinc-700">
+              <Checkbox
+                id="field_is_unique"
+                checked={isUnique}
+                onChange={(event) => setIsUnique(event.target.checked)}
+              />
+              <Label htmlFor="field_is_unique">Unique</Label>
+            </div>
+
+            <div className="md:col-span-2">
+              <Button disabled={isSavingField} type="submit">
+                {isSavingField ? "Saving..." : "Save Field"}
               </Button>
             </div>
-            <div className="flex items-end">
-              <Button
-                disabled={selectedPresetName.length === 0}
-                onClick={handleDeleteSelectedPreset}
-                type="button"
-                variant="ghost"
-              >
-                Delete Preset
-              </Button>
-            </div>
-          </div>
+          </form>
 
-          <div className="space-y-2">
-            <Label htmlFor="query_preset_transfer">
-              Preset Import/Export (JSON)
-            </Label>
-            <Textarea
-              id="query_preset_transfer"
-              className="font-mono text-xs"
-              onChange={(event) => setPresetTransferText(event.target.value)}
-              placeholder='[{"name":"active-contacts","limitText":"50","offsetText":"0","filtersText":"{\"active\":true}"}]'
-              value={presetTransferText}
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              onClick={handleExportQueryPresets}
-              type="button"
-              variant="outline"
-            >
-              Export Presets
-            </Button>
-            <Button
-              onClick={handleImportQueryPresets}
-              type="button"
-              variant="outline"
-            >
-              Import Presets
-            </Button>
-            {isPresetCopied ? (
-              <span className="text-xs text-emerald-700">Copied!</span>
-            ) : null}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              disabled={isQueryingRecords || !initialPublishedSchema}
-              type="submit"
-              variant="outline"
-            >
-              {isQueryingRecords ? "Querying..." : "Query Records"}
-            </Button>
-            <Button
-              disabled={queriedRecords === null}
-              onClick={() => {
-                clearMessages();
-                setQueriedRecords(null);
-              }}
-              type="button"
-              variant="ghost"
-            >
-              Clear Query
-            </Button>
-          </div>
-        </form>
-
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Record ID</TableHead>
-              <TableHead>Data</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {displayedRecords.length > 0 ? (
-              displayedRecords.map((record) => (
-                <TableRow key={record.record_id}>
-                  <TableCell className="font-mono text-xs">
-                    {record.record_id}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {JSON.stringify(record.data)}
-                  </TableCell>
-                  <TableCell>
-                    <Button
-                      disabled={deletingRecordId === record.record_id}
-                      onClick={() => handleDeleteRecord(record.record_id)}
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      {deletingRecordId === record.record_id
-                        ? "Deleting..."
-                        : "Delete"}
-                    </Button>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Logical Name</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Required</TableHead>
+                <TableHead>Unique</TableHead>
+                <TableHead>Default</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {initialFields.length > 0 ? (
+                initialFields.map((field) => (
+                  <TableRow
+                    key={`${field.entity_logical_name}.${field.logical_name}`}
+                  >
+                    <TableCell className="font-mono text-xs">
+                      {field.logical_name}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {field.field_type}
+                    </TableCell>
+                    <TableCell>{field.is_required ? "Yes" : "No"}</TableCell>
+                    <TableCell>{field.is_unique ? "Yes" : "No"}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {field.default_value === null
+                        ? "-"
+                        : JSON.stringify(field.default_value)}
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell className="text-zinc-500" colSpan={5}>
+                    No fields defined yet.
                   </TableCell>
                 </TableRow>
-              ))
-            ) : (
+              )}
+            </TableBody>
+          </Table>
+        </section>
+      ) : null}
+
+      {activeSection === "runtime" ? (
+        <section className="space-y-3">
+          <div>
+            <p className="text-sm font-medium text-zinc-800">Runtime Records</p>
+            <p className="text-xs text-zinc-500">
+              {initialPublishedSchema
+                ? `Using published schema version ${initialPublishedSchema.version}.`
+                : "Publish this entity before creating runtime records."}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2 rounded-md border border-zinc-200 bg-zinc-50 p-3">
+            <Button
+              type="button"
+              variant={
+                activeRuntimeSection === "create" ? "default" : "outline"
+              }
+              onClick={() => setActiveRuntimeSection("create")}
+            >
+              Create Record
+            </Button>
+            <Button
+              type="button"
+              variant={activeRuntimeSection === "query" ? "default" : "outline"}
+              onClick={() => setActiveRuntimeSection("query")}
+            >
+              Query & Presets
+            </Button>
+          </div>
+
+          {activeRuntimeSection === "create" ? (
+            <form
+              className="space-y-3 rounded-md border border-emerald-100 bg-white p-4"
+              onSubmit={handleCreateRecord}
+            >
+              <Label htmlFor="record_payload">
+                Record Payload (JSON object)
+              </Label>
+              <Textarea
+                id="record_payload"
+                className="font-mono text-xs"
+                onChange={(event) => setRecordPayload(event.target.value)}
+                placeholder='{"name":"Alice"}'
+                value={recordPayload}
+              />
+              <Button
+                disabled={isCreatingRecord || !initialPublishedSchema}
+                type="submit"
+              >
+                {isCreatingRecord ? "Creating..." : "Create Runtime Record"}
+              </Button>
+            </form>
+          ) : null}
+
+          {activeRuntimeSection === "query" ? (
+            <form
+              className="space-y-3 rounded-md border border-zinc-200 bg-zinc-50 p-4"
+              onSubmit={handleQueryRecords}
+            >
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="query_limit">Query Limit</Label>
+                  <Input
+                    id="query_limit"
+                    min={1}
+                    onChange={(event) => setQueryLimitText(event.target.value)}
+                    type="number"
+                    value={queryLimitText}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="query_offset">Query Offset</Label>
+                  <Input
+                    id="query_offset"
+                    min={0}
+                    onChange={(event) => setQueryOffsetText(event.target.value)}
+                    type="number"
+                    value={queryOffsetText}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="query_filters">
+                  Exact-Match Filters (JSON object)
+                </Label>
+                <Textarea
+                  id="query_filters"
+                  className="font-mono text-xs"
+                  onChange={(event) => setQueryFiltersText(event.target.value)}
+                  placeholder='{"name":"Alice","active":true}'
+                  value={queryFiltersText}
+                />
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+                <div className="space-y-2">
+                  <Label htmlFor="query_preset_name">Preset Name</Label>
+                  <Input
+                    id="query_preset_name"
+                    onChange={(event) => setQueryPresetName(event.target.value)}
+                    placeholder="active-contacts"
+                    value={queryPresetName}
+                  />
+                </div>
+                <div className="flex items-end">
+                  <Button
+                    disabled={isSavingPreset}
+                    onClick={handleSaveQueryPreset}
+                    type="button"
+                    variant="outline"
+                  >
+                    {isSavingPreset ? "Saving..." : "Save Preset"}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
+                <div className="space-y-2">
+                  <Label htmlFor="saved_query_presets">Saved Presets</Label>
+                  <Select
+                    id="saved_query_presets"
+                    onChange={(event) =>
+                      setSelectedPresetName(event.target.value)
+                    }
+                    value={selectedPresetName}
+                  >
+                    <option value="">Select preset...</option>
+                    {queryPresets.map((preset) => (
+                      <option key={preset.name} value={preset.name}>
+                        {preset.name}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <div className="flex items-end">
+                  <Button
+                    disabled={selectedPresetName.length === 0}
+                    onClick={() => {
+                      clearMessages();
+                      loadPreset(selectedPresetName);
+                    }}
+                    type="button"
+                    variant="outline"
+                  >
+                    Load
+                  </Button>
+                </div>
+                <div className="flex items-end">
+                  <Button
+                    disabled={selectedPresetName.length === 0}
+                    onClick={handleDeleteSelectedPreset}
+                    type="button"
+                    variant="ghost"
+                  >
+                    Delete Preset
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="query_preset_transfer">
+                  Preset Import/Export (JSON)
+                </Label>
+                <Textarea
+                  id="query_preset_transfer"
+                  className="font-mono text-xs"
+                  onChange={(event) =>
+                    setPresetTransferText(event.target.value)
+                  }
+                  placeholder='[{"name":"active-contacts","limitText":"50","offsetText":"0","filtersText":"{\"active\":true}"}]'
+                  value={presetTransferText}
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  onClick={handleExportQueryPresets}
+                  type="button"
+                  variant="outline"
+                >
+                  Export Presets
+                </Button>
+                <Button
+                  onClick={handleImportQueryPresets}
+                  type="button"
+                  variant="outline"
+                >
+                  Import Presets
+                </Button>
+                {isPresetCopied ? (
+                  <span className="text-xs text-emerald-700">Copied!</span>
+                ) : null}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  disabled={isQueryingRecords || !initialPublishedSchema}
+                  type="submit"
+                  variant="outline"
+                >
+                  {isQueryingRecords ? "Querying..." : "Query Records"}
+                </Button>
+                <Button
+                  disabled={queriedRecords === null}
+                  onClick={() => {
+                    clearMessages();
+                    setQueriedRecords(null);
+                  }}
+                  type="button"
+                  variant="ghost"
+                >
+                  Clear Query
+                </Button>
+              </div>
+            </form>
+          ) : null}
+
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell className="text-zinc-500" colSpan={3}>
-                  {queriedRecords === null
-                    ? "No runtime records yet."
-                    : "No runtime records matched the query."}
-                </TableCell>
+                <TableHead>Record ID</TableHead>
+                <TableHead>Data</TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </section>
+            </TableHeader>
+            <TableBody>
+              {displayedRecords.length > 0 ? (
+                displayedRecords.map((record) => (
+                  <TableRow key={record.record_id}>
+                    <TableCell className="font-mono text-xs">
+                      {record.record_id}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {JSON.stringify(record.data)}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        disabled={deletingRecordId === record.record_id}
+                        onClick={() => handleDeleteRecord(record.record_id)}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        {deletingRecordId === record.record_id
+                          ? "Deleting..."
+                          : "Delete"}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell className="text-zinc-500" colSpan={3}>
+                    {queriedRecords === null
+                      ? "No runtime records yet."
+                      : "No runtime records matched the query."}
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </section>
+      ) : null}
 
       {errorMessage ? (
         <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">

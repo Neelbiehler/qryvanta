@@ -69,14 +69,14 @@ export async function SurfaceLayout({
   }
 
   return (
-    <div className="grid min-h-screen grid-cols-1 md:grid-cols-[260px_1fr]">
+    <div className="grid min-h-screen grid-cols-1 bg-app lg:grid-cols-[300px_1fr]">
       <SurfaceSidebar
         surface={surfaceId}
         accessibleSurfaces={accessibleSurfaces}
       />
-      <div className="flex min-h-screen flex-col">
+      <div className="flex min-h-screen min-w-0 flex-col">
         <Header user={user} surfaceId={surfaceId} />
-        <main className="flex-1 p-6 md:p-10">{children}</main>
+        <main className="flex-1 px-4 py-5 md:px-8 md:py-8">{children}</main>
       </div>
     </div>
   );

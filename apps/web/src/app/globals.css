@@ -8,6 +8,7 @@
   --card-foreground: #152026;
   --border: #d8ebdf;
   --ring: #2f8f63;
+  --surface-grid: rgba(21, 32, 38, 0.04);
 }
 
 * {
@@ -17,6 +18,13 @@
 body {
   margin: 0;
   background:
+    linear-gradient(
+      125deg,
+      rgba(238, 250, 244, 0.88),
+      rgba(245, 252, 249, 0.9)
+    ),
+    linear-gradient(var(--surface-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--surface-grid) 1px, transparent 1px),
     radial-gradient(
       circle at 85% 12%,
       rgba(72, 187, 120, 0.16),
@@ -28,12 +36,26 @@ body {
       transparent 38%
     ),
     var(--background);
+  background-size:
+    auto,
+    40px 40px,
+    40px 40px,
+    auto,
+    auto,
+    auto;
   color: var(--foreground);
   font-family: "Source Sans 3", "Avenir Next", sans-serif;
 }
 
 .bg-app {
   background:
+    linear-gradient(
+      125deg,
+      rgba(238, 250, 244, 0.88),
+      rgba(245, 252, 249, 0.9)
+    ),
+    linear-gradient(var(--surface-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--surface-grid) 1px, transparent 1px),
     radial-gradient(
       circle at 85% 12%,
       rgba(72, 187, 120, 0.16),
@@ -45,4 +67,11 @@ body {
       transparent 38%
     ),
     var(--background);
+  background-size:
+    auto,
+    40px 40px,
+    40px 40px,
+    auto,
+    auto,
+    auto;
 }

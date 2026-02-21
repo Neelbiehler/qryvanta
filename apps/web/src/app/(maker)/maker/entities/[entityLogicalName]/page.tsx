@@ -6,7 +6,7 @@ import {
   Card,
   CardContent,
   CardHeader,
-  CardTitle,
+  PageHeader,
   buttonVariants,
 } from "@qryvanta/ui";
 
@@ -116,20 +116,19 @@ export default async function MakerEntityWorkbenchPage({
   return (
     <Card>
       <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-            Maker Center
-          </p>
-          <CardTitle className="font-serif text-3xl">
-            {entityLogicalName}
-          </CardTitle>
-        </div>
-        <Link
-          href="/maker/entities"
-          className={cn(buttonVariants({ variant: "outline" }))}
-        >
-          Back to entities
-        </Link>
+        <PageHeader
+          eyebrow="Maker Center"
+          title={entityLogicalName}
+          description="Design fields, publish schemas, and query runtime records."
+          actions={
+            <Link
+              href="/maker/entities"
+              className={cn(buttonVariants({ variant: "outline" }))}
+            >
+              Back to entities
+            </Link>
+          }
+        />
       </CardHeader>
 
       <CardContent>

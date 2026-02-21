@@ -6,7 +6,7 @@ import {
   Card,
   CardContent,
   CardHeader,
-  CardTitle,
+  PageHeader,
   Table,
   TableBody,
   TableCell,
@@ -46,15 +46,16 @@ export default async function MakerEntitiesPage() {
   return (
     <Card>
       <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-            Maker Center
-          </p>
-          <CardTitle className="font-serif text-3xl">Entities</CardTitle>
-        </div>
-        <Link href="/maker/entities/new" className={cn(buttonVariants())}>
-          New Entity
-        </Link>
+        <PageHeader
+          eyebrow="Maker Center"
+          title="Entities"
+          description="Model tenant entities and open the runtime workbench."
+          actions={
+            <Link href="/maker/entities/new" className={cn(buttonVariants())}>
+              New Entity
+            </Link>
+          }
+        />
       </CardHeader>
 
       <CardContent>

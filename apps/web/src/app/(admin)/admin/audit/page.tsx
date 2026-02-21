@@ -3,10 +3,15 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import {
+  Button,
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
+  Input,
+  PageHeader,
+  StatusBadge,
   Table,
   TableBody,
   TableCell,
@@ -99,106 +104,126 @@ export default async function AdminAuditLogPage({
   nextParams.set("offset", String(nextOffset));
 
   return (
-    <Card>
-      <CardHeader>
-        <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-          Admin Center
-        </p>
-        <CardTitle className="font-serif text-3xl">Audit Log</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <AuditControlsPanel
-          queryString={query.toString()}
-          retentionDays={retentionPolicy?.retention_days ?? null}
-        />
+    <div className="space-y-4">
+      <PageHeader
+        eyebrow="Admin Center"
+        title="Audit Log"
+        description="Filter security and governance events across your tenant."
+      />
 
-        <form className="grid gap-3 rounded-md border border-emerald-100 bg-white p-3 md:grid-cols-4">
-          <input
-            className="rounded-md border border-emerald-100 px-3 py-2 text-sm"
-            defaultValue={action}
-            name="action"
-            placeholder="Filter action"
-          />
-          <input
-            className="rounded-md border border-emerald-100 px-3 py-2 text-sm"
-            defaultValue={subject}
-            name="subject"
-            placeholder="Filter subject"
-          />
-          <input
-            className="rounded-md border border-emerald-100 px-3 py-2 text-sm"
-            defaultValue={String(safeLimit)}
-            name="limit"
-            placeholder="Rows"
-          />
-          <input
-            className="rounded-md border border-emerald-100 px-3 py-2 text-sm"
-            defaultValue="0"
-            name="offset"
-            placeholder="Offset"
-            type="hidden"
-          />
-          <button
-            className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 md:col-span-4"
-            type="submit"
-          >
-            Apply Filters
-          </button>
-        </form>
+      <div className="grid gap-4 xl:grid-cols-[300px_1fr]">
+        <Card>
+          <CardHeader>
+            <CardTitle>Audit Scope</CardTitle>
+            <CardDescription>
+              Current result-window and policy context.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <StatusBadge tone="neutral">Rows {entries.length}</StatusBadge>
+            <StatusBadge tone="neutral">Limit {safeLimit}</StatusBadge>
+            <StatusBadge tone="neutral">Offset {safeOffset}</StatusBadge>
+            <StatusBadge tone={action ? "success" : "neutral"}>
+              Action {action || "any"}
+            </StatusBadge>
+            <StatusBadge tone={subject ? "success" : "neutral"}>
+              Subject {subject || "any"}
+            </StatusBadge>
+            <StatusBadge tone={retentionPolicy ? "warning" : "neutral"}>
+              Retention {retentionPolicy?.retention_days ?? "n/a"}d
+            </StatusBadge>
+          </CardContent>
+        </Card>
 
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Time (UTC)</TableHead>
-              <TableHead>Subject</TableHead>
-              <TableHead>Action</TableHead>
-              <TableHead>Resource</TableHead>
-              <TableHead>Detail</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {entries.length > 0 ? (
-              entries.map((entry) => (
-                <TableRow key={entry.event_id}>
-                  <TableCell className="font-mono text-xs">
-                    {entry.created_at}
-                  </TableCell>
-                  <TableCell>{entry.subject}</TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {entry.action}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {entry.resource_type}:{entry.resource_id}
-                  </TableCell>
-                  <TableCell>{entry.detail ?? "-"}</TableCell>
+        <Card>
+          <CardContent className="space-y-4 pt-6">
+            <AuditControlsPanel
+              queryString={query.toString()}
+              retentionDays={retentionPolicy?.retention_days ?? null}
+            />
+
+            <form className="grid gap-3 rounded-md border border-emerald-100 bg-white p-3 md:grid-cols-4">
+              <Input
+                defaultValue={action}
+                name="action"
+                placeholder="Filter action"
+              />
+              <Input
+                defaultValue={subject}
+                name="subject"
+                placeholder="Filter subject"
+              />
+              <Input
+                defaultValue={String(safeLimit)}
+                name="limit"
+                placeholder="Rows"
+              />
+              <Input
+                defaultValue="0"
+                name="offset"
+                placeholder="Offset"
+                type="hidden"
+              />
+              <Button className="md:col-span-4" type="submit" variant="outline">
+                Apply Filters
+              </Button>
+            </form>
+
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Time (UTC)</TableHead>
+                  <TableHead>Subject</TableHead>
+                  <TableHead>Action</TableHead>
+                  <TableHead>Resource</TableHead>
+                  <TableHead>Detail</TableHead>
                 </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell className="text-zinc-500" colSpan={5}>
-                  No audit entries found.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
+              </TableHeader>
+              <TableBody>
+                {entries.length > 0 ? (
+                  entries.map((entry) => (
+                    <TableRow key={entry.event_id}>
+                      <TableCell className="font-mono text-xs">
+                        {entry.created_at}
+                      </TableCell>
+                      <TableCell>{entry.subject}</TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {entry.action}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {entry.resource_type}:{entry.resource_id}
+                      </TableCell>
+                      <TableCell>{entry.detail ?? "-"}</TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell className="text-zinc-500" colSpan={5}>
+                      No audit entries found.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
 
-        <div className="flex items-center justify-between">
-          <Link
-            className="rounded-md border border-emerald-100 bg-white px-3 py-2 text-sm"
-            href={`/admin/audit?${previousParams.toString()}`}
-          >
-            Previous
-          </Link>
-          <p className="text-xs text-zinc-500">Offset {safeOffset}</p>
-          <Link
-            className="rounded-md border border-emerald-100 bg-white px-3 py-2 text-sm"
-            href={`/admin/audit?${nextParams.toString()}`}
-          >
-            Next
-          </Link>
-        </div>
-      </CardContent>
-    </Card>
+            <div className="flex items-center justify-between">
+              <Link
+                className="rounded-md border border-emerald-100 bg-white px-3 py-2 text-sm"
+                href={`/admin/audit?${previousParams.toString()}`}
+              >
+                Previous
+              </Link>
+              <p className="text-xs text-zinc-500">Offset {safeOffset}</p>
+              <Link
+                className="rounded-md border border-emerald-100 bg-white px-3 py-2 text-sm"
+                href={`/admin/audit?${nextParams.toString()}`}
+              >
+                Next
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
 }

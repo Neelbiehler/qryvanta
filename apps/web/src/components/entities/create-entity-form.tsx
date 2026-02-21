@@ -33,7 +33,7 @@ export function CreateEntityForm() {
         return;
       }
 
-      router.push("/entities");
+      router.push("/maker/entities");
       router.refresh();
     } catch {
       setErrorMessage("Unable to create entity.");
