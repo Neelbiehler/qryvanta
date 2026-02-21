@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -28,6 +28,26 @@ pub struct RecordListQuery {
     pub limit: usize,
     /// Number of rows skipped for offset pagination.
     pub offset: usize,
+}
+
+/// Exact-match filter for runtime record queries.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RuntimeRecordFilter {
+    /// Field logical name to compare.
+    pub field_logical_name: String,
+    /// Expected field value (exact JSON equality).
+    pub field_value: Value,
+}
+
+/// Query inputs for runtime record listing with exact-match filters.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RuntimeRecordQuery {
+    /// Maximum rows returned.
+    pub limit: usize,
+    /// Number of rows skipped for offset pagination.
+    pub offset: usize,
+    /// Exact-match filters combined with logical AND.
+    pub filters: Vec<RuntimeRecordFilter>,
 }
 
 /// Input payload for metadata field create/update operations.
@@ -118,6 +138,14 @@ pub trait MetadataRepository: Send + Sync {
         tenant_id: TenantId,
         entity_logical_name: &str,
         query: RecordListQuery,
+    ) -> AppResult<Vec<RuntimeRecord>>;
+
+    /// Queries runtime records for an entity using exact-match field filters.
+    async fn query_runtime_records(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        query: RuntimeRecordQuery,
     ) -> AppResult<Vec<RuntimeRecord>>;
 
     /// Finds a runtime record by identifier.
@@ -681,6 +709,53 @@ impl MetadataService {
             .await
     }
 
+    /// Queries runtime records with exact-match field filters.
+    pub async fn query_runtime_records(
+        &self,
+        actor: &UserIdentity,
+        entity_logical_name: &str,
+        query: RuntimeRecordQuery,
+    ) -> AppResult<Vec<RuntimeRecord>> {
+        self.authorization_service
+            .require_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::RuntimeRecordRead,
+            )
+            .await?;
+
+        let schema = self
+            .published_schema_for_runtime(actor.tenant_id(), entity_logical_name)
+            .await?;
+        let schema_fields: BTreeMap<&str, &EntityFieldDefinition> = schema
+            .fields()
+            .iter()
+            .map(|field| (field.logical_name().as_str(), field))
+            .collect();
+        let mut seen_filter_fields = BTreeSet::new();
+        for filter in &query.filters {
+            if !seen_filter_fields.insert(filter.field_logical_name.as_str()) {
+                return Err(AppError::Validation(format!(
+                    "duplicate runtime query filter field '{}'",
+                    filter.field_logical_name
+                )));
+            }
+
+            let Some(field) = schema_fields.get(filter.field_logical_name.as_str()) else {
+                return Err(AppError::Validation(format!(
+                    "unknown filter field '{}' for entity '{}'",
+                    filter.field_logical_name, entity_logical_name
+                )));
+            };
+
+            field.validate_runtime_value(&filter.field_value)?;
+        }
+
+        self.repository
+            .query_runtime_records(actor.tenant_id(), entity_logical_name, query)
+            .await
+    }
+
     /// Lists runtime records without global permission checks.
     pub async fn list_runtime_records_unchecked(
         &self,
@@ -1029,7 +1104,7 @@ mod tests {
 
     use super::{
         AuditEvent, AuditRepository, MetadataRepository, MetadataService, RecordListQuery,
-        SaveFieldInput, UniqueFieldValue,
+        RuntimeRecordFilter, RuntimeRecordQuery, SaveFieldInput, UniqueFieldValue,
     };
 
     struct FakeRepository {
@@ -1302,6 +1377,40 @@ mod tests {
                         .then_some(record.clone())
                 })
                 .collect();
+            listed.sort_by(|left, right| left.record_id().as_str().cmp(right.record_id().as_str()));
+
+            Ok(listed
+                .into_iter()
+                .skip(query.offset)
+                .take(query.limit)
+                .collect())
+        }
+
+        async fn query_runtime_records(
+            &self,
+            tenant_id: TenantId,
+            entity_logical_name: &str,
+            query: RuntimeRecordQuery,
+        ) -> AppResult<Vec<RuntimeRecord>> {
+            let records = self.runtime_records.lock().await;
+            let mut listed: Vec<RuntimeRecord> = records
+                .iter()
+                .filter_map(|((stored_tenant_id, stored_entity, _), record)| {
+                    (stored_tenant_id == &tenant_id && stored_entity == entity_logical_name)
+                        .then_some(record.clone())
+                })
+                .filter(|record| {
+                    query.filters.iter().all(|filter| {
+                        record
+                            .data()
+                            .as_object()
+                            .and_then(|data| data.get(filter.field_logical_name.as_str()))
+                            .map(|value| value == &filter.field_value)
+                            .unwrap_or(false)
+                    })
+                })
+                .collect();
+
             listed.sort_by(|left, right| left.record_id().as_str().cmp(right.record_id().as_str()));
 
             Ok(listed
@@ -1631,6 +1740,171 @@ mod tests {
             event.action == AuditAction::RuntimeRecordCreated
                 && event.resource_id == created_record.record_id().as_str()
         }));
+    }
+
+    #[tokio::test]
+    async fn query_runtime_records_filters_and_paginates() {
+        let tenant_id = TenantId::new();
+        let subject = "grace";
+        let grants = HashMap::from([(
+            (tenant_id, subject.to_owned()),
+            vec![
+                Permission::MetadataEntityCreate,
+                Permission::MetadataFieldWrite,
+                Permission::RuntimeRecordWrite,
+                Permission::RuntimeRecordRead,
+            ],
+        )]);
+        let (service, _) = build_service(grants);
+        let actor = actor(tenant_id, subject);
+
+        assert!(
+            service
+                .register_entity(&actor, "contact", "Contact")
+                .await
+                .is_ok()
+        );
+        assert!(
+            service
+                .save_field(
+                    &actor,
+                    SaveFieldInput {
+                        entity_logical_name: "contact".to_owned(),
+                        logical_name: "name".to_owned(),
+                        display_name: "Name".to_owned(),
+                        field_type: FieldType::Text,
+                        is_required: true,
+                        is_unique: false,
+                        default_value: None,
+                        relation_target_entity: None,
+                    },
+                )
+                .await
+                .is_ok()
+        );
+        assert!(
+            service
+                .save_field(
+                    &actor,
+                    SaveFieldInput {
+                        entity_logical_name: "contact".to_owned(),
+                        logical_name: "active".to_owned(),
+                        display_name: "Active".to_owned(),
+                        field_type: FieldType::Boolean,
+                        is_required: true,
+                        is_unique: false,
+                        default_value: None,
+                        relation_target_entity: None,
+                    },
+                )
+                .await
+                .is_ok()
+        );
+        assert!(service.publish_entity(&actor, "contact").await.is_ok());
+
+        assert!(
+            service
+                .create_runtime_record(&actor, "contact", json!({"name": "Alice", "active": true}))
+                .await
+                .is_ok()
+        );
+        assert!(
+            service
+                .create_runtime_record(&actor, "contact", json!({"name": "Bob", "active": false}))
+                .await
+                .is_ok()
+        );
+        assert!(
+            service
+                .create_runtime_record(&actor, "contact", json!({"name": "Carol", "active": true}))
+                .await
+                .is_ok()
+        );
+
+        let queried = service
+            .query_runtime_records(
+                &actor,
+                "contact",
+                RuntimeRecordQuery {
+                    limit: 1,
+                    offset: 1,
+                    filters: vec![RuntimeRecordFilter {
+                        field_logical_name: "active".to_owned(),
+                        field_value: json!(true),
+                    }],
+                },
+            )
+            .await;
+        assert!(queried.is_ok());
+
+        let queried = queried.unwrap_or_default();
+        assert_eq!(queried.len(), 1);
+        assert_eq!(
+            queried[0]
+                .data()
+                .as_object()
+                .and_then(|value| value.get("active")),
+            Some(&json!(true))
+        );
+    }
+
+    #[tokio::test]
+    async fn query_runtime_records_requires_runtime_read_permission() {
+        let tenant_id = TenantId::new();
+        let subject = "heidi";
+        let grants = HashMap::from([(
+            (tenant_id, subject.to_owned()),
+            vec![
+                Permission::MetadataEntityCreate,
+                Permission::MetadataFieldWrite,
+                Permission::RuntimeRecordWrite,
+            ],
+        )]);
+        let (service, _) = build_service(grants);
+        let actor = actor(tenant_id, subject);
+
+        assert!(
+            service
+                .register_entity(&actor, "contact", "Contact")
+                .await
+                .is_ok()
+        );
+        assert!(
+            service
+                .save_field(
+                    &actor,
+                    SaveFieldInput {
+                        entity_logical_name: "contact".to_owned(),
+                        logical_name: "name".to_owned(),
+                        display_name: "Name".to_owned(),
+                        field_type: FieldType::Text,
+                        is_required: true,
+                        is_unique: false,
+                        default_value: None,
+                        relation_target_entity: None,
+                    },
+                )
+                .await
+                .is_ok()
+        );
+        assert!(service.publish_entity(&actor, "contact").await.is_ok());
+
+        let queried = service
+            .query_runtime_records(
+                &actor,
+                "contact",
+                RuntimeRecordQuery {
+                    limit: 50,
+                    offset: 0,
+                    filters: vec![RuntimeRecordFilter {
+                        field_logical_name: "name".to_owned(),
+                        field_value: json!("Alice"),
+                    }],
+                },
+            )
+            .await;
+
+        assert!(matches!(queried, Err(AppError::Forbidden(_))));
     }
 
     #[tokio::test]

@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -24,6 +24,7 @@ import {
   type CreateRuntimeRecordRequest,
   type FieldResponse,
   type PublishedSchemaResponse,
+  type QueryRuntimeRecordsRequest,
   type RuntimeRecordResponse,
 } from "@/lib/api";
 
@@ -44,6 +45,38 @@ type EntityWorkbenchPanelProps = {
   initialRecords: RuntimeRecordResponse[];
 };
 
+type QueryPreset = {
+  name: string;
+  limitText: string;
+  offsetText: string;
+  filtersText: string;
+};
+
+function normalizeQueryPresets(rawValue: unknown): QueryPreset[] {
+  if (!Array.isArray(rawValue)) {
+    return [];
+  }
+
+  return rawValue
+    .filter(
+      (preset): preset is QueryPreset =>
+        typeof preset === "object" &&
+        preset !== null &&
+        "name" in preset &&
+        "limitText" in preset &&
+        "offsetText" in preset &&
+        "filtersText" in preset,
+    )
+    .map((preset) => ({
+      name: String(preset.name),
+      limitText: String(preset.limitText),
+      offsetText: String(preset.offsetText),
+      filtersText: String(preset.filtersText),
+    }))
+    .filter((preset) => preset.name.trim().length > 0)
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
 export function EntityWorkbenchPanel({
   entityLogicalName,
   initialFields,
@@ -61,17 +94,220 @@ export function EntityWorkbenchPanel({
   const [relationTargetEntity, setRelationTargetEntity] = useState("");
 
   const [recordPayload, setRecordPayload] = useState("{}");
+  const [queryFiltersText, setQueryFiltersText] = useState("{}");
+  const [queryLimitText, setQueryLimitText] = useState("50");
+  const [queryOffsetText, setQueryOffsetText] = useState("0");
+  const [queriedRecords, setQueriedRecords] = useState<RuntimeRecordResponse[] | null>(null);
+  const [queryPresetName, setQueryPresetName] = useState("");
+  const [selectedPresetName, setSelectedPresetName] = useState("");
+  const [queryPresets, setQueryPresets] = useState<QueryPreset[]>([]);
+  const [presetTransferText, setPresetTransferText] = useState("");
+  const [isPresetCopied, setIsPresetCopied] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const [isSavingField, setIsSavingField] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [isCreatingRecord, setIsCreatingRecord] = useState(false);
+  const [isSavingPreset, setIsSavingPreset] = useState(false);
+  const [isQueryingRecords, setIsQueryingRecords] = useState(false);
   const [deletingRecordId, setDeletingRecordId] = useState<string | null>(null);
+  const presetCopiedTimeoutRef = useRef<number | null>(null);
+
+  const queryPresetsStorageKey = `entity-workbench-query-presets:${entityLogicalName}`;
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const rawPresets = window.localStorage.getItem(queryPresetsStorageKey);
+    if (!rawPresets) {
+      setQueryPresets([]);
+      setSelectedPresetName("");
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(rawPresets) as unknown;
+      setQueryPresets(normalizeQueryPresets(parsed));
+      setSelectedPresetName("");
+    } catch {
+      setQueryPresets([]);
+      setSelectedPresetName("");
+    }
+  }, [queryPresetsStorageKey]);
+
+  useEffect(() => {
+    return () => {
+      if (presetCopiedTimeoutRef.current !== null) {
+        window.clearTimeout(presetCopiedTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  function savePresetsToStorage(nextPresets: QueryPreset[]) {
+    setQueryPresets(nextPresets);
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(queryPresetsStorageKey, JSON.stringify(nextPresets));
+  }
 
   function clearMessages() {
     setErrorMessage(null);
     setStatusMessage(null);
+  }
+
+  function showPresetCopiedIndicator() {
+    setIsPresetCopied(true);
+    if (presetCopiedTimeoutRef.current !== null) {
+      window.clearTimeout(presetCopiedTimeoutRef.current);
+    }
+    presetCopiedTimeoutRef.current = window.setTimeout(() => {
+      setIsPresetCopied(false);
+      presetCopiedTimeoutRef.current = null;
+    }, 1600);
+  }
+
+  function readPresetFiltersAsObject(): Record<string, unknown> | null {
+    let parsedFilters: unknown;
+
+    try {
+      parsedFilters = JSON.parse(queryFiltersText);
+    } catch {
+      setErrorMessage("Runtime query filters must be valid JSON.");
+      return null;
+    }
+
+    if (
+      parsedFilters === null ||
+      Array.isArray(parsedFilters) ||
+      typeof parsedFilters !== "object"
+    ) {
+      setErrorMessage("Runtime query filters must be a JSON object.");
+      return null;
+    }
+
+    return parsedFilters as Record<string, unknown>;
+  }
+
+  function loadPreset(name: string) {
+    const preset = queryPresets.find((candidate) => candidate.name === name);
+    if (!preset) {
+      setErrorMessage("Selected preset no longer exists.");
+      return;
+    }
+
+    setQueryLimitText(preset.limitText);
+    setQueryOffsetText(preset.offsetText);
+    setQueryFiltersText(preset.filtersText);
+    setSelectedPresetName(name);
+    setStatusMessage(`Loaded query preset '${name}'.`);
+  }
+
+  function handleSaveQueryPreset() {
+    clearMessages();
+    setIsSavingPreset(true);
+
+    try {
+      const trimmedName = queryPresetName.trim();
+      if (trimmedName.length === 0) {
+        setErrorMessage("Preset name is required.");
+        return;
+      }
+
+      if (readPresetFiltersAsObject() === null) {
+        return;
+      }
+
+      const nextPreset: QueryPreset = {
+        name: trimmedName,
+        limitText: queryLimitText,
+        offsetText: queryOffsetText,
+        filtersText: queryFiltersText,
+      };
+
+      const nextPresets = [
+        ...queryPresets.filter((preset) => preset.name !== trimmedName),
+        nextPreset,
+      ].sort((left, right) => left.name.localeCompare(right.name));
+
+      savePresetsToStorage(nextPresets);
+      setSelectedPresetName(trimmedName);
+      setStatusMessage(`Saved query preset '${trimmedName}'.`);
+    } finally {
+      setIsSavingPreset(false);
+    }
+  }
+
+  function handleDeleteSelectedPreset() {
+    clearMessages();
+    if (selectedPresetName.length === 0) {
+      setErrorMessage("Choose a preset to delete.");
+      return;
+    }
+
+    const nextPresets = queryPresets.filter(
+      (preset) => preset.name !== selectedPresetName,
+    );
+    savePresetsToStorage(nextPresets);
+    setStatusMessage(`Deleted query preset '${selectedPresetName}'.`);
+    setSelectedPresetName("");
+  }
+
+  async function handleExportQueryPresets() {
+    clearMessages();
+    setIsPresetCopied(false);
+    const serialized = JSON.stringify(queryPresets, null, 2);
+    setPresetTransferText(serialized);
+
+    if (typeof navigator === "undefined" || !navigator.clipboard) {
+      setStatusMessage("Exported presets to JSON field.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(serialized);
+      showPresetCopiedIndicator();
+      setStatusMessage("Exported presets and copied JSON to clipboard.");
+    } catch {
+      setStatusMessage("Exported presets to JSON field.");
+    }
+  }
+
+  function handleImportQueryPresets() {
+    clearMessages();
+    if (presetTransferText.trim().length === 0) {
+      setErrorMessage("Paste presets JSON before importing.");
+      return;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(presetTransferText);
+    } catch {
+      setErrorMessage("Preset import JSON is invalid.");
+      return;
+    }
+
+    const importedPresets = normalizeQueryPresets(parsed);
+    if (importedPresets.length === 0) {
+      setErrorMessage("Preset import did not include valid presets.");
+      return;
+    }
+
+    const nextPresets = [
+      ...queryPresets.filter(
+        (existingPreset) =>
+          !importedPresets.some((importedPreset) => importedPreset.name === existingPreset.name),
+      ),
+      ...importedPresets,
+    ].sort((left, right) => left.name.localeCompare(right.name));
+
+    savePresetsToStorage(nextPresets);
+    setStatusMessage(`Imported ${importedPresets.length} preset(s).`);
   }
 
   async function handleSaveField(event: FormEvent<HTMLFormElement>) {
@@ -176,11 +412,63 @@ export function EntityWorkbenchPanel({
 
       setStatusMessage("Runtime record created.");
       setRecordPayload("{}");
+      setQueriedRecords(null);
       router.refresh();
     } catch {
       setErrorMessage("Runtime record payload must be valid JSON.");
     } finally {
       setIsCreatingRecord(false);
+    }
+  }
+
+  async function handleQueryRecords(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    clearMessages();
+    setIsQueryingRecords(true);
+
+    try {
+      const parsedFilters = readPresetFiltersAsObject();
+      if (parsedFilters === null) {
+        return;
+      }
+
+      const parsedLimit = Number.parseInt(queryLimitText, 10);
+      const parsedOffset = Number.parseInt(queryOffsetText, 10);
+
+      if (!Number.isFinite(parsedLimit) || parsedLimit <= 0) {
+        setErrorMessage("Query limit must be a positive integer.");
+        return;
+      }
+
+      if (!Number.isFinite(parsedOffset) || parsedOffset < 0) {
+        setErrorMessage("Query offset must be zero or a positive integer.");
+        return;
+      }
+
+      const payload: QueryRuntimeRecordsRequest = {
+        limit: parsedLimit,
+        offset: parsedOffset,
+        filters: parsedFilters,
+      };
+
+      const response = await apiFetch(`/api/runtime/${entityLogicalName}/records/query`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json()) as { message?: string };
+        setErrorMessage(payload.message ?? "Unable to query runtime records.");
+        return;
+      }
+
+      const records = (await response.json()) as RuntimeRecordResponse[];
+      setQueriedRecords(records);
+      setStatusMessage(`Query returned ${records.length} record(s).`);
+    } catch {
+      setErrorMessage("Unable to query runtime records.");
+    } finally {
+      setIsQueryingRecords(false);
     }
   }
 
@@ -200,6 +488,7 @@ export function EntityWorkbenchPanel({
       }
 
       setStatusMessage("Runtime record deleted.");
+      setQueriedRecords(null);
       router.refresh();
     } catch {
       setErrorMessage("Unable to delete runtime record.");
@@ -207,6 +496,8 @@ export function EntityWorkbenchPanel({
       setDeletingRecordId(null);
     }
   }
+
+  const displayedRecords = queriedRecords ?? initialRecords;
 
   return (
     <div className="space-y-8">
@@ -368,6 +659,143 @@ export function EntityWorkbenchPanel({
           </Button>
         </form>
 
+        <form
+          className="space-y-3 rounded-md border border-zinc-200 bg-zinc-50 p-4"
+          onSubmit={handleQueryRecords}
+        >
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="query_limit">Query Limit</Label>
+              <Input
+                id="query_limit"
+                min={1}
+                onChange={(event) => setQueryLimitText(event.target.value)}
+                type="number"
+                value={queryLimitText}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="query_offset">Query Offset</Label>
+              <Input
+                id="query_offset"
+                min={0}
+                onChange={(event) => setQueryOffsetText(event.target.value)}
+                type="number"
+                value={queryOffsetText}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="query_filters">Exact-Match Filters (JSON object)</Label>
+            <Textarea
+              id="query_filters"
+              className="font-mono text-xs"
+              onChange={(event) => setQueryFiltersText(event.target.value)}
+              placeholder='{"name":"Alice","active":true}'
+              value={queryFiltersText}
+            />
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+            <div className="space-y-2">
+              <Label htmlFor="query_preset_name">Preset Name</Label>
+              <Input
+                id="query_preset_name"
+                onChange={(event) => setQueryPresetName(event.target.value)}
+                placeholder="active-contacts"
+                value={queryPresetName}
+              />
+            </div>
+            <div className="flex items-end">
+              <Button disabled={isSavingPreset} onClick={handleSaveQueryPreset} type="button" variant="outline">
+                {isSavingPreset ? "Saving..." : "Save Preset"}
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
+            <div className="space-y-2">
+              <Label htmlFor="saved_query_presets">Saved Presets</Label>
+              <Select
+                id="saved_query_presets"
+                onChange={(event) => setSelectedPresetName(event.target.value)}
+                value={selectedPresetName}
+              >
+                <option value="">Select preset...</option>
+                {queryPresets.map((preset) => (
+                  <option key={preset.name} value={preset.name}>
+                    {preset.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="flex items-end">
+              <Button
+                disabled={selectedPresetName.length === 0}
+                onClick={() => {
+                  clearMessages();
+                  loadPreset(selectedPresetName);
+                }}
+                type="button"
+                variant="outline"
+              >
+                Load
+              </Button>
+            </div>
+            <div className="flex items-end">
+              <Button
+                disabled={selectedPresetName.length === 0}
+                onClick={handleDeleteSelectedPreset}
+                type="button"
+                variant="ghost"
+              >
+                Delete Preset
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="query_preset_transfer">Preset Import/Export (JSON)</Label>
+            <Textarea
+              id="query_preset_transfer"
+              className="font-mono text-xs"
+              onChange={(event) => setPresetTransferText(event.target.value)}
+              placeholder='[{"name":"active-contacts","limitText":"50","offsetText":"0","filtersText":"{\"active\":true}"}]'
+              value={presetTransferText}
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button onClick={handleExportQueryPresets} type="button" variant="outline">
+              Export Presets
+            </Button>
+            <Button onClick={handleImportQueryPresets} type="button" variant="outline">
+              Import Presets
+            </Button>
+            {isPresetCopied ? (
+              <span className="text-xs text-emerald-700">Copied!</span>
+            ) : null}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button disabled={isQueryingRecords || !initialPublishedSchema} type="submit" variant="outline">
+              {isQueryingRecords ? "Querying..." : "Query Records"}
+            </Button>
+            <Button
+              disabled={queriedRecords === null}
+              onClick={() => {
+                clearMessages();
+                setQueriedRecords(null);
+              }}
+              type="button"
+              variant="ghost"
+            >
+              Clear Query
+            </Button>
+          </div>
+        </form>
+
         <Table>
           <TableHeader>
             <TableRow>
@@ -377,8 +805,8 @@ export function EntityWorkbenchPanel({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {initialRecords.length > 0 ? (
-              initialRecords.map((record) => (
+            {displayedRecords.length > 0 ? (
+              displayedRecords.map((record) => (
                 <TableRow key={record.record_id}>
                   <TableCell className="font-mono text-xs">{record.record_id}</TableCell>
                   <TableCell className="font-mono text-xs">
@@ -400,7 +828,9 @@ export function EntityWorkbenchPanel({
             ) : (
               <TableRow>
                 <TableCell className="text-zinc-500" colSpan={3}>
-                  No runtime records yet.
+                  {queriedRecords === null
+                    ? "No runtime records yet."
+                    : "No runtime records matched the query."}
                 </TableCell>
               </TableRow>
             )}

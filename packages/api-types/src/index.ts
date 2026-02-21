@@ -22,6 +22,7 @@ export * from "./generated/generic-message-response";
 export * from "./generated/health-response";
 export * from "./generated/invite-request";
 export * from "./generated/published-schema-response";
+export * from "./generated/query-runtime-records-request";
 export * from "./generated/remove-role-assignment-request";
 export * from "./generated/role-assignment-response";
 export * from "./generated/role-response";

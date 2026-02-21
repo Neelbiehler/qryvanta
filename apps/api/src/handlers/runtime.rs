@@ -3,7 +3,10 @@ use axum::extract::{Extension, Path, Query, State};
 use axum::http::StatusCode;
 use qryvanta_core::UserIdentity;
 
-use crate::dto::{CreateRuntimeRecordRequest, RuntimeRecordResponse, UpdateRuntimeRecordRequest};
+use crate::dto::{
+    CreateRuntimeRecordRequest, QueryRuntimeRecordsRequest, RuntimeRecordResponse,
+    UpdateRuntimeRecordRequest,
+};
 use crate::error::ApiResult;
 use crate::state::AppState;
 
@@ -52,6 +55,41 @@ pub async fn create_runtime_record_handler(
         StatusCode::CREATED,
         Json(RuntimeRecordResponse::from(record)),
     ))
+}
+
+pub async fn query_runtime_records_handler(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserIdentity>,
+    Path(entity_logical_name): Path<String>,
+    Json(payload): Json<QueryRuntimeRecordsRequest>,
+) -> ApiResult<Json<Vec<RuntimeRecordResponse>>> {
+    let records = state
+        .metadata_service
+        .query_runtime_records(
+            &user,
+            entity_logical_name.as_str(),
+            qryvanta_application::RuntimeRecordQuery {
+                limit: payload.limit.unwrap_or(50),
+                offset: payload.offset.unwrap_or(0),
+                filters: payload
+                    .filters
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|(field_logical_name, field_value)| {
+                        qryvanta_application::RuntimeRecordFilter {
+                            field_logical_name,
+                            field_value,
+                        }
+                    })
+                    .collect(),
+            },
+        )
+        .await?
+        .into_iter()
+        .map(RuntimeRecordResponse::from)
+        .collect();
+
+    Ok(Json(records))
 }
 
 pub async fn update_runtime_record_handler(

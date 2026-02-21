@@ -23,7 +23,7 @@ pub use auth_token_service::{
 pub use authorization_service::{AuthorizationRepository, AuthorizationService};
 pub use metadata_service::{
     AuditEvent, AuditRepository, MetadataRepository, MetadataService, RecordListQuery,
-    SaveFieldInput, TenantRepository, UniqueFieldValue,
+    RuntimeRecordFilter, RuntimeRecordQuery, SaveFieldInput, TenantRepository, UniqueFieldValue,
 };
 pub use mfa_service::{MfaService, SecretEncryptor, TotpEnrollment, TotpProvider};
 pub use rate_limit_service::{AttemptInfo, RateLimitRepository, RateLimitRule, RateLimitService};

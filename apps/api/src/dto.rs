@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use qryvanta_core::UserIdentity;
 use qryvanta_domain::{
     AppDefinition, AppEntityBinding, AppEntityRolePermission, EntityDefinition,
@@ -201,6 +203,19 @@ pub struct CreateRuntimeRecordRequest {
 pub struct UpdateRuntimeRecordRequest {
     #[ts(type = "Record<string, unknown>")]
     pub data: Value,
+}
+
+/// Incoming runtime record query payload.
+#[derive(Debug, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/query-runtime-records-request.ts"
+)]
+pub struct QueryRuntimeRecordsRequest {
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
+    #[ts(type = "Record<string, unknown> | null")]
+    pub filters: Option<BTreeMap<String, Value>>,
 }
 
 /// API representation of a runtime record.
@@ -569,9 +584,10 @@ mod tests {
         BindAppEntityRequest, CreateAppRequest, CreateEntityRequest, CreateFieldRequest,
         CreateRoleRequest, CreateRuntimeRecordRequest, EntityResponse, FieldResponse,
         GenericMessageResponse, HealthResponse, InviteRequest, PublishedSchemaResponse,
-        RemoveRoleAssignmentRequest, RoleAssignmentResponse, RoleResponse, RuntimeRecordResponse,
-        SaveAppRoleEntityPermissionRequest, TenantRegistrationModeResponse,
-        UpdateRuntimeRecordRequest, UpdateTenantRegistrationModeRequest, UserIdentityResponse,
+        QueryRuntimeRecordsRequest, RemoveRoleAssignmentRequest, RoleAssignmentResponse,
+        RoleResponse, RuntimeRecordResponse, SaveAppRoleEntityPermissionRequest,
+        TenantRegistrationModeResponse, UpdateRuntimeRecordRequest,
+        UpdateTenantRegistrationModeRequest, UserIdentityResponse,
     };
 
     use crate::error::ErrorResponse;
@@ -593,6 +609,7 @@ mod tests {
         RemoveRoleAssignmentRequest::export(&config)?;
         UpdateTenantRegistrationModeRequest::export(&config)?;
         UpdateRuntimeRecordRequest::export(&config)?;
+        QueryRuntimeRecordsRequest::export(&config)?;
         EntityResponse::export(&config)?;
         AppResponse::export(&config)?;
         AppEntityBindingResponse::export(&config)?;
