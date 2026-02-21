@@ -6,7 +6,7 @@ use qryvanta_domain::{
 };
 use serde_json::Value;
 
-use crate::metadata_ports::RecordListQuery;
+use crate::metadata_ports::{RecordListQuery, RuntimeRecordQuery};
 
 /// Input payload for app creation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -172,6 +172,14 @@ pub trait RuntimeRecordService: Send + Sync {
         actor: &UserIdentity,
         entity_logical_name: &str,
         query: RecordListQuery,
+    ) -> AppResult<Vec<RuntimeRecord>>;
+
+    /// Queries runtime records without global permission checks.
+    async fn query_runtime_records_unchecked(
+        &self,
+        actor: &UserIdentity,
+        entity_logical_name: &str,
+        query: RuntimeRecordQuery,
     ) -> AppResult<Vec<RuntimeRecord>>;
 
     /// Fetches one runtime record without global permission checks.

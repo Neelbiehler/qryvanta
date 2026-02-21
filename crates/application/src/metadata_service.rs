@@ -663,6 +663,83 @@ impl MetadataService {
         Self::redact_runtime_records_if_needed(records, field_access.as_ref())
     }
 
+    /// Queries runtime records without global permission checks.
+    pub async fn query_runtime_records_unchecked(
+        &self,
+        actor: &UserIdentity,
+        entity_logical_name: &str,
+        mut query: RuntimeRecordQuery,
+    ) -> AppResult<Vec<RuntimeRecord>> {
+        let read_scope = self
+            .runtime_read_scope_for_actor_optional(actor)
+            .await?
+            .unwrap_or(RuntimeAccessScope::All);
+        let field_access = self
+            .runtime_field_access_for_actor(actor, entity_logical_name)
+            .await?;
+
+        if read_scope == RuntimeAccessScope::Own {
+            query.owner_subject = Some(actor.subject().to_owned());
+        }
+
+        if let Some(access) = &field_access {
+            Self::enforce_query_readable_fields(&query, access)?;
+        }
+
+        let schema = self
+            .published_schema_for_runtime(actor.tenant_id(), entity_logical_name)
+            .await?;
+
+        if query.limit == 0 {
+            return Err(AppError::Validation(
+                "runtime record query limit must be greater than zero".to_owned(),
+            ));
+        }
+
+        let schema_fields: BTreeMap<&str, &EntityFieldDefinition> = schema
+            .fields()
+            .iter()
+            .map(|field| (field.logical_name().as_str(), field))
+            .collect();
+
+        for filter in &query.filters {
+            let Some(field) = schema_fields.get(filter.field_logical_name.as_str()) else {
+                return Err(AppError::Validation(format!(
+                    "unknown filter field '{}' for entity '{}'",
+                    filter.field_logical_name, entity_logical_name
+                )));
+            };
+
+            Self::validate_runtime_query_filter(field, filter)?;
+        }
+
+        let mut seen_sort_fields = BTreeSet::new();
+        for sort in &query.sort {
+            if !seen_sort_fields.insert(sort.field_logical_name.as_str()) {
+                return Err(AppError::Validation(format!(
+                    "duplicate runtime query sort field '{}'",
+                    sort.field_logical_name
+                )));
+            }
+
+            let Some(field) = schema_fields.get(sort.field_logical_name.as_str()) else {
+                return Err(AppError::Validation(format!(
+                    "unknown sort field '{}' for entity '{}'",
+                    sort.field_logical_name, entity_logical_name
+                )));
+            };
+
+            Self::validate_runtime_query_sort(field, sort)?;
+        }
+
+        let records = self
+            .repository
+            .query_runtime_records(actor.tenant_id(), entity_logical_name, query)
+            .await?;
+
+        Self::redact_runtime_records_if_needed(records, field_access.as_ref())
+    }
+
     /// Gets a runtime record by identifier.
     pub async fn get_runtime_record(
         &self,

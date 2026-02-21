@@ -26,6 +26,8 @@ import {
   type FieldResponse,
   type PublishedSchemaResponse,
   type QueryRuntimeRecordsRequest,
+  type RuntimeRecordQueryFilterRequest,
+  type RuntimeRecordQuerySortRequest,
   type RuntimeRecordResponse,
 } from "@/lib/api";
 
@@ -50,6 +52,9 @@ type QueryPreset = {
   name: string;
   limitText: string;
   offsetText: string;
+  logicalMode: "and" | "or";
+  conditionsText: string;
+  sortText: string;
   filtersText: string;
 };
 
@@ -71,12 +76,26 @@ function normalizeQueryPresets(rawValue: unknown): QueryPreset[] {
         "offsetText" in preset &&
         "filtersText" in preset,
     )
-    .map((preset) => ({
-      name: String(preset.name),
-      limitText: String(preset.limitText),
-      offsetText: String(preset.offsetText),
-      filtersText: String(preset.filtersText),
-    }))
+    .map((preset) => {
+      const logicalMode: QueryPreset["logicalMode"] =
+        "logicalMode" in preset && preset.logicalMode === "or" ? "or" : "and";
+
+      return {
+        name: String(preset.name),
+        limitText: String(preset.limitText),
+        offsetText: String(preset.offsetText),
+        logicalMode,
+        conditionsText:
+          "conditionsText" in preset && typeof preset.conditionsText === "string"
+            ? preset.conditionsText
+            : "[]",
+        sortText:
+          "sortText" in preset && typeof preset.sortText === "string"
+            ? preset.sortText
+            : "[]",
+        filtersText: String(preset.filtersText),
+      };
+    })
     .filter((preset) => preset.name.trim().length > 0)
     .sort((left, right) => left.name.localeCompare(right.name));
 }
@@ -99,6 +118,9 @@ export function EntityWorkbenchPanel({
   const [relationTargetEntity, setRelationTargetEntity] = useState("");
 
   const [recordPayload, setRecordPayload] = useState("{}");
+  const [queryLogicalMode, setQueryLogicalMode] = useState<"and" | "or">("and");
+  const [queryConditionsText, setQueryConditionsText] = useState("[]");
+  const [querySortText, setQuerySortText] = useState("[]");
   const [queryFiltersText, setQueryFiltersText] = useState("{}");
   const [queryLimitText, setQueryLimitText] = useState("50");
   const [queryOffsetText, setQueryOffsetText] = useState("0");
@@ -207,6 +229,102 @@ export function EntityWorkbenchPanel({
     return parsedFilters as Record<string, unknown>;
   }
 
+  function readPresetConditions(): RuntimeRecordQueryFilterRequest[] | null {
+    let parsedConditions: unknown;
+
+    try {
+      parsedConditions = JSON.parse(queryConditionsText);
+    } catch {
+      setErrorMessage("Runtime query conditions must be valid JSON.");
+      return null;
+    }
+
+    if (!Array.isArray(parsedConditions)) {
+      setErrorMessage("Runtime query conditions must be a JSON array.");
+      return null;
+    }
+
+    const conditions: RuntimeRecordQueryFilterRequest[] = [];
+    for (const condition of parsedConditions) {
+      if (
+        typeof condition !== "object" ||
+        condition === null ||
+        !("field_logical_name" in condition) ||
+        !("operator" in condition) ||
+        !("field_value" in condition) ||
+        typeof condition.field_logical_name !== "string" ||
+        condition.field_logical_name.trim().length === 0 ||
+        typeof condition.operator !== "string" ||
+        condition.operator.trim().length === 0
+      ) {
+        setErrorMessage(
+          "Each query condition must include field_logical_name, operator, and field_value.",
+        );
+        return null;
+      }
+
+      conditions.push({
+        field_logical_name: condition.field_logical_name,
+        operator: condition.operator,
+        field_value: condition.field_value,
+      });
+    }
+
+    return conditions;
+  }
+
+  function readPresetSort(): RuntimeRecordQuerySortRequest[] | null {
+    let parsedSort: unknown;
+
+    try {
+      parsedSort = JSON.parse(querySortText);
+    } catch {
+      setErrorMessage("Runtime query sort must be valid JSON.");
+      return null;
+    }
+
+    if (!Array.isArray(parsedSort)) {
+      setErrorMessage("Runtime query sort must be a JSON array.");
+      return null;
+    }
+
+    const sort: RuntimeRecordQuerySortRequest[] = [];
+    for (const entry of parsedSort) {
+      if (
+        typeof entry !== "object" ||
+        entry === null ||
+        !("field_logical_name" in entry) ||
+        typeof entry.field_logical_name !== "string" ||
+        entry.field_logical_name.trim().length === 0
+      ) {
+        setErrorMessage(
+          "Each sort entry must include a non-empty field_logical_name.",
+        );
+        return null;
+      }
+
+      let direction: "asc" | "desc" | null = null;
+      if ("direction" in entry) {
+        if (
+          entry.direction !== null &&
+          entry.direction !== "asc" &&
+          entry.direction !== "desc"
+        ) {
+          setErrorMessage("Sort direction must be 'asc', 'desc', or null.");
+          return null;
+        }
+        direction = entry.direction as "asc" | "desc" | null;
+      }
+
+      sort.push({
+        field_logical_name: entry.field_logical_name,
+        direction,
+      });
+    }
+
+    return sort;
+  }
+
   function loadPreset(name: string) {
     const preset = queryPresets.find((candidate) => candidate.name === name);
     if (!preset) {
@@ -216,6 +334,9 @@ export function EntityWorkbenchPanel({
 
     setQueryLimitText(preset.limitText);
     setQueryOffsetText(preset.offsetText);
+    setQueryLogicalMode(preset.logicalMode);
+    setQueryConditionsText(preset.conditionsText);
+    setQuerySortText(preset.sortText);
     setQueryFiltersText(preset.filtersText);
     setSelectedPresetName(name);
     setStatusMessage(`Loaded query preset '${name}'.`);
@@ -236,10 +357,21 @@ export function EntityWorkbenchPanel({
         return;
       }
 
+      if (readPresetConditions() === null) {
+        return;
+      }
+
+      if (readPresetSort() === null) {
+        return;
+      }
+
       const nextPreset: QueryPreset = {
         name: trimmedName,
         limitText: queryLimitText,
         offsetText: queryOffsetText,
+        logicalMode: queryLogicalMode,
+        conditionsText: queryConditionsText,
+        sortText: querySortText,
         filtersText: queryFiltersText,
       };
 
@@ -461,6 +593,16 @@ export function EntityWorkbenchPanel({
         return;
       }
 
+      const parsedConditions = readPresetConditions();
+      if (parsedConditions === null) {
+        return;
+      }
+
+      const parsedSort = readPresetSort();
+      if (parsedSort === null) {
+        return;
+      }
+
       const parsedLimit = Number.parseInt(queryLimitText, 10);
       const parsedOffset = Number.parseInt(queryOffsetText, 10);
 
@@ -477,10 +619,13 @@ export function EntityWorkbenchPanel({
       const payload: QueryRuntimeRecordsRequest = {
         limit: parsedLimit,
         offset: parsedOffset,
-        logical_mode: null,
-        conditions: null,
-        sort: null,
-        filters: parsedFilters,
+        logical_mode: queryLogicalMode,
+        conditions: parsedConditions,
+        sort: parsedSort,
+        filters:
+          Object.keys(parsedFilters).length > 0
+            ? parsedFilters
+            : null,
       };
 
       const response = await apiFetch(
@@ -806,8 +951,46 @@ export function EntityWorkbenchPanel({
               </div>
 
               <div className="space-y-2">
+                <Label htmlFor="query_logical_mode">Condition Mode</Label>
+                <Select
+                  id="query_logical_mode"
+                  onChange={(event) =>
+                    setQueryLogicalMode(
+                      event.target.value === "or" ? "or" : "and",
+                    )
+                  }
+                  value={queryLogicalMode}
+                >
+                  <option value="and">and</option>
+                  <option value="or">or</option>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="query_conditions">Conditions (JSON array)</Label>
+                <Textarea
+                  id="query_conditions"
+                  className="font-mono text-xs"
+                  onChange={(event) => setQueryConditionsText(event.target.value)}
+                  placeholder='[{"field_logical_name":"name","operator":"contains","field_value":"Ali"}]'
+                  value={queryConditionsText}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="query_sort">Sort (JSON array)</Label>
+                <Textarea
+                  id="query_sort"
+                  className="font-mono text-xs"
+                  onChange={(event) => setQuerySortText(event.target.value)}
+                  placeholder='[{"field_logical_name":"name","direction":"asc"}]'
+                  value={querySortText}
+                />
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="query_filters">
-                  Exact-Match Filters (JSON object)
+                  Legacy Exact-Match Filters (JSON object)
                 </Label>
                 <Textarea
                   id="query_filters"
@@ -893,7 +1076,7 @@ export function EntityWorkbenchPanel({
                   onChange={(event) =>
                     setPresetTransferText(event.target.value)
                   }
-                  placeholder='[{"name":"active-contacts","limitText":"50","offsetText":"0","filtersText":"{\"active\":true}"}]'
+                  placeholder='[{"name":"active-contacts","limitText":"50","offsetText":"0","logicalMode":"and","conditionsText":"[{\"field_logical_name\":\"active\",\"operator\":\"eq\",\"field_value\":true}]","sortText":"[]","filtersText":"{}"}]'
                   value={presetTransferText}
                 />
               </div>

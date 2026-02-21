@@ -62,3 +62,11 @@ Validation failures are surfaced through `AppError::Validation` and mapped to `4
 - Legacy `filters` map payloads remain accepted and are translated to `eq` conditions for backwards compatibility.
 - Filter and sort fields must exist in the published schema and pass field-type validation.
 - Runtime query access requires runtime read permission and tenant-scoped repository access.
+
+Query payload grammar:
+
+- `limit` (`number`) and `offset` (`number`) control pagination.
+- `logical_mode` (`"and" | "or"`) controls how `conditions` are composed.
+- `conditions` (`Array<{ field_logical_name, operator, field_value }>` ) defines typed comparisons.
+- `sort` (`Array<{ field_logical_name, direction }>` ) applies stable field ordering.
+- `filters` (`Record<string, unknown>`) remains an optional compatibility input for exact-match constraints.

@@ -54,6 +54,10 @@ pub fn build_router(
                 .post(handlers::apps::workspace_create_record_handler),
         )
         .route(
+            "/api/workspace/apps/{app_logical_name}/entities/{entity_logical_name}/records/query",
+            post(handlers::apps::workspace_query_records_handler),
+        )
+        .route(
             "/api/workspace/apps/{app_logical_name}/entities/{entity_logical_name}/records/{record_id}",
             get(handlers::apps::workspace_get_record_handler)
                 .put(handlers::apps::workspace_update_record_handler)

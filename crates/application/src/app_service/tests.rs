@@ -12,8 +12,8 @@ use qryvanta_domain::{
 
 use crate::{
     AppRepository, AuditEvent, AuditRepository, AuthorizationRepository, AuthorizationService,
-    CreateAppInput, RecordListQuery, RuntimeFieldGrant, RuntimeRecordService,
-    SubjectEntityPermission, TemporaryPermissionGrant,
+    CreateAppInput, RecordListQuery, RuntimeFieldGrant, RuntimeRecordLogicalMode,
+    RuntimeRecordQuery, RuntimeRecordService, SubjectEntityPermission, TemporaryPermissionGrant,
 };
 
 use super::AppService;
@@ -192,6 +192,7 @@ impl AppRepository for FakeAppRepository {
 #[derive(Default)]
 struct FakeRuntimeRecordService {
     create_calls: Mutex<usize>,
+    query_calls: Mutex<usize>,
 }
 
 #[async_trait]
@@ -211,6 +212,22 @@ impl RuntimeRecordService for FakeRuntimeRecordService {
         _query: RecordListQuery,
     ) -> AppResult<Vec<RuntimeRecord>> {
         Ok(Vec::new())
+    }
+
+    async fn query_runtime_records_unchecked(
+        &self,
+        _actor: &UserIdentity,
+        entity_logical_name: &str,
+        _query: RuntimeRecordQuery,
+    ) -> AppResult<Vec<RuntimeRecord>> {
+        let mut calls = self.query_calls.lock().await;
+        *calls += 1;
+
+        Ok(vec![RuntimeRecord::new(
+            "record-1",
+            entity_logical_name,
+            json!({"id": "record-1"}),
+        )?])
     }
 
     async fn get_runtime_record_unchecked(
@@ -425,4 +442,100 @@ async fn create_record_calls_runtime_when_create_capability_exists() {
     let created = created.unwrap_or_else(|_| unreachable!());
     assert_eq!(created.entity_logical_name().as_str(), "account");
     assert_eq!(*runtime_record_service.create_calls.lock().await, 1);
+}
+
+#[tokio::test]
+async fn query_records_is_forbidden_without_read_capability() {
+    let tenant_id = TenantId::new();
+    let actor = actor(tenant_id, "worker");
+    let app_repository = Arc::new(FakeAppRepository::default());
+    let runtime_record_service = Arc::new(FakeRuntimeRecordService::default());
+    let service = build_service(
+        HashMap::new(),
+        app_repository.clone(),
+        runtime_record_service.clone(),
+    );
+
+    app_repository
+        .subject_access
+        .lock()
+        .await
+        .insert((tenant_id, "worker".to_owned(), "sales".to_owned()), true);
+    app_repository.subject_permissions.lock().await.insert(
+        (tenant_id, "worker".to_owned(), "sales".to_owned()),
+        vec![SubjectEntityPermission {
+            entity_logical_name: "account".to_owned(),
+            can_read: false,
+            can_create: true,
+            can_update: false,
+            can_delete: false,
+        }],
+    );
+
+    let result = service
+        .query_records(
+            &actor,
+            "sales",
+            "account",
+            RuntimeRecordQuery {
+                limit: 25,
+                offset: 0,
+                logical_mode: RuntimeRecordLogicalMode::And,
+                filters: Vec::new(),
+                sort: Vec::new(),
+                owner_subject: None,
+            },
+        )
+        .await;
+
+    assert!(matches!(result, Err(AppError::Forbidden(_))));
+    assert_eq!(*runtime_record_service.query_calls.lock().await, 0);
+}
+
+#[tokio::test]
+async fn query_records_calls_runtime_when_read_capability_exists() {
+    let tenant_id = TenantId::new();
+    let actor = actor(tenant_id, "worker");
+    let app_repository = Arc::new(FakeAppRepository::default());
+    let runtime_record_service = Arc::new(FakeRuntimeRecordService::default());
+    let service = build_service(
+        HashMap::new(),
+        app_repository.clone(),
+        runtime_record_service.clone(),
+    );
+
+    app_repository
+        .subject_access
+        .lock()
+        .await
+        .insert((tenant_id, "worker".to_owned(), "sales".to_owned()), true);
+    app_repository.subject_permissions.lock().await.insert(
+        (tenant_id, "worker".to_owned(), "sales".to_owned()),
+        vec![SubjectEntityPermission {
+            entity_logical_name: "account".to_owned(),
+            can_read: true,
+            can_create: false,
+            can_update: false,
+            can_delete: false,
+        }],
+    );
+
+    let result = service
+        .query_records(
+            &actor,
+            "sales",
+            "account",
+            RuntimeRecordQuery {
+                limit: 25,
+                offset: 0,
+                logical_mode: RuntimeRecordLogicalMode::And,
+                filters: Vec::new(),
+                sort: Vec::new(),
+                owner_subject: None,
+            },
+        )
+        .await;
+
+    assert!(result.is_ok());
+    assert_eq!(*runtime_record_service.query_calls.lock().await, 1);
 }

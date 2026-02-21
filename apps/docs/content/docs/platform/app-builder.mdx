@@ -18,7 +18,7 @@ Allow product admins to configure working applications without code changes.
   - `update`
   - `delete`
 - Worker runtime pages resolve forms from published metadata schemas.
-- Entity workbench runtime query supports exact-match filters with local saved presets (browser-local storage), including JSON import/export for sharing.
+- Entity workbench runtime query supports typed condition arrays (logical mode, operators, sort) with local saved presets (browser-local storage), including JSON import/export for sharing.
 - Maker and admin workbenches use sectioned command views (schema/runtime, app/navigation/permissions, roles/registration/temporary access) to reduce control-plane overload.
 - Worker entity workspaces provide command-bar style controls (create toggle, refresh, grid/json view mode, quick search) to support high-throughput record handling.
 
@@ -44,6 +44,7 @@ Current worker entry points:
 - `GET /api/workspace/apps/:app/navigation`
 - `GET /api/workspace/apps/:app/entities/:entity/schema`
 - `GET|POST /api/workspace/apps/:app/entities/:entity/records`
+- `POST /api/workspace/apps/:app/entities/:entity/records/query`
 - `GET|PUT|DELETE /api/workspace/apps/:app/entities/:entity/records/:record_id`
 
 ## Non-Goals (Current)

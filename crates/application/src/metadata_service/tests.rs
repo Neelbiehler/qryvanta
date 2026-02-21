@@ -1235,6 +1235,82 @@ async fn list_runtime_records_unchecked_honors_own_read_scope_when_configured() 
 }
 
 #[tokio::test]
+async fn query_runtime_records_unchecked_honors_own_read_scope_when_configured() {
+    let tenant_id = TenantId::new();
+    let grants = HashMap::from([(
+        (tenant_id, "alice".to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+            Permission::RuntimeRecordReadOwn,
+            Permission::RuntimeRecordWriteOwn,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let alice = actor(tenant_id, "alice");
+    let bob = actor(tenant_id, "bob");
+
+    assert!(
+        service
+            .register_entity(&alice, "contact", "Contact")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &alice,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "name".to_owned(),
+                    display_name: "Name".to_owned(),
+                    field_type: FieldType::Text,
+                    is_required: true,
+                    is_unique: false,
+                    default_value: None,
+                    relation_target_entity: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(service.publish_entity(&alice, "contact").await.is_ok());
+
+    let alice_record = service
+        .create_runtime_record_unchecked(&alice, "contact", json!({"name": "Alice"}))
+        .await;
+    assert!(alice_record.is_ok());
+
+    let bob_record = service
+        .create_runtime_record_unchecked(&bob, "contact", json!({"name": "Bob"}))
+        .await;
+    assert!(bob_record.is_ok());
+
+    let queried = service
+        .query_runtime_records_unchecked(
+            &alice,
+            "contact",
+            RuntimeRecordQuery {
+                limit: 20,
+                offset: 0,
+                logical_mode: RuntimeRecordLogicalMode::And,
+                filters: vec![RuntimeRecordFilter {
+                    field_logical_name: "name".to_owned(),
+                    operator: RuntimeRecordOperator::Contains,
+                    field_type: FieldType::Text,
+                    field_value: json!("o"),
+                }],
+                sort: Vec::new(),
+                owner_subject: None,
+            },
+        )
+        .await;
+    assert!(queried.is_ok());
+    let queried = queried.unwrap_or_default();
+    assert_eq!(queried.len(), 0);
+}
+
+#[tokio::test]
 async fn update_runtime_record_unchecked_blocks_non_owned_records_for_own_write_scope() {
     let tenant_id = TenantId::new();
     let grants = HashMap::from([(

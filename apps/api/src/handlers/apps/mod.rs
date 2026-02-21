@@ -9,5 +9,5 @@ pub use workspace::{
     app_navigation_handler, list_workspace_apps_handler, workspace_create_record_handler,
     workspace_delete_record_handler, workspace_entity_capabilities_handler,
     workspace_entity_schema_handler, workspace_get_record_handler, workspace_list_records_handler,
-    workspace_update_record_handler,
+    workspace_query_records_handler, workspace_update_record_handler,
 };
