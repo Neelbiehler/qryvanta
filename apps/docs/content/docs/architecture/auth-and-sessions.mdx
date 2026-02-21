@@ -31,6 +31,7 @@ The API uses a backend-for-frontend (BFF) pattern:
 - `POST /auth/forgot-password` and `POST /auth/reset-password` implement token-based recovery.
 - `PUT /api/profile/password` rotates passwords for authenticated users.
 - `POST /auth/mfa/totp/*` and `/auth/mfa/recovery-codes/regenerate` manage MFA enrollment and recovery.
+- Successful registration/login/bootstrap/invite/passkey flows ensure the subject is represented by a runtime `contact` record in tenant scope.
 
 Registration mode behavior:
 
@@ -71,6 +72,7 @@ Passkeys remain available as an optional login and account-hardening path.
 
 - If a membership already exists, that tenant is used.
 - If no membership exists, the API creates one during bootstrap.
+- Bootstrap and other successful auth flows also ensure default `contact` metadata is published for the tenant.
 - `DEV_DEFAULT_TENANT_ID` can pin local bootstrap to a known tenant UUID; if unset, a tenant is created for first-time bootstrap subjects.
 - Bootstrap rotates the session id and records absolute session creation time like other successful auth flows.
 

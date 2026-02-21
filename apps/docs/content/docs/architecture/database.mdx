@@ -95,6 +95,11 @@ Phase 2 extends schema storage for metadata fields, publish versions, and runtim
   - unique constraint on `(tenant_id, subject)`
   - index on `subject` for identity lookup
 
+- `tenant_subject_contacts`
+  - maps `(tenant_id, subject)` to `contact_record_id` in `runtime_records`
+  - primary key on `(tenant_id, subject)`
+  - unique constraint on `(tenant_id, contact_record_id)`
+
 ### Sessions
 
 - `tower_sessions`

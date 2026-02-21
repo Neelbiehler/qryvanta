@@ -53,6 +53,7 @@ pub async fn register_handler(
 ) -> ApiResult<Json<GenericMessageResponse>> {
     let (ip_address, user_agent) = extract_request_context(&headers);
     let register_email = payload.email.clone();
+    let register_display_name = payload.display_name.clone();
 
     let registration_mode = if let Some(tenant_id) = state.bootstrap_tenant_id {
         state
@@ -74,6 +75,23 @@ pub async fn register_handler(
             ip_address,
             user_agent,
         })
+        .await?;
+
+    let user_subject = user_id.to_string();
+    let tenant_id = state
+        .tenant_repository
+        .find_tenant_for_subject(user_subject.as_str())
+        .await?
+        .ok_or_else(|| AppError::Internal("user has no tenant membership".to_owned()))?;
+
+    state
+        .contact_bootstrap_service
+        .ensure_subject_contact(
+            tenant_id,
+            user_subject.as_str(),
+            register_display_name.as_str(),
+            Some(register_email.as_str()),
+        )
         .await?;
 
     state
@@ -104,16 +122,27 @@ pub async fn login_handler(
 
     match outcome {
         AuthOutcome::Authenticated(user) => {
+            let user_subject = user.id.to_string();
             let tenant_id = state
                 .tenant_repository
-                .find_tenant_for_subject(&user.id.to_string())
+                .find_tenant_for_subject(user_subject.as_str())
                 .await?
                 .ok_or_else(|| AppError::Internal("user has no tenant membership".to_owned()))?;
 
+            state
+                .contact_bootstrap_service
+                .ensure_subject_contact(
+                    tenant_id,
+                    user_subject.as_str(),
+                    user.email.as_str(),
+                    Some(user.email.as_str()),
+                )
+                .await?;
+
             let identity = UserIdentity::new(
-                user.id.to_string(),
+                user_subject,
                 user.email.clone(),
-                Some(user.email),
+                Some(user.email.clone()),
                 tenant_id,
             );
 
@@ -227,16 +256,28 @@ pub async fn mfa_verify_handler(
         .await?
         .ok_or_else(|| AppError::Internal("user not found after MFA".to_owned()))?;
 
+    let user_subject = user.id.to_string();
+
     let tenant_id = state
         .tenant_repository
-        .find_tenant_for_subject(&user.id.to_string())
+        .find_tenant_for_subject(user_subject.as_str())
         .await?
         .ok_or_else(|| AppError::Internal("user has no tenant membership".to_owned()))?;
 
+    state
+        .contact_bootstrap_service
+        .ensure_subject_contact(
+            tenant_id,
+            user_subject.as_str(),
+            user.email.as_str(),
+            Some(user.email.as_str()),
+        )
+        .await?;
+
     let identity = UserIdentity::new(
-        user.id.to_string(),
+        user_subject,
         user.email.clone(),
-        Some(user.email),
+        Some(user.email.clone()),
         tenant_id,
     );
 

@@ -57,6 +57,7 @@ Keep auth-related URLs on `localhost` during local development to avoid passkey 
 
 - Tenant role admins can manage custom RBAC roles and assignments from the web UI.
 - Tenant role admins can switch workspace registration mode between `invite_only` and `open`.
+- Authentication bootstrap flows automatically ensure each subject is represented by a tenant-scoped runtime `contact` record.
 
 ## Useful Commands
 

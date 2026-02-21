@@ -39,6 +39,16 @@ pub async fn bootstrap_handler(
         )
         .await?;
 
+    state
+        .contact_bootstrap_service
+        .ensure_subject_contact(
+            tenant_id,
+            payload.subject.as_str(),
+            payload.subject.as_str(),
+            None,
+        )
+        .await?;
+
     let subject = payload.subject;
     let identity = UserIdentity::new(subject.clone(), subject.clone(), None, tenant_id);
 
