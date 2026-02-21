@@ -20,17 +20,18 @@ use axum::http::{HeaderValue, Method};
 use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{delete, get, post, put};
 use qryvanta_application::{
-    AuthEventService, AuthTokenService, AuthorizationService, EmailService, MetadataService,
-    MfaService, RateLimitRule, RateLimitService, SecurityAdminService, TenantRepository,
-    UserService,
+    AppService, AuthEventService, AuthTokenService, AuthorizationService, EmailService,
+    MetadataService, MfaService, RateLimitRule, RateLimitService, SecurityAdminService,
+    TenantRepository, UserService,
 };
 use qryvanta_core::{AppError, TenantId};
 use qryvanta_infrastructure::{
-    AesSecretEncryptor, Argon2PasswordHasher, ConsoleEmailService, PostgresAuditLogRepository,
-    PostgresAuditRepository, PostgresAuthEventRepository, PostgresAuthTokenRepository,
-    PostgresAuthorizationRepository, PostgresMetadataRepository, PostgresPasskeyRepository,
-    PostgresRateLimitRepository, PostgresSecurityAdminRepository, PostgresTenantRepository,
-    PostgresUserRepository, SmtpEmailConfig, SmtpEmailService, TotpRsProvider,
+    AesSecretEncryptor, Argon2PasswordHasher, ConsoleEmailService, PostgresAppRepository,
+    PostgresAuditLogRepository, PostgresAuditRepository, PostgresAuthEventRepository,
+    PostgresAuthTokenRepository, PostgresAuthorizationRepository, PostgresMetadataRepository,
+    PostgresPasskeyRepository, PostgresRateLimitRepository, PostgresSecurityAdminRepository,
+    PostgresTenantRepository, PostgresUserRepository, SmtpEmailConfig, SmtpEmailService,
+    TotpRsProvider,
 };
 use sqlx::postgres::PgPoolOptions;
 use tower_http::cors::CorsLayer;
@@ -125,6 +126,7 @@ async fn main() -> Result<(), AppError> {
         .with_expiry(Expiry::OnInactivity(Duration::minutes(30)));
 
     let metadata_repository = Arc::new(PostgresMetadataRepository::new(pool.clone()));
+    let app_repository = Arc::new(PostgresAppRepository::new(pool.clone()));
     let authorization_repository = Arc::new(PostgresAuthorizationRepository::new(pool.clone()));
     let authorization_service = AuthorizationService::new(authorization_repository);
     let audit_repository = Arc::new(PostgresAuditRepository::new(pool.clone()));
@@ -214,6 +216,16 @@ async fn main() -> Result<(), AppError> {
     );
 
     let app_state = AppState {
+        app_service: AppService::new(
+            authorization_service.clone(),
+            app_repository,
+            Arc::new(MetadataService::new(
+                metadata_repository.clone(),
+                authorization_service.clone(),
+                audit_repository.clone(),
+            )),
+            audit_repository.clone(),
+        ),
         metadata_service: MetadataService::new(
             metadata_repository,
             authorization_service.clone(),
@@ -236,9 +248,74 @@ async fn main() -> Result<(), AppError> {
 
     let protected_routes = Router::new()
         .route(
+            "/api/apps",
+            get(handlers::apps::list_apps_handler).post(handlers::apps::create_app_handler),
+        )
+        .route(
+            "/api/apps/{app_logical_name}/entities",
+            get(handlers::apps::list_app_entities_handler)
+                .post(handlers::apps::bind_app_entity_handler),
+        )
+        .route(
+            "/api/apps/{app_logical_name}/permissions",
+            get(handlers::apps::list_app_role_permissions_handler)
+                .put(handlers::apps::save_app_role_permission_handler),
+        )
+        .route(
+            "/api/workspace/apps",
+            get(handlers::apps::list_workspace_apps_handler),
+        )
+        .route(
+            "/api/workspace/apps/{app_logical_name}/navigation",
+            get(handlers::apps::app_navigation_handler),
+        )
+        .route(
+            "/api/workspace/apps/{app_logical_name}/entities/{entity_logical_name}/schema",
+            get(handlers::apps::workspace_entity_schema_handler),
+        )
+        .route(
+            "/api/workspace/apps/{app_logical_name}/entities/{entity_logical_name}/capabilities",
+            get(handlers::apps::workspace_entity_capabilities_handler),
+        )
+        .route(
+            "/api/workspace/apps/{app_logical_name}/entities/{entity_logical_name}/records",
+            get(handlers::apps::workspace_list_records_handler)
+                .post(handlers::apps::workspace_create_record_handler),
+        )
+        .route(
+            "/api/workspace/apps/{app_logical_name}/entities/{entity_logical_name}/records/{record_id}",
+            get(handlers::apps::workspace_get_record_handler)
+                .put(handlers::apps::workspace_update_record_handler)
+                .delete(handlers::apps::workspace_delete_record_handler),
+        )
+        .route(
             "/api/entities",
             get(handlers::entities::list_entities_handler)
                 .post(handlers::entities::create_entity_handler),
+        )
+        .route(
+            "/api/entities/{entity_logical_name}/fields",
+            get(handlers::entities::list_fields_handler)
+                .post(handlers::entities::save_field_handler),
+        )
+        .route(
+            "/api/entities/{entity_logical_name}/publish",
+            post(handlers::entities::publish_entity_handler),
+        )
+        .route(
+            "/api/entities/{entity_logical_name}/published",
+            get(handlers::entities::latest_published_schema_handler),
+        )
+        .route(
+            "/api/runtime/{entity_logical_name}/records",
+            get(handlers::runtime::list_runtime_records_handler)
+                .post(handlers::runtime::create_runtime_record_handler),
+        )
+        .route(
+            "/api/runtime/{entity_logical_name}/records/{record_id}",
+            get(handlers::runtime::get_runtime_record_handler)
+                .put(handlers::runtime::update_runtime_record_handler)
+                .delete(handlers::runtime::delete_runtime_record_handler),
         )
         .route(
             "/api/security/roles",

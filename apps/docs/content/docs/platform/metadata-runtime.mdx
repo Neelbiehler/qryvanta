@@ -7,23 +7,47 @@ description: Core model for entities, fields, constraints, and publish lifecycle
 
 Represent business models as metadata and execute runtime behavior from published definitions.
 
-## Planned Model Concepts
+## Implemented Phase 2 Baseline
 
-- Entity: stable logical name + display metadata
-- Field: type, validation, default, required flag
-- Relation: one-to-many and many-to-one references
-- Constraint: uniqueness, required groups, domain limits
-- Versioning: draft and published states
+- Entity metadata (`/api/entities`) remains the root definition for logical and display names.
+- Field metadata is managed per entity (`/api/entities/:entity_logical_name/fields`).
+- Publish lifecycle is versioned and immutable (`/api/entities/:entity_logical_name/publish`).
+- Runtime record APIs read only the latest published schema (`/api/runtime/:entity_logical_name/records`).
+
+## Field Model (v1)
+
+Supported field types:
+
+- `text`
+- `number`
+- `boolean`
+- `date`
+- `datetime`
+- `json`
+- `relation` (many-to-one by target entity logical name)
+
+Per-field constraints:
+
+- `is_required`
+- `is_unique` (excluding `json` fields)
+- `default_value`
+- `relation_target_entity` (required for `relation` fields)
 
 ## Lifecycle
 
-1. Create or edit draft metadata.
-2. Validate metadata integrity.
-3. Publish immutable version.
-4. Runtime APIs use only published versions.
+1. Create/edit draft metadata (`entity_definitions` + `entity_fields`).
+2. Publish immutable schema snapshot (`entity_published_versions`).
+3. Runtime CRUD uses latest published version only.
+4. Draft changes are inert until next publish.
 
-## Design Guardrails
+## Runtime Validation Rules
 
-- Never couple runtime behavior to hardcoded entity tables.
-- Keep validation deterministic and explicit.
-- Return meaningful `AppError::Validation` messages for model violations.
+- Runtime payload must be a JSON object.
+- Unknown fields are rejected.
+- Required fields must be present unless a default is provided.
+- Field values are type-checked deterministically.
+- Relation values must reference an existing target runtime record.
+- Unique constraints are enforced via a tenant/entity/field hash index.
+- Runtime record deletion is blocked when incoming relation references still exist.
+
+Validation failures are surfaced through `AppError::Validation` and mapped to `400 Bad Request`.

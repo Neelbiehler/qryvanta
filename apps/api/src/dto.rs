@@ -1,6 +1,10 @@
 use qryvanta_core::UserIdentity;
-use qryvanta_domain::{EntityDefinition, RegistrationMode};
+use qryvanta_domain::{
+    AppDefinition, AppEntityBinding, AppEntityRolePermission, EntityDefinition,
+    EntityFieldDefinition, PublishedEntitySchema, RegistrationMode, RuntimeRecord,
+};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use ts_rs::TS;
 
 /// Health response payload.
@@ -33,6 +37,183 @@ pub struct CreateEntityRequest {
 pub struct EntityResponse {
     pub logical_name: String,
     pub display_name: String,
+}
+
+/// Incoming payload for app creation.
+#[derive(Debug, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/create-app-request.ts"
+)]
+pub struct CreateAppRequest {
+    pub logical_name: String,
+    pub display_name: String,
+    pub description: Option<String>,
+}
+
+/// API representation of an app definition.
+#[derive(Debug, Serialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/app-response.ts"
+)]
+pub struct AppResponse {
+    pub logical_name: String,
+    pub display_name: String,
+    pub description: Option<String>,
+}
+
+/// Incoming payload for binding an entity into app navigation.
+#[derive(Debug, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/bind-app-entity-request.ts"
+)]
+pub struct BindAppEntityRequest {
+    pub entity_logical_name: String,
+    pub navigation_label: Option<String>,
+    pub navigation_order: i32,
+}
+
+/// API representation of an app entity navigation binding.
+#[derive(Debug, Serialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/app-entity-binding-response.ts"
+)]
+pub struct AppEntityBindingResponse {
+    pub app_logical_name: String,
+    pub entity_logical_name: String,
+    pub navigation_label: Option<String>,
+    pub navigation_order: i32,
+}
+
+/// Incoming payload for app role entity permission updates.
+#[derive(Debug, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/save-app-role-entity-permission-request.ts"
+)]
+pub struct SaveAppRoleEntityPermissionRequest {
+    pub role_name: String,
+    pub entity_logical_name: String,
+    pub can_read: bool,
+    pub can_create: bool,
+    pub can_update: bool,
+    pub can_delete: bool,
+}
+
+/// API representation of app-scoped role entity permissions.
+#[derive(Debug, Serialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/app-role-entity-permission-response.ts"
+)]
+pub struct AppRoleEntityPermissionResponse {
+    pub app_logical_name: String,
+    pub role_name: String,
+    pub entity_logical_name: String,
+    pub can_read: bool,
+    pub can_create: bool,
+    pub can_update: bool,
+    pub can_delete: bool,
+}
+
+/// API representation of effective app entity capabilities for the current subject.
+#[derive(Debug, Serialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/app-entity-capabilities-response.ts"
+)]
+pub struct AppEntityCapabilitiesResponse {
+    pub entity_logical_name: String,
+    pub can_read: bool,
+    pub can_create: bool,
+    pub can_update: bool,
+    pub can_delete: bool,
+}
+
+/// Incoming payload for metadata field create/update.
+#[derive(Debug, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/create-field-request.ts"
+)]
+pub struct CreateFieldRequest {
+    pub logical_name: String,
+    pub display_name: String,
+    pub field_type: String,
+    pub is_required: bool,
+    pub is_unique: bool,
+    #[ts(type = "unknown | null")]
+    pub default_value: Option<Value>,
+    pub relation_target_entity: Option<String>,
+}
+
+/// API representation of a metadata field definition.
+#[derive(Debug, Serialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/field-response.ts"
+)]
+pub struct FieldResponse {
+    pub entity_logical_name: String,
+    pub logical_name: String,
+    pub display_name: String,
+    pub field_type: String,
+    pub is_required: bool,
+    pub is_unique: bool,
+    #[ts(type = "unknown | null")]
+    pub default_value: Option<Value>,
+    pub relation_target_entity: Option<String>,
+}
+
+/// API representation of a published schema snapshot.
+#[derive(Debug, Serialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/published-schema-response.ts"
+)]
+pub struct PublishedSchemaResponse {
+    pub entity_logical_name: String,
+    pub entity_display_name: String,
+    pub version: i32,
+    pub fields: Vec<FieldResponse>,
+}
+
+/// Incoming runtime record create payload.
+#[derive(Debug, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/create-runtime-record-request.ts"
+)]
+pub struct CreateRuntimeRecordRequest {
+    #[ts(type = "Record<string, unknown>")]
+    pub data: Value,
+}
+
+/// Incoming runtime record update payload.
+#[derive(Debug, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/update-runtime-record-request.ts"
+)]
+pub struct UpdateRuntimeRecordRequest {
+    #[ts(type = "Record<string, unknown>")]
+    pub data: Value,
+}
+
+/// API representation of a runtime record.
+#[derive(Debug, Serialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/runtime-record-response.ts"
+)]
+pub struct RuntimeRecordResponse {
+    pub record_id: String,
+    pub entity_logical_name: String,
+    #[ts(type = "Record<string, unknown>")]
+    pub data: Value,
 }
 
 /// API representation of the authenticated user.
@@ -230,6 +411,96 @@ impl From<EntityDefinition> for EntityResponse {
     }
 }
 
+impl From<AppDefinition> for AppResponse {
+    fn from(value: AppDefinition) -> Self {
+        Self {
+            logical_name: value.logical_name().as_str().to_owned(),
+            display_name: value.display_name().as_str().to_owned(),
+            description: value.description().map(ToOwned::to_owned),
+        }
+    }
+}
+
+impl From<AppEntityBinding> for AppEntityBindingResponse {
+    fn from(value: AppEntityBinding) -> Self {
+        Self {
+            app_logical_name: value.app_logical_name().as_str().to_owned(),
+            entity_logical_name: value.entity_logical_name().as_str().to_owned(),
+            navigation_label: value.navigation_label().map(ToOwned::to_owned),
+            navigation_order: value.navigation_order(),
+        }
+    }
+}
+
+impl From<AppEntityRolePermission> for AppRoleEntityPermissionResponse {
+    fn from(value: AppEntityRolePermission) -> Self {
+        Self {
+            app_logical_name: value.app_logical_name().as_str().to_owned(),
+            role_name: value.role_name().as_str().to_owned(),
+            entity_logical_name: value.entity_logical_name().as_str().to_owned(),
+            can_read: value.can_read(),
+            can_create: value.can_create(),
+            can_update: value.can_update(),
+            can_delete: value.can_delete(),
+        }
+    }
+}
+
+impl From<qryvanta_application::SubjectEntityPermission> for AppEntityCapabilitiesResponse {
+    fn from(value: qryvanta_application::SubjectEntityPermission) -> Self {
+        Self {
+            entity_logical_name: value.entity_logical_name,
+            can_read: value.can_read,
+            can_create: value.can_create,
+            can_update: value.can_update,
+            can_delete: value.can_delete,
+        }
+    }
+}
+
+impl From<EntityFieldDefinition> for FieldResponse {
+    fn from(value: EntityFieldDefinition) -> Self {
+        Self {
+            entity_logical_name: value.entity_logical_name().as_str().to_owned(),
+            logical_name: value.logical_name().as_str().to_owned(),
+            display_name: value.display_name().as_str().to_owned(),
+            field_type: value.field_type().as_str().to_owned(),
+            is_required: value.is_required(),
+            is_unique: value.is_unique(),
+            default_value: value.default_value().cloned(),
+            relation_target_entity: value
+                .relation_target_entity()
+                .map(|target| target.as_str().to_owned()),
+        }
+    }
+}
+
+impl From<PublishedEntitySchema> for PublishedSchemaResponse {
+    fn from(value: PublishedEntitySchema) -> Self {
+        Self {
+            entity_logical_name: value.entity().logical_name().as_str().to_owned(),
+            entity_display_name: value.entity().display_name().as_str().to_owned(),
+            version: value.version(),
+            fields: value
+                .fields()
+                .iter()
+                .cloned()
+                .map(FieldResponse::from)
+                .collect(),
+        }
+    }
+}
+
+impl From<RuntimeRecord> for RuntimeRecordResponse {
+    fn from(value: RuntimeRecord) -> Self {
+        Self {
+            record_id: value.record_id().as_str().to_owned(),
+            entity_logical_name: value.entity_logical_name().as_str().to_owned(),
+            data: value.data().clone(),
+        }
+    }
+}
+
 impl From<UserIdentity> for UserIdentityResponse {
     fn from(identity: UserIdentity) -> Self {
         Self {
@@ -292,11 +563,15 @@ impl From<RegistrationMode> for TenantRegistrationModeResponse {
 #[cfg(test)]
 mod tests {
     use super::{
-        AcceptInviteRequest, AssignRoleRequest, AuditLogEntryResponse, AuthLoginRequest,
-        AuthLoginResponse, AuthMfaVerifyRequest, AuthRegisterRequest, CreateEntityRequest,
-        CreateRoleRequest, EntityResponse, GenericMessageResponse, HealthResponse, InviteRequest,
-        RemoveRoleAssignmentRequest, RoleAssignmentResponse, RoleResponse,
-        TenantRegistrationModeResponse, UpdateTenantRegistrationModeRequest, UserIdentityResponse,
+        AcceptInviteRequest, AppEntityBindingResponse, AppEntityCapabilitiesResponse, AppResponse,
+        AppRoleEntityPermissionResponse, AssignRoleRequest, AuditLogEntryResponse,
+        AuthLoginRequest, AuthLoginResponse, AuthMfaVerifyRequest, AuthRegisterRequest,
+        BindAppEntityRequest, CreateAppRequest, CreateEntityRequest, CreateFieldRequest,
+        CreateRoleRequest, CreateRuntimeRecordRequest, EntityResponse, FieldResponse,
+        GenericMessageResponse, HealthResponse, InviteRequest, PublishedSchemaResponse,
+        RemoveRoleAssignmentRequest, RoleAssignmentResponse, RoleResponse, RuntimeRecordResponse,
+        SaveAppRoleEntityPermissionRequest, TenantRegistrationModeResponse,
+        UpdateRuntimeRecordRequest, UpdateTenantRegistrationModeRequest, UserIdentityResponse,
     };
 
     use crate::error::ErrorResponse;
@@ -308,11 +583,24 @@ mod tests {
         let config = Config::default();
 
         CreateEntityRequest::export(&config)?;
+        CreateAppRequest::export(&config)?;
+        BindAppEntityRequest::export(&config)?;
+        SaveAppRoleEntityPermissionRequest::export(&config)?;
+        CreateFieldRequest::export(&config)?;
         CreateRoleRequest::export(&config)?;
+        CreateRuntimeRecordRequest::export(&config)?;
         AssignRoleRequest::export(&config)?;
         RemoveRoleAssignmentRequest::export(&config)?;
         UpdateTenantRegistrationModeRequest::export(&config)?;
+        UpdateRuntimeRecordRequest::export(&config)?;
         EntityResponse::export(&config)?;
+        AppResponse::export(&config)?;
+        AppEntityBindingResponse::export(&config)?;
+        AppEntityCapabilitiesResponse::export(&config)?;
+        AppRoleEntityPermissionResponse::export(&config)?;
+        FieldResponse::export(&config)?;
+        PublishedSchemaResponse::export(&config)?;
+        RuntimeRecordResponse::export(&config)?;
         RoleResponse::export(&config)?;
         RoleAssignmentResponse::export(&config)?;
         TenantRegistrationModeResponse::export(&config)?;

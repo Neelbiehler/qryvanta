@@ -1,11 +1,12 @@
 ---
 title: Database
-description: Phase 1 PostgreSQL schema and repository boundaries.
+description: PostgreSQL schema evolution for foundation and metadata runtime phases.
 ---
 
 ## Data Store Choice
 
-Phase 1 replaces in-memory persistence with PostgreSQL + SQLx.
+Phase 1 replaced in-memory persistence with PostgreSQL + SQLx.
+Phase 2 extends schema storage for metadata fields, publish versions, and runtime records.
 
 - SQL migrations live in `crates/infrastructure/migrations`
 - API startup runs migrations automatically
@@ -20,6 +21,72 @@ Phase 1 replaces in-memory persistence with PostgreSQL + SQLx.
   - `logical_name`
   - `display_name`
   - unique constraint on `(tenant_id, logical_name)`
+
+- `entity_fields`
+  - `tenant_id`
+  - `entity_logical_name`
+  - `logical_name`
+  - `field_type`
+  - `is_required`
+  - `is_unique`
+  - `default_value` (`jsonb`)
+  - `relation_target_entity` (for relation fields)
+  - unique constraint on `(tenant_id, entity_logical_name, logical_name)`
+
+- `entity_published_versions`
+  - `tenant_id`
+  - `entity_logical_name`
+  - `version`
+  - `schema_json` (`jsonb` immutable snapshot)
+  - `published_by_subject`
+  - unique constraint on `(tenant_id, entity_logical_name, version)`
+
+### Runtime Records
+
+- `runtime_records`
+  - `tenant_id`
+  - `entity_logical_name`
+  - `data` (`jsonb`)
+  - `created_at`, `updated_at`
+
+- `runtime_record_unique_values`
+  - `tenant_id`
+  - `entity_logical_name`
+  - `field_logical_name`
+  - `field_value_hash`
+  - `record_id`
+  - primary key on `(tenant_id, entity_logical_name, field_logical_name, field_value_hash)`
+
+### App Builder and Workspace Security
+
+- `app_definitions`
+  - `tenant_id`
+  - `logical_name`
+  - `display_name`
+  - `description`
+  - unique constraint on `(tenant_id, logical_name)`
+
+- `app_entity_bindings`
+  - `tenant_id`
+  - `app_logical_name`
+  - `entity_logical_name`
+  - `navigation_label`
+  - `navigation_order`
+  - primary key on `(tenant_id, app_logical_name, entity_logical_name)`
+
+- `app_role_bindings`
+  - `tenant_id`
+  - `app_logical_name`
+  - `role_id`
+  - primary key on `(tenant_id, app_logical_name, role_id)`
+
+- `app_role_entity_permissions`
+  - `tenant_id`
+  - `app_logical_name`
+  - `role_id`
+  - `entity_logical_name`
+  - `can_read`, `can_create`, `can_update`, `can_delete`
+  - primary key on `(tenant_id, app_logical_name, role_id, entity_logical_name)`
 
 ### Tenancy
 
@@ -37,6 +104,6 @@ Phase 1 replaces in-memory persistence with PostgreSQL + SQLx.
 
 ## Enforcement
 
-Tenant isolation is enforced in repository queries by requiring `TenantId` as an input for metadata operations.
+Tenant isolation is enforced in repository queries by requiring `TenantId` as an input for metadata and runtime operations.
 
 No API handler directly executes SQL. Handlers call application services, which call repository ports.
