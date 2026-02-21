@@ -36,6 +36,7 @@ Keep handlers focused on:
 - `POST /api/entities/:entity_logical_name/publish` publishes immutable schema version.
 - `GET /api/entities/:entity_logical_name/published` returns latest published schema.
 - `GET /api/runtime/:entity_logical_name/records?limit=50&offset=0` lists runtime records.
+- `POST /api/runtime/:entity_logical_name/records/query` queries runtime records with exact-match filters and pagination.
 - `POST /api/runtime/:entity_logical_name/records` creates runtime record.
 - `GET /api/runtime/:entity_logical_name/records/:record_id` fetches one runtime record.
 - `PUT /api/runtime/:entity_logical_name/records/:record_id` updates runtime record.

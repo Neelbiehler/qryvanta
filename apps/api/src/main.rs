@@ -312,6 +312,10 @@ async fn main() -> Result<(), AppError> {
                 .post(handlers::runtime::create_runtime_record_handler),
         )
         .route(
+            "/api/runtime/{entity_logical_name}/records/query",
+            post(handlers::runtime::query_runtime_records_handler),
+        )
+        .route(
             "/api/runtime/{entity_logical_name}/records/{record_id}",
             get(handlers::runtime::get_runtime_record_handler)
                 .put(handlers::runtime::update_runtime_record_handler)

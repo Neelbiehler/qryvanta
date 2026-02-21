@@ -51,3 +51,10 @@ Per-field constraints:
 - Runtime record deletion is blocked when incoming relation references still exist.
 
 Validation failures are surfaced through `AppError::Validation` and mapped to `400 Bad Request`.
+
+## Runtime Query (v1)
+
+- `GET /api/runtime/:entity_logical_name/records` supports offset pagination.
+- `POST /api/runtime/:entity_logical_name/records/query` supports exact-match field filters plus offset pagination.
+- Filter fields must exist in the published schema and pass field-type validation.
+- Runtime query access requires `RuntimeRecordRead` permission and tenant-scoped repository access.
