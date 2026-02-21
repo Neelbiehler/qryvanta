@@ -13,7 +13,10 @@ use crate::app_ports::{
     AppRepository, BindAppEntityInput, CreateAppInput, RuntimeRecordService,
     SaveAppRoleEntityPermissionInput, SubjectEntityPermission,
 };
-use crate::{AuditEvent, AuditRepository, AuthorizationService, MetadataService, RecordListQuery};
+use crate::{
+    AuditEvent, AuditRepository, AuthorizationService, MetadataService, RecordListQuery,
+    RuntimeRecordQuery,
+};
 
 #[async_trait]
 impl RuntimeRecordService for MetadataService {
@@ -33,6 +36,16 @@ impl RuntimeRecordService for MetadataService {
         query: RecordListQuery,
     ) -> AppResult<Vec<RuntimeRecord>> {
         self.list_runtime_records_unchecked(actor, entity_logical_name, query)
+            .await
+    }
+
+    async fn query_runtime_records_unchecked(
+        &self,
+        actor: &UserIdentity,
+        entity_logical_name: &str,
+        query: RuntimeRecordQuery,
+    ) -> AppResult<Vec<RuntimeRecord>> {
+        self.query_runtime_records_unchecked(actor, entity_logical_name, query)
             .await
     }
 
@@ -367,6 +380,27 @@ impl AppService {
 
         self.runtime_record_service
             .list_runtime_records_unchecked(actor, entity_logical_name, query)
+            .await
+    }
+
+    /// Queries runtime records in app scope.
+    pub async fn query_records(
+        &self,
+        actor: &UserIdentity,
+        app_logical_name: &str,
+        entity_logical_name: &str,
+        query: RuntimeRecordQuery,
+    ) -> AppResult<Vec<RuntimeRecord>> {
+        self.require_entity_action(
+            actor,
+            app_logical_name,
+            entity_logical_name,
+            AppEntityAction::Read,
+        )
+        .await?;
+
+        self.runtime_record_service
+            .query_runtime_records_unchecked(actor, entity_logical_name, query)
             .await
     }
 

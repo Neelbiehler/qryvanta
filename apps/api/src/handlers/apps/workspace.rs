@@ -5,10 +5,11 @@ use qryvanta_core::UserIdentity;
 
 use crate::dto::{
     AppEntityBindingResponse, AppEntityCapabilitiesResponse, AppResponse,
-    CreateRuntimeRecordRequest, PublishedSchemaResponse, RuntimeRecordResponse,
-    UpdateRuntimeRecordRequest,
+    CreateRuntimeRecordRequest, PublishedSchemaResponse, QueryRuntimeRecordsRequest,
+    RuntimeRecordResponse, UpdateRuntimeRecordRequest,
 };
 use crate::error::ApiResult;
+use crate::handlers::runtime::runtime_record_query_from_request;
 use crate::state::AppState;
 
 #[derive(Debug, serde::Deserialize)]
@@ -128,6 +129,36 @@ pub async fn workspace_create_record_handler(
         StatusCode::CREATED,
         Json(RuntimeRecordResponse::from(record)),
     ))
+}
+
+pub async fn workspace_query_records_handler(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserIdentity>,
+    Path((app_logical_name, entity_logical_name)): Path<(String, String)>,
+    Json(payload): Json<QueryRuntimeRecordsRequest>,
+) -> ApiResult<Json<Vec<RuntimeRecordResponse>>> {
+    let query = runtime_record_query_from_request(
+        &state.metadata_service,
+        &user,
+        entity_logical_name.as_str(),
+        payload,
+    )
+    .await?;
+
+    let records = state
+        .app_service
+        .query_records(
+            &user,
+            app_logical_name.as_str(),
+            entity_logical_name.as_str(),
+            query,
+        )
+        .await?
+        .into_iter()
+        .map(RuntimeRecordResponse::from)
+        .collect();
+
+    Ok(Json(records))
 }
 
 pub async fn workspace_get_record_handler(

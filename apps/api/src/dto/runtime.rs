@@ -35,6 +35,7 @@ pub struct UpdateRuntimeRecordRequest {
 )]
 pub struct RuntimeRecordQueryFilterRequest {
     pub field_logical_name: String,
+    #[ts(type = "\"eq\" | \"neq\" | \"gt\" | \"gte\" | \"lt\" | \"lte\" | \"contains\" | \"in\"")]
     pub operator: String,
     #[ts(type = "unknown")]
     pub field_value: Value,
@@ -48,6 +49,7 @@ pub struct RuntimeRecordQueryFilterRequest {
 )]
 pub struct RuntimeRecordQuerySortRequest {
     pub field_logical_name: String,
+    #[ts(type = "\"asc\" | \"desc\" | null")]
     pub direction: Option<String>,
 }
 
@@ -60,6 +62,7 @@ pub struct RuntimeRecordQuerySortRequest {
 pub struct QueryRuntimeRecordsRequest {
     pub limit: Option<usize>,
     pub offset: Option<usize>,
+    #[ts(type = "\"and\" | \"or\" | null")]
     pub logical_mode: Option<String>,
     #[ts(type = "Array<RuntimeRecordQueryFilterRequest> | null")]
     pub conditions: Option<Vec<RuntimeRecordQueryFilterRequest>>,
