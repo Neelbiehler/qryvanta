@@ -45,6 +45,63 @@ pub struct UpdateTenantRegistrationModeRequest {
     pub registration_mode: String,
 }
 
+/// Incoming payload for runtime subject field permission updates.
+#[derive(Debug, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../../packages/api-types/src/generated/save-runtime-field-permissions-request.ts"
+)]
+pub struct SaveRuntimeFieldPermissionsRequest {
+    pub subject: String,
+    pub entity_logical_name: String,
+    pub fields: Vec<RuntimeFieldPermissionInputRequest>,
+}
+
+/// Incoming runtime field permission item.
+#[derive(Debug, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../../packages/api-types/src/generated/runtime-field-permission-input-request.ts"
+)]
+pub struct RuntimeFieldPermissionInputRequest {
+    pub field_logical_name: String,
+    pub can_read: bool,
+    pub can_write: bool,
+}
+
+/// Incoming payload for creating temporary access grants.
+#[derive(Debug, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../../packages/api-types/src/generated/create-temporary-access-grant-request.ts"
+)]
+pub struct CreateTemporaryAccessGrantRequest {
+    pub subject: String,
+    pub permissions: Vec<String>,
+    pub reason: String,
+    pub duration_minutes: u32,
+}
+
+/// Incoming payload for temporary access grant revocation.
+#[derive(Debug, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../../packages/api-types/src/generated/revoke-temporary-access-grant-request.ts"
+)]
+pub struct RevokeTemporaryAccessGrantRequest {
+    pub revoke_reason: Option<String>,
+}
+
+/// Incoming payload for audit retention updates.
+#[derive(Debug, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../../packages/api-types/src/generated/update-audit-retention-policy-request.ts"
+)]
+pub struct UpdateAuditRetentionPolicyRequest {
+    pub retention_days: u16,
+}
+
 /// API representation of an RBAC role.
 #[derive(Debug, Serialize, TS)]
 #[ts(
@@ -97,6 +154,58 @@ pub struct TenantRegistrationModeResponse {
     pub registration_mode: String,
 }
 
+/// API representation of runtime field permission entry.
+#[derive(Debug, Serialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../../packages/api-types/src/generated/runtime-field-permission-response.ts"
+)]
+pub struct RuntimeFieldPermissionResponse {
+    pub subject: String,
+    pub entity_logical_name: String,
+    pub field_logical_name: String,
+    pub can_read: bool,
+    pub can_write: bool,
+    pub updated_at: String,
+}
+
+/// API representation of temporary access grant.
+#[derive(Debug, Serialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../../packages/api-types/src/generated/temporary-access-grant-response.ts"
+)]
+pub struct TemporaryAccessGrantResponse {
+    pub grant_id: String,
+    pub subject: String,
+    pub permissions: Vec<String>,
+    pub reason: String,
+    pub created_by_subject: String,
+    pub expires_at: String,
+    pub revoked_at: Option<String>,
+}
+
+/// API representation of audit retention policy.
+#[derive(Debug, Serialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../../packages/api-types/src/generated/audit-retention-policy-response.ts"
+)]
+pub struct AuditRetentionPolicyResponse {
+    pub retention_days: u16,
+}
+
+/// API representation of audit purge operation result.
+#[derive(Debug, Serialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../../packages/api-types/src/generated/audit-purge-result-response.ts"
+)]
+pub struct AuditPurgeResultResponse {
+    pub deleted_count: u64,
+    pub retention_days: u16,
+}
+
 impl From<qryvanta_application::RoleDefinition> for RoleResponse {
     fn from(value: qryvanta_application::RoleDefinition) -> Self {
         Self {
@@ -141,6 +250,54 @@ impl From<RegistrationMode> for TenantRegistrationModeResponse {
     fn from(value: RegistrationMode) -> Self {
         Self {
             registration_mode: value.as_str().to_owned(),
+        }
+    }
+}
+
+impl From<qryvanta_application::RuntimeFieldPermissionEntry> for RuntimeFieldPermissionResponse {
+    fn from(value: qryvanta_application::RuntimeFieldPermissionEntry) -> Self {
+        Self {
+            subject: value.subject,
+            entity_logical_name: value.entity_logical_name,
+            field_logical_name: value.field_logical_name,
+            can_read: value.can_read,
+            can_write: value.can_write,
+            updated_at: value.updated_at,
+        }
+    }
+}
+
+impl From<qryvanta_application::TemporaryAccessGrant> for TemporaryAccessGrantResponse {
+    fn from(value: qryvanta_application::TemporaryAccessGrant) -> Self {
+        Self {
+            grant_id: value.grant_id,
+            subject: value.subject,
+            permissions: value
+                .permissions
+                .into_iter()
+                .map(|permission| permission.as_str().to_owned())
+                .collect(),
+            reason: value.reason,
+            created_by_subject: value.created_by_subject,
+            expires_at: value.expires_at,
+            revoked_at: value.revoked_at,
+        }
+    }
+}
+
+impl From<qryvanta_application::AuditRetentionPolicy> for AuditRetentionPolicyResponse {
+    fn from(value: qryvanta_application::AuditRetentionPolicy) -> Self {
+        Self {
+            retention_days: value.retention_days,
+        }
+    }
+}
+
+impl From<qryvanta_application::AuditPurgeResult> for AuditPurgeResultResponse {
+    fn from(value: qryvanta_application::AuditPurgeResult) -> Self {
+        Self {
+            deleted_count: value.deleted_count,
+            retention_days: value.retention_days,
         }
     }
 }

@@ -74,6 +74,106 @@ pub struct CreateRoleInput {
     pub permissions: Vec<Permission>,
 }
 
+/// Field-level runtime permission update item.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeFieldPermissionInput {
+    /// Field logical name.
+    pub field_logical_name: String,
+    /// Read access marker.
+    pub can_read: bool,
+    /// Write access marker.
+    pub can_write: bool,
+}
+
+/// Input payload for subject runtime field permission updates.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SaveRuntimeFieldPermissionsInput {
+    /// Subject principal identifier.
+    pub subject: String,
+    /// Entity logical name.
+    pub entity_logical_name: String,
+    /// Field permission entries to upsert.
+    pub fields: Vec<RuntimeFieldPermissionInput>,
+}
+
+/// Runtime field permission projection returned to callers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeFieldPermissionEntry {
+    /// Subject principal identifier.
+    pub subject: String,
+    /// Entity logical name.
+    pub entity_logical_name: String,
+    /// Field logical name.
+    pub field_logical_name: String,
+    /// Read access marker.
+    pub can_read: bool,
+    /// Write access marker.
+    pub can_write: bool,
+    /// Last update timestamp in RFC3339.
+    pub updated_at: String,
+}
+
+/// Input payload for temporary access grants.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreateTemporaryAccessGrantInput {
+    /// Subject principal identifier.
+    pub subject: String,
+    /// Granted permissions.
+    pub permissions: Vec<Permission>,
+    /// Justification for temporary access.
+    pub reason: String,
+    /// Grant duration in minutes.
+    pub duration_minutes: u32,
+}
+
+/// Temporary access grant projection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TemporaryAccessGrant {
+    /// Stable grant id.
+    pub grant_id: String,
+    /// Subject principal identifier.
+    pub subject: String,
+    /// Granted permissions.
+    pub permissions: Vec<Permission>,
+    /// Justification for temporary access.
+    pub reason: String,
+    /// Grant creator subject.
+    pub created_by_subject: String,
+    /// Expiration timestamp in RFC3339.
+    pub expires_at: String,
+    /// Revocation timestamp in RFC3339, when present.
+    pub revoked_at: Option<String>,
+}
+
+/// Query parameters for temporary access grant listing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TemporaryAccessGrantQuery {
+    /// Optional subject filter.
+    pub subject: Option<String>,
+    /// Whether to return only active (non-revoked, non-expired) grants.
+    pub active_only: bool,
+    /// Maximum rows returned.
+    pub limit: usize,
+    /// Number of rows skipped for pagination.
+    pub offset: usize,
+}
+
+/// Audit retention policy projection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AuditRetentionPolicy {
+    /// Retention window in days.
+    pub retention_days: u16,
+}
+
+/// Audit purge operation result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AuditPurgeResult {
+    /// Number of deleted entries.
+    pub deleted_count: u64,
+    /// Effective retention window in days.
+    pub retention_days: u16,
+}
+
 /// Repository port for role and assignment administration.
 #[async_trait]
 pub trait SecurityAdminRepository: Send + Sync {
@@ -106,6 +206,45 @@ pub trait SecurityAdminRepository: Send + Sync {
     /// Lists current role assignments in tenant scope.
     async fn list_role_assignments(&self, tenant_id: TenantId) -> AppResult<Vec<RoleAssignment>>;
 
+    /// Saves runtime field permissions for a subject and entity.
+    async fn save_runtime_field_permissions(
+        &self,
+        tenant_id: TenantId,
+        input: SaveRuntimeFieldPermissionsInput,
+    ) -> AppResult<Vec<RuntimeFieldPermissionEntry>>;
+
+    /// Lists runtime field permissions in tenant scope.
+    async fn list_runtime_field_permissions(
+        &self,
+        tenant_id: TenantId,
+        subject: Option<&str>,
+        entity_logical_name: Option<&str>,
+    ) -> AppResult<Vec<RuntimeFieldPermissionEntry>>;
+
+    /// Creates a temporary privileged access grant.
+    async fn create_temporary_access_grant(
+        &self,
+        tenant_id: TenantId,
+        created_by_subject: &str,
+        input: CreateTemporaryAccessGrantInput,
+    ) -> AppResult<TemporaryAccessGrant>;
+
+    /// Revokes a temporary privileged access grant.
+    async fn revoke_temporary_access_grant(
+        &self,
+        tenant_id: TenantId,
+        revoked_by_subject: &str,
+        grant_id: &str,
+        revoke_reason: Option<&str>,
+    ) -> AppResult<()>;
+
+    /// Lists temporary privileged access grants.
+    async fn list_temporary_access_grants(
+        &self,
+        tenant_id: TenantId,
+        query: TemporaryAccessGrantQuery,
+    ) -> AppResult<Vec<TemporaryAccessGrant>>;
+
     /// Returns the tenant registration mode.
     async fn registration_mode(&self, tenant_id: TenantId) -> AppResult<RegistrationMode>;
 
@@ -115,6 +254,16 @@ pub trait SecurityAdminRepository: Send + Sync {
         tenant_id: TenantId,
         registration_mode: RegistrationMode,
     ) -> AppResult<RegistrationMode>;
+
+    /// Returns tenant audit retention policy.
+    async fn audit_retention_policy(&self, tenant_id: TenantId) -> AppResult<AuditRetentionPolicy>;
+
+    /// Updates and returns tenant audit retention policy.
+    async fn set_audit_retention_policy(
+        &self,
+        tenant_id: TenantId,
+        retention_days: u16,
+    ) -> AppResult<AuditRetentionPolicy>;
 }
 
 /// Repository port for reading tenant audit logs.
@@ -126,6 +275,20 @@ pub trait AuditLogRepository: Send + Sync {
         tenant_id: TenantId,
         query: AuditLogQuery,
     ) -> AppResult<Vec<AuditLogEntry>>;
+
+    /// Exports tenant audit entries for operational workflows.
+    async fn export_entries(
+        &self,
+        tenant_id: TenantId,
+        query: AuditLogQuery,
+    ) -> AppResult<Vec<AuditLogEntry>>;
+
+    /// Purges tenant audit entries older than the retention window.
+    async fn purge_entries_older_than(
+        &self,
+        tenant_id: TenantId,
+        retention_days: u16,
+    ) -> AppResult<u64>;
 }
 
 /// Application service for security administration workflows.
@@ -280,6 +443,165 @@ impl SecurityAdminService {
             .await
     }
 
+    /// Saves runtime field-level permissions for a subject and entity.
+    pub async fn save_runtime_field_permissions(
+        &self,
+        actor: &UserIdentity,
+        input: SaveRuntimeFieldPermissionsInput,
+    ) -> AppResult<Vec<RuntimeFieldPermissionEntry>> {
+        self.authorization_service
+            .require_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::SecurityRoleManage,
+            )
+            .await?;
+
+        let entries = self
+            .repository
+            .save_runtime_field_permissions(actor.tenant_id(), input.clone())
+            .await?;
+
+        self.audit_repository
+            .append_event(AuditEvent {
+                tenant_id: actor.tenant_id(),
+                subject: actor.subject().to_owned(),
+                action: AuditAction::SecurityRuntimeFieldPermissionsSaved,
+                resource_type: "runtime_subject_field_permissions".to_owned(),
+                resource_id: format!("{}:{}", input.subject, input.entity_logical_name),
+                detail: Some(format!(
+                    "saved {} runtime field permission entries for subject '{}' and entity '{}'",
+                    entries.len(),
+                    input.subject,
+                    input.entity_logical_name
+                )),
+            })
+            .await?;
+
+        Ok(entries)
+    }
+
+    /// Lists runtime field permission entries in tenant scope.
+    pub async fn list_runtime_field_permissions(
+        &self,
+        actor: &UserIdentity,
+        subject: Option<&str>,
+        entity_logical_name: Option<&str>,
+    ) -> AppResult<Vec<RuntimeFieldPermissionEntry>> {
+        self.authorization_service
+            .require_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::SecurityRoleManage,
+            )
+            .await?;
+
+        self.repository
+            .list_runtime_field_permissions(actor.tenant_id(), subject, entity_logical_name)
+            .await
+    }
+
+    /// Creates a temporary privileged access grant.
+    pub async fn create_temporary_access_grant(
+        &self,
+        actor: &UserIdentity,
+        input: CreateTemporaryAccessGrantInput,
+    ) -> AppResult<TemporaryAccessGrant> {
+        self.authorization_service
+            .require_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::SecurityRoleManage,
+            )
+            .await?;
+
+        if input.duration_minutes == 0 {
+            return Err(qryvanta_core::AppError::Validation(
+                "temporary access duration_minutes must be greater than zero".to_owned(),
+            ));
+        }
+
+        let grant = self
+            .repository
+            .create_temporary_access_grant(actor.tenant_id(), actor.subject(), input)
+            .await?;
+
+        self.audit_repository
+            .append_event(AuditEvent {
+                tenant_id: actor.tenant_id(),
+                subject: actor.subject().to_owned(),
+                action: AuditAction::SecurityTemporaryAccessGranted,
+                resource_type: "security_temporary_access_grant".to_owned(),
+                resource_id: grant.grant_id.clone(),
+                detail: Some(format!(
+                    "granted temporary access to '{}' until '{}'",
+                    grant.subject, grant.expires_at
+                )),
+            })
+            .await?;
+
+        Ok(grant)
+    }
+
+    /// Revokes a temporary privileged access grant.
+    pub async fn revoke_temporary_access_grant(
+        &self,
+        actor: &UserIdentity,
+        grant_id: &str,
+        revoke_reason: Option<&str>,
+    ) -> AppResult<()> {
+        self.authorization_service
+            .require_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::SecurityRoleManage,
+            )
+            .await?;
+
+        self.repository
+            .revoke_temporary_access_grant(
+                actor.tenant_id(),
+                actor.subject(),
+                grant_id,
+                revoke_reason,
+            )
+            .await?;
+
+        self.audit_repository
+            .append_event(AuditEvent {
+                tenant_id: actor.tenant_id(),
+                subject: actor.subject().to_owned(),
+                action: AuditAction::SecurityTemporaryAccessRevoked,
+                resource_type: "security_temporary_access_grant".to_owned(),
+                resource_id: grant_id.to_owned(),
+                detail: revoke_reason
+                    .map(|reason| format!("revoked temporary access grant: {reason}"))
+                    .or(Some("revoked temporary access grant".to_owned())),
+            })
+            .await?;
+
+        Ok(())
+    }
+
+    /// Lists temporary privileged access grants.
+    pub async fn list_temporary_access_grants(
+        &self,
+        actor: &UserIdentity,
+        query: TemporaryAccessGrantQuery,
+    ) -> AppResult<Vec<TemporaryAccessGrant>> {
+        self.authorization_service
+            .require_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::SecurityRoleManage,
+            )
+            .await?;
+
+        self.repository
+            .list_temporary_access_grants(actor.tenant_id(), query)
+            .await
+    }
+
     /// Returns recent audit entries.
     pub async fn list_audit_log(
         &self,
@@ -296,6 +618,25 @@ impl SecurityAdminService {
 
         self.audit_log_repository
             .list_recent_entries(actor.tenant_id(), query)
+            .await
+    }
+
+    /// Exports tenant audit entries for operational workflows.
+    pub async fn export_audit_log(
+        &self,
+        actor: &UserIdentity,
+        query: AuditLogQuery,
+    ) -> AppResult<Vec<AuditLogEntry>> {
+        self.authorization_service
+            .require_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::SecurityAuditRead,
+            )
+            .await?;
+
+        self.audit_log_repository
+            .export_entries(actor.tenant_id(), query)
             .await
     }
 
@@ -347,6 +688,108 @@ impl SecurityAdminService {
 
         Ok(updated_mode)
     }
+
+    /// Returns tenant audit retention policy for administrative users.
+    pub async fn audit_retention_policy(
+        &self,
+        actor: &UserIdentity,
+    ) -> AppResult<AuditRetentionPolicy> {
+        self.authorization_service
+            .require_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::SecurityRoleManage,
+            )
+            .await?;
+
+        self.repository
+            .audit_retention_policy(actor.tenant_id())
+            .await
+    }
+
+    /// Updates tenant audit retention policy and emits an audit event.
+    pub async fn update_audit_retention_policy(
+        &self,
+        actor: &UserIdentity,
+        retention_days: u16,
+    ) -> AppResult<AuditRetentionPolicy> {
+        self.authorization_service
+            .require_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::SecurityRoleManage,
+            )
+            .await?;
+
+        if retention_days == 0 {
+            return Err(qryvanta_core::AppError::Validation(
+                "audit retention_days must be greater than zero".to_owned(),
+            ));
+        }
+
+        let policy = self
+            .repository
+            .set_audit_retention_policy(actor.tenant_id(), retention_days)
+            .await?;
+
+        self.audit_repository
+            .append_event(AuditEvent {
+                tenant_id: actor.tenant_id(),
+                subject: actor.subject().to_owned(),
+                action: AuditAction::SecurityAuditRetentionUpdated,
+                resource_type: "tenant".to_owned(),
+                resource_id: actor.tenant_id().to_string(),
+                detail: Some(format!(
+                    "set audit retention policy to {} day(s)",
+                    policy.retention_days
+                )),
+            })
+            .await?;
+
+        Ok(policy)
+    }
+
+    /// Purges audit entries older than the configured retention policy.
+    pub async fn purge_audit_log_entries(
+        &self,
+        actor: &UserIdentity,
+    ) -> AppResult<AuditPurgeResult> {
+        self.authorization_service
+            .require_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::SecurityRoleManage,
+            )
+            .await?;
+
+        let policy = self
+            .repository
+            .audit_retention_policy(actor.tenant_id())
+            .await?;
+        let deleted_count = self
+            .audit_log_repository
+            .purge_entries_older_than(actor.tenant_id(), policy.retention_days)
+            .await?;
+
+        self.audit_repository
+            .append_event(AuditEvent {
+                tenant_id: actor.tenant_id(),
+                subject: actor.subject().to_owned(),
+                action: AuditAction::SecurityAuditEntriesPurged,
+                resource_type: "audit_log_entries".to_owned(),
+                resource_id: actor.tenant_id().to_string(),
+                detail: Some(format!(
+                    "purged {} audit entries older than {} day(s)",
+                    deleted_count, policy.retention_days
+                )),
+            })
+            .await?;
+
+        Ok(AuditPurgeResult {
+            deleted_count,
+            retention_days: policy.retention_days,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -360,11 +803,16 @@ mod tests {
     use qryvanta_core::{AppError, AppResult, TenantId, UserIdentity};
     use qryvanta_domain::{Permission, RegistrationMode};
 
-    use crate::{AuditEvent, AuditRepository, AuthorizationRepository, AuthorizationService};
+    use crate::{
+        AuditEvent, AuditRepository, AuthorizationRepository, AuthorizationService,
+        RuntimeFieldGrant, TemporaryPermissionGrant,
+    };
 
     use super::{
-        AuditLogEntry, AuditLogQuery, AuditLogRepository, CreateRoleInput, RoleAssignment,
-        RoleDefinition, SecurityAdminRepository, SecurityAdminService,
+        AuditLogEntry, AuditLogQuery, AuditLogRepository, AuditRetentionPolicy, CreateRoleInput,
+        CreateTemporaryAccessGrantInput, RoleAssignment, RoleDefinition,
+        RuntimeFieldPermissionEntry, SaveRuntimeFieldPermissionsInput, SecurityAdminRepository,
+        SecurityAdminService, TemporaryAccessGrant, TemporaryAccessGrantQuery,
     };
 
     struct FakeAuthorizationRepository {
@@ -384,12 +832,31 @@ mod tests {
                 .cloned()
                 .unwrap_or_default())
         }
+
+        async fn list_runtime_field_grants_for_subject(
+            &self,
+            _tenant_id: TenantId,
+            _subject: &str,
+            _entity_logical_name: &str,
+        ) -> AppResult<Vec<RuntimeFieldGrant>> {
+            Ok(Vec::new())
+        }
+
+        async fn find_active_temporary_permission_grant(
+            &self,
+            _tenant_id: TenantId,
+            _subject: &str,
+            _permission: Permission,
+        ) -> AppResult<Option<TemporaryPermissionGrant>> {
+            Ok(None)
+        }
     }
 
     struct FakeSecurityAdminRepository {
         roles: Mutex<Vec<RoleDefinition>>,
         assignments: Mutex<Vec<(TenantId, String, String)>>,
         registration_mode: Mutex<RegistrationMode>,
+        audit_retention_days: Mutex<u16>,
     }
 
     impl Default for FakeSecurityAdminRepository {
@@ -398,6 +865,7 @@ mod tests {
                 roles: Mutex::new(Vec::new()),
                 assignments: Mutex::new(Vec::new()),
                 registration_mode: Mutex::new(RegistrationMode::InviteOnly),
+                audit_retention_days: Mutex::new(365),
             }
         }
     }
@@ -459,6 +927,58 @@ mod tests {
             Ok(Vec::new())
         }
 
+        async fn save_runtime_field_permissions(
+            &self,
+            _tenant_id: TenantId,
+            _input: SaveRuntimeFieldPermissionsInput,
+        ) -> AppResult<Vec<RuntimeFieldPermissionEntry>> {
+            Ok(Vec::new())
+        }
+
+        async fn list_runtime_field_permissions(
+            &self,
+            _tenant_id: TenantId,
+            _subject: Option<&str>,
+            _entity_logical_name: Option<&str>,
+        ) -> AppResult<Vec<RuntimeFieldPermissionEntry>> {
+            Ok(Vec::new())
+        }
+
+        async fn create_temporary_access_grant(
+            &self,
+            _tenant_id: TenantId,
+            created_by_subject: &str,
+            input: CreateTemporaryAccessGrantInput,
+        ) -> AppResult<TemporaryAccessGrant> {
+            Ok(TemporaryAccessGrant {
+                grant_id: "grant-1".to_owned(),
+                subject: input.subject,
+                permissions: input.permissions,
+                reason: input.reason,
+                created_by_subject: created_by_subject.to_owned(),
+                expires_at: "2026-01-01T00:00:00Z".to_owned(),
+                revoked_at: None,
+            })
+        }
+
+        async fn revoke_temporary_access_grant(
+            &self,
+            _tenant_id: TenantId,
+            _revoked_by_subject: &str,
+            _grant_id: &str,
+            _revoke_reason: Option<&str>,
+        ) -> AppResult<()> {
+            Ok(())
+        }
+
+        async fn list_temporary_access_grants(
+            &self,
+            _tenant_id: TenantId,
+            _query: TemporaryAccessGrantQuery,
+        ) -> AppResult<Vec<TemporaryAccessGrant>> {
+            Ok(Vec::new())
+        }
+
         async fn registration_mode(&self, _tenant_id: TenantId) -> AppResult<RegistrationMode> {
             Ok(*self.registration_mode.lock().await)
         }
@@ -471,6 +991,27 @@ mod tests {
             let mut mode = self.registration_mode.lock().await;
             *mode = registration_mode;
             Ok(*mode)
+        }
+
+        async fn audit_retention_policy(
+            &self,
+            _tenant_id: TenantId,
+        ) -> AppResult<AuditRetentionPolicy> {
+            Ok(AuditRetentionPolicy {
+                retention_days: *self.audit_retention_days.lock().await,
+            })
+        }
+
+        async fn set_audit_retention_policy(
+            &self,
+            _tenant_id: TenantId,
+            retention_days: u16,
+        ) -> AppResult<AuditRetentionPolicy> {
+            let mut stored_days = self.audit_retention_days.lock().await;
+            *stored_days = retention_days;
+            Ok(AuditRetentionPolicy {
+                retention_days: *stored_days,
+            })
         }
     }
 
@@ -486,6 +1027,22 @@ mod tests {
             _query: AuditLogQuery,
         ) -> AppResult<Vec<AuditLogEntry>> {
             Ok(self.entries.clone())
+        }
+
+        async fn export_entries(
+            &self,
+            _tenant_id: TenantId,
+            _query: AuditLogQuery,
+        ) -> AppResult<Vec<AuditLogEntry>> {
+            Ok(self.entries.clone())
+        }
+
+        async fn purge_entries_older_than(
+            &self,
+            _tenant_id: TenantId,
+            _retention_days: u16,
+        ) -> AppResult<u64> {
+            Ok(0)
         }
     }
 
@@ -511,11 +1068,13 @@ mod tests {
         subject: &str,
         permissions: Vec<Permission>,
     ) -> (SecurityAdminService, Arc<FakeAuditRepository>) {
-        let authorization_service =
-            AuthorizationService::new(Arc::new(FakeAuthorizationRepository {
-                grants: HashMap::from([((tenant_id, subject.to_owned()), permissions)]),
-            }));
         let audit_repository = Arc::new(FakeAuditRepository::default());
+        let authorization_service = AuthorizationService::new(
+            Arc::new(FakeAuthorizationRepository {
+                grants: HashMap::from([((tenant_id, subject.to_owned()), permissions)]),
+            }),
+            audit_repository.clone(),
+        );
         let service = SecurityAdminService::new(
             authorization_service,
             Arc::new(FakeSecurityAdminRepository::default()),

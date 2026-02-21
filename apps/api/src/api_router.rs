@@ -108,9 +108,36 @@ pub fn build_router(
             get(handlers::security::list_audit_log_handler),
         )
         .route(
+            "/api/security/audit-log/export",
+            get(handlers::security::export_audit_log_handler),
+        )
+        .route(
+            "/api/security/audit-log/purge",
+            post(handlers::security::purge_audit_log_handler),
+        )
+        .route(
             "/api/security/registration-mode",
             get(handlers::security::registration_mode_handler)
                 .put(handlers::security::update_registration_mode_handler),
+        )
+        .route(
+            "/api/security/audit-retention-policy",
+            get(handlers::security::audit_retention_policy_handler)
+                .put(handlers::security::update_audit_retention_policy_handler),
+        )
+        .route(
+            "/api/security/runtime-field-permissions",
+            get(handlers::security::list_runtime_field_permissions_handler)
+                .put(handlers::security::save_runtime_field_permissions_handler),
+        )
+        .route(
+            "/api/security/temporary-access-grants",
+            get(handlers::security::list_temporary_access_grants_handler)
+                .post(handlers::security::create_temporary_access_grant_handler),
+        )
+        .route(
+            "/api/security/temporary-access-grants/{grant_id}/revoke",
+            post(handlers::security::revoke_temporary_access_grant_handler),
         )
         .route("/auth/me", get(auth::me_handler))
         .route(

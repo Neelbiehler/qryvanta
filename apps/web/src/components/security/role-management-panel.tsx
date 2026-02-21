@@ -7,8 +7,12 @@ import { Button, Checkbox, Input, Label, Select } from "@qryvanta/ui";
 
 import {
   apiFetch,
+  type CreateTemporaryAccessGrantRequest,
   type RoleAssignmentResponse,
   type RoleResponse,
+  type RuntimeFieldPermissionResponse,
+  type SaveRuntimeFieldPermissionsRequest,
+  type TemporaryAccessGrantResponse,
   type UpdateTenantRegistrationModeRequest,
 } from "@/lib/api";
 
@@ -18,22 +22,34 @@ const PERMISSION_OPTIONS = [
   "metadata.field.read",
   "metadata.field.write",
   "runtime.record.read",
+  "runtime.record.read.own",
   "runtime.record.write",
+  "runtime.record.write.own",
   "security.audit.read",
   "security.role.manage",
   "security.invite.send",
 ] as const;
 
+type EditableFieldPermission = {
+  fieldLogicalName: string;
+  canRead: boolean;
+  canWrite: boolean;
+};
+
 type RoleManagementPanelProps = {
   roles: RoleResponse[];
   assignments: RoleAssignmentResponse[];
   registrationMode: string;
+  runtimeFieldPermissions: RuntimeFieldPermissionResponse[];
+  temporaryAccessGrants: TemporaryAccessGrantResponse[];
 };
 
 export function RoleManagementPanel({
   roles,
   assignments,
   registrationMode,
+  runtimeFieldPermissions,
+  temporaryAccessGrants,
 }: RoleManagementPanelProps) {
   const router = useRouter();
   const roleNames = useMemo(() => roles.map((role) => role.name), [roles]);
@@ -50,11 +66,73 @@ export function RoleManagementPanel({
   const [isUpdatingRegistrationMode, setIsUpdatingRegistrationMode] =
     useState(false);
 
+  const [fieldPermissionSubject, setFieldPermissionSubject] = useState("");
+  const [fieldPermissionEntity, setFieldPermissionEntity] = useState("");
+  const [fieldPermissionFieldName, setFieldPermissionFieldName] = useState("");
+  const [fieldPermissionCanRead, setFieldPermissionCanRead] = useState(true);
+  const [fieldPermissionCanWrite, setFieldPermissionCanWrite] = useState(false);
+  const [fieldPermissionsDraft, setFieldPermissionsDraft] = useState<
+    EditableFieldPermission[]
+  >([]);
+  const [isSavingFieldPermissions, setIsSavingFieldPermissions] =
+    useState(false);
+
+  const [temporarySubject, setTemporarySubject] = useState("");
+  const [temporaryReason, setTemporaryReason] = useState("");
+  const [temporaryDurationMinutes, setTemporaryDurationMinutes] =
+    useState("60");
+  const [temporaryPermissions, setTemporaryPermissions] = useState<string[]>([
+    "runtime.record.read",
+  ]);
+  const [isCreatingTemporaryGrant, setIsCreatingTemporaryGrant] =
+    useState(false);
+
   function togglePermission(permission: string) {
     setSelectedPermissions((current) =>
       current.includes(permission)
         ? current.filter((value) => value !== permission)
         : [...current, permission],
+    );
+  }
+
+  function toggleTemporaryPermission(permission: string) {
+    setTemporaryPermissions((current) =>
+      current.includes(permission)
+        ? current.filter((value) => value !== permission)
+        : [...current, permission],
+    );
+  }
+
+  function addFieldPermissionDraft() {
+    if (!fieldPermissionFieldName.trim()) {
+      setErrorMessage("Field logical name is required.");
+      return;
+    }
+
+    setFieldPermissionsDraft((current) => {
+      const withoutExisting = current.filter(
+        (entry) =>
+          entry.fieldLogicalName.toLowerCase() !==
+          fieldPermissionFieldName.trim().toLowerCase(),
+      );
+
+      return [
+        ...withoutExisting,
+        {
+          fieldLogicalName: fieldPermissionFieldName.trim(),
+          canRead: fieldPermissionCanRead,
+          canWrite: fieldPermissionCanWrite,
+        },
+      ];
+    });
+
+    setFieldPermissionFieldName("");
+    setErrorMessage(null);
+  }
+
+  function removeFieldPermissionDraft(fieldLogicalName: string) {
+    setFieldPermissionsDraft((current) =>
+      current.filter((entry) => entry.fieldLogicalName !== fieldLogicalName),
     );
   }
 
@@ -177,6 +255,135 @@ export function RoleManagementPanel({
     }
   }
 
+  async function handleSaveFieldPermissions(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setErrorMessage(null);
+
+    if (!fieldPermissionSubject.trim() || !fieldPermissionEntity.trim()) {
+      setErrorMessage("Subject and entity logical name are required.");
+      return;
+    }
+
+    if (fieldPermissionsDraft.length === 0) {
+      setErrorMessage("Add at least one field permission before saving.");
+      return;
+    }
+
+    setIsSavingFieldPermissions(true);
+    try {
+      const payload: SaveRuntimeFieldPermissionsRequest = {
+        subject: fieldPermissionSubject.trim(),
+        entity_logical_name: fieldPermissionEntity.trim(),
+        fields: fieldPermissionsDraft.map((entry) => ({
+          field_logical_name: entry.fieldLogicalName,
+          can_read: entry.canRead,
+          can_write: entry.canWrite,
+        })),
+      };
+
+      const response = await apiFetch("/api/security/runtime-field-permissions", {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json()) as { message?: string };
+        setErrorMessage(payload.message ?? "Unable to save field permissions.");
+        return;
+      }
+
+      setFieldPermissionsDraft([]);
+      setFieldPermissionFieldName("");
+      router.refresh();
+    } catch {
+      setErrorMessage("Unable to save field permissions.");
+    } finally {
+      setIsSavingFieldPermissions(false);
+    }
+  }
+
+  async function handleCreateTemporaryGrant(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setErrorMessage(null);
+
+    if (temporaryPermissions.length === 0) {
+      setErrorMessage("Select at least one permission for temporary access.");
+      return;
+    }
+
+    const durationMinutes = Number.parseInt(temporaryDurationMinutes, 10);
+    if (Number.isNaN(durationMinutes) || durationMinutes <= 0) {
+      setErrorMessage("Duration must be a positive number of minutes.");
+      return;
+    }
+
+    setIsCreatingTemporaryGrant(true);
+    try {
+      const payload: CreateTemporaryAccessGrantRequest = {
+        subject: temporarySubject.trim(),
+        permissions: temporaryPermissions,
+        reason: temporaryReason.trim(),
+        duration_minutes: durationMinutes,
+      };
+
+      const response = await apiFetch("/api/security/temporary-access-grants", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json()) as { message?: string };
+        setErrorMessage(
+          payload.message ?? "Unable to create temporary access grant.",
+        );
+        return;
+      }
+
+      setTemporarySubject("");
+      setTemporaryReason("");
+      setTemporaryDurationMinutes("60");
+      router.refresh();
+    } catch {
+      setErrorMessage("Unable to create temporary access grant.");
+    } finally {
+      setIsCreatingTemporaryGrant(false);
+    }
+  }
+
+  async function handleRevokeTemporaryGrant(grantId: string) {
+    setErrorMessage(null);
+
+    const revokeReason = window.prompt(
+      "Optional revoke reason (leave empty to skip):",
+      "",
+    );
+
+    try {
+      const payload = {
+        revoke_reason: revokeReason?.trim() ? revokeReason.trim() : null,
+      };
+      const response = await apiFetch(
+        `/api/security/temporary-access-grants/${grantId}/revoke`,
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        },
+      );
+
+      if (!response.ok) {
+        const payload = (await response.json()) as { message?: string };
+        setErrorMessage(
+          payload.message ?? "Unable to revoke temporary access grant.",
+        );
+        return;
+      }
+
+      router.refresh();
+    } catch {
+      setErrorMessage("Unable to revoke temporary access grant.");
+    }
+  }
+
   return (
     <div className="grid gap-8 md:grid-cols-2">
       <form className="space-y-4" onSubmit={handleRoleSubmit}>
@@ -280,6 +487,160 @@ export function RoleManagementPanel({
         </Button>
       </form>
 
+      <form
+        className="space-y-4 rounded-md border border-emerald-100 bg-white p-4 md:col-span-2"
+        onSubmit={handleSaveFieldPermissions}
+      >
+        <p className="text-sm font-medium text-zinc-900">Runtime Field Permissions</p>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="field_permission_subject">Subject</Label>
+            <Input
+              id="field_permission_subject"
+              value={fieldPermissionSubject}
+              onChange={(event) => setFieldPermissionSubject(event.target.value)}
+              placeholder="alice"
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="field_permission_entity">Entity</Label>
+            <Input
+              id="field_permission_entity"
+              value={fieldPermissionEntity}
+              onChange={(event) => setFieldPermissionEntity(event.target.value)}
+              placeholder="contact"
+              required
+            />
+          </div>
+        </div>
+
+        <div className="grid gap-3 rounded-md border border-emerald-100 bg-emerald-50/40 p-3 md:grid-cols-4">
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="field_permission_field_name">Field</Label>
+            <Input
+              id="field_permission_field_name"
+              value={fieldPermissionFieldName}
+              onChange={(event) => setFieldPermissionFieldName(event.target.value)}
+              placeholder="email"
+            />
+          </div>
+          <label className="flex items-center gap-2 text-sm text-zinc-700 md:mt-7">
+            <Checkbox
+              checked={fieldPermissionCanRead}
+              onChange={() => setFieldPermissionCanRead((current) => !current)}
+            />
+            Read
+          </label>
+          <label className="flex items-center gap-2 text-sm text-zinc-700 md:mt-7">
+            <Checkbox
+              checked={fieldPermissionCanWrite}
+              onChange={() => setFieldPermissionCanWrite((current) => !current)}
+            />
+            Write
+          </label>
+          <Button
+            className="md:col-span-4"
+            onClick={addFieldPermissionDraft}
+            type="button"
+            variant="outline"
+          >
+            Add Field Rule
+          </Button>
+        </div>
+
+        <div className="space-y-2">
+          {fieldPermissionsDraft.map((entry) => (
+            <div
+              key={entry.fieldLogicalName}
+              className="flex items-center justify-between rounded-md border border-emerald-100 px-3 py-2"
+            >
+              <p className="font-mono text-xs text-zinc-700">
+                {entry.fieldLogicalName} (read={String(entry.canRead)}, write=
+                {String(entry.canWrite)})
+              </p>
+              <Button
+                onClick={() => removeFieldPermissionDraft(entry.fieldLogicalName)}
+                type="button"
+                variant="outline"
+              >
+                Remove
+              </Button>
+            </div>
+          ))}
+          {fieldPermissionsDraft.length === 0 ? (
+            <p className="text-sm text-zinc-500">No field rules staged.</p>
+          ) : null}
+        </div>
+
+        <Button disabled={isSavingFieldPermissions} type="submit">
+          {isSavingFieldPermissions ? "Saving..." : "Save Field Permissions"}
+        </Button>
+      </form>
+
+      <form
+        className="space-y-4 rounded-md border border-emerald-100 bg-white p-4 md:col-span-2"
+        onSubmit={handleCreateTemporaryGrant}
+      >
+        <p className="text-sm font-medium text-zinc-900">Temporary Access Grants</p>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="space-y-2">
+            <Label htmlFor="temporary_subject">Subject</Label>
+            <Input
+              id="temporary_subject"
+              value={temporarySubject}
+              onChange={(event) => setTemporarySubject(event.target.value)}
+              placeholder="oncall-user"
+              required
+            />
+          </div>
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="temporary_reason">Reason</Label>
+            <Input
+              id="temporary_reason"
+              value={temporaryReason}
+              onChange={(event) => setTemporaryReason(event.target.value)}
+              placeholder="Incident triage"
+              required
+            />
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="temporary_duration">Duration (minutes)</Label>
+          <Input
+            id="temporary_duration"
+            value={temporaryDurationMinutes}
+            onChange={(event) => setTemporaryDurationMinutes(event.target.value)}
+            placeholder="60"
+            type="number"
+          />
+        </div>
+
+        <fieldset className="space-y-2">
+          <legend className="text-sm font-medium text-zinc-800">Permissions</legend>
+          <div className="grid gap-2 rounded-md border border-emerald-100 bg-emerald-50/40 p-3 md:grid-cols-2">
+            {PERMISSION_OPTIONS.map((permission) => (
+              <label
+                key={`temporary-${permission}`}
+                className="flex items-center gap-2 text-sm text-zinc-700"
+              >
+                <Checkbox
+                  checked={temporaryPermissions.includes(permission)}
+                  onChange={() => toggleTemporaryPermission(permission)}
+                />
+                <span className="font-mono text-xs">{permission}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        <Button disabled={isCreatingTemporaryGrant} type="submit" variant="outline">
+          {isCreatingTemporaryGrant ? "Creating..." : "Create Temporary Grant"}
+        </Button>
+      </form>
+
       <div className="space-y-3 md:col-span-2">
         <p className="text-sm font-medium text-zinc-800">Quick Unassign</p>
         <div className="grid gap-2">
@@ -308,6 +669,63 @@ export function RoleManagementPanel({
 
           {assignments.length === 0 ? (
             <p className="text-sm text-zinc-500">No assignments available.</p>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="space-y-3 md:col-span-2">
+        <p className="text-sm font-medium text-zinc-800">Temporary Grants</p>
+        <div className="grid gap-2">
+          {temporaryAccessGrants.slice(0, 12).map((grant) => (
+            <div
+              key={grant.grant_id}
+              className="flex items-center justify-between rounded-md border border-emerald-100 bg-white px-3 py-2"
+            >
+              <div className="space-y-1">
+                <p className="text-sm text-zinc-900">{grant.subject}</p>
+                <p className="font-mono text-xs text-zinc-500">
+                  {grant.permissions.join(", ")} | expires {grant.expires_at}
+                </p>
+                <p className="text-xs text-zinc-600">{grant.reason}</p>
+              </div>
+              {grant.revoked_at ? (
+                <p className="text-xs text-zinc-500">Revoked</p>
+              ) : (
+                <Button
+                  onClick={() => handleRevokeTemporaryGrant(grant.grant_id)}
+                  type="button"
+                  variant="outline"
+                >
+                  Revoke
+                </Button>
+              )}
+            </div>
+          ))}
+          {temporaryAccessGrants.length === 0 ? (
+            <p className="text-sm text-zinc-500">No temporary grants found.</p>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="space-y-3 md:col-span-2">
+        <p className="text-sm font-medium text-zinc-800">Runtime Field Permission Entries</p>
+        <div className="grid gap-2">
+          {runtimeFieldPermissions.slice(0, 20).map((entry) => (
+            <div
+              key={`${entry.subject}-${entry.entity_logical_name}-${entry.field_logical_name}`}
+              className="rounded-md border border-emerald-100 bg-white px-3 py-2"
+            >
+              <p className="text-sm text-zinc-900">
+                {entry.subject} / {entry.entity_logical_name}
+              </p>
+              <p className="font-mono text-xs text-zinc-600">
+                {entry.field_logical_name} (read={String(entry.can_read)}, write=
+                {String(entry.can_write)})
+              </p>
+            </div>
+          ))}
+          {runtimeFieldPermissions.length === 0 ? (
+            <p className="text-sm text-zinc-500">No runtime field permissions found.</p>
           ) : null}
         </div>
       </div>

@@ -105,7 +105,13 @@ impl ContactBootstrapService {
         let payload = build_contact_payload(subject, display_name, email);
         let created_record = self
             .metadata_repository
-            .create_runtime_record(tenant_id, CONTACT_ENTITY_LOGICAL_NAME, payload, Vec::new())
+            .create_runtime_record(
+                tenant_id,
+                CONTACT_ENTITY_LOGICAL_NAME,
+                payload,
+                Vec::new(),
+                subject,
+            )
             .await?;
 
         let contact_record_id = created_record.record_id().as_str().to_owned();

@@ -81,4 +81,81 @@ impl AuditLogRepository for PostgresAuditLogRepository {
             })
             .collect())
     }
+
+    async fn export_entries(
+        &self,
+        tenant_id: TenantId,
+        query: AuditLogQuery,
+    ) -> AppResult<Vec<AuditLogEntry>> {
+        let capped_limit = query.limit.clamp(1, 5_000) as i64;
+        let capped_offset = query.offset.min(100_000) as i64;
+        let rows = sqlx::query_as::<_, AuditLogRow>(
+            r#"
+            SELECT
+                id AS event_id,
+                subject,
+                action,
+                resource_type,
+                resource_id,
+                detail,
+                to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
+            FROM audit_log_entries
+            WHERE tenant_id = $1
+                AND ($2::TEXT IS NULL OR action = $2)
+                AND ($3::TEXT IS NULL OR subject = $3)
+            ORDER BY created_at DESC
+            LIMIT $4
+            OFFSET $5
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(query.action)
+        .bind(query.subject)
+        .bind(capped_limit)
+        .bind(capped_offset)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!("failed to export audit log entries: {error}"))
+        })?;
+
+        Ok(rows
+            .into_iter()
+            .map(|row| AuditLogEntry {
+                event_id: row.event_id.to_string(),
+                subject: row.subject,
+                action: row.action,
+                resource_type: row.resource_type,
+                resource_id: row.resource_id,
+                detail: row.detail,
+                created_at: row.created_at,
+            })
+            .collect())
+    }
+
+    async fn purge_entries_older_than(
+        &self,
+        tenant_id: TenantId,
+        retention_days: u16,
+    ) -> AppResult<u64> {
+        let result = sqlx::query(
+            r#"
+            DELETE FROM audit_log_entries
+            WHERE tenant_id = $1
+              AND created_at < now() - make_interval(days => $2::INTEGER)
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(i32::from(retention_days))
+        .execute(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!("failed to purge audit log entries: {error}"))
+        })?;
+
+        Ok(result.rows_affected())
+    }
 }
+
+#[cfg(test)]
+mod tests;

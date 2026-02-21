@@ -1,8 +1,10 @@
+use std::cmp::Ordering;
 use std::collections::HashMap;
 
 use async_trait::async_trait;
 use qryvanta_application::{
-    MetadataRepository, RecordListQuery, RuntimeRecordFilter, RuntimeRecordQuery, UniqueFieldValue,
+    MetadataRepository, RecordListQuery, RuntimeRecordFilter, RuntimeRecordLogicalMode,
+    RuntimeRecordOperator, RuntimeRecordQuery, RuntimeRecordSortDirection, UniqueFieldValue,
 };
 use qryvanta_core::TenantId;
 use qryvanta_core::{AppError, AppResult};
@@ -20,6 +22,7 @@ pub struct InMemoryMetadataRepository {
     fields: RwLock<HashMap<(TenantId, String, String), EntityFieldDefinition>>,
     published_schemas: RwLock<HashMap<(TenantId, String), Vec<PublishedEntitySchema>>>,
     runtime_records: RwLock<HashMap<(TenantId, String, String), RuntimeRecord>>,
+    record_owners: RwLock<HashMap<(TenantId, String, String), String>>,
     unique_values: RwLock<HashMap<(TenantId, String, String, String), String>>,
 }
 
@@ -32,6 +35,7 @@ impl InMemoryMetadataRepository {
             fields: RwLock::new(HashMap::new()),
             published_schemas: RwLock::new(HashMap::new()),
             runtime_records: RwLock::new(HashMap::new()),
+            record_owners: RwLock::new(HashMap::new()),
             unique_values: RwLock::new(HashMap::new()),
         }
     }
@@ -160,6 +164,7 @@ impl MetadataRepository for InMemoryMetadataRepository {
         entity_logical_name: &str,
         data: Value,
         unique_values: Vec<UniqueFieldValue>,
+        created_by_subject: &str,
     ) -> AppResult<RuntimeRecord> {
         let record = RuntimeRecord::new(Uuid::new_v4().to_string(), entity_logical_name, data)?;
 
@@ -198,6 +203,15 @@ impl MetadataRepository for InMemoryMetadataRepository {
                 record.record_id().as_str().to_owned(),
             ),
             record.clone(),
+        );
+
+        self.record_owners.write().await.insert(
+            (
+                tenant_id,
+                entity_logical_name.to_owned(),
+                record.record_id().as_str().to_owned(),
+            ),
+            created_by_subject.to_owned(),
         );
 
         Ok(record)
@@ -277,12 +291,28 @@ impl MetadataRepository for InMemoryMetadataRepository {
         query: RecordListQuery,
     ) -> AppResult<Vec<RuntimeRecord>> {
         let records = self.runtime_records.read().await;
+        let record_owners = self.record_owners.read().await;
         let mut listed: Vec<RuntimeRecord> = records
             .iter()
-            .filter_map(|((stored_tenant_id, stored_entity_name, _), record)| {
-                (stored_tenant_id == &tenant_id && stored_entity_name == entity_logical_name)
-                    .then_some(record.clone())
-            })
+            .filter_map(
+                |((stored_tenant_id, stored_entity_name, stored_record_id), record)| {
+                    let matches_owner = query.owner_subject.as_deref().is_none_or(|subject| {
+                        record_owners
+                            .get(&(
+                                *stored_tenant_id,
+                                stored_entity_name.clone(),
+                                stored_record_id.clone(),
+                            ))
+                            .map(|owner| owner == subject)
+                            .unwrap_or(false)
+                    });
+
+                    (stored_tenant_id == &tenant_id
+                        && stored_entity_name == entity_logical_name
+                        && matches_owner)
+                        .then_some(record.clone())
+                },
+            )
             .collect();
 
         listed.sort_by(|left, right| left.record_id().as_str().cmp(right.record_id().as_str()));
@@ -301,16 +331,51 @@ impl MetadataRepository for InMemoryMetadataRepository {
         query: RuntimeRecordQuery,
     ) -> AppResult<Vec<RuntimeRecord>> {
         let records = self.runtime_records.read().await;
+        let record_owners = self.record_owners.read().await;
         let mut listed: Vec<RuntimeRecord> = records
             .iter()
-            .filter_map(|((stored_tenant_id, stored_entity_name, _), record)| {
-                (stored_tenant_id == &tenant_id && stored_entity_name == entity_logical_name)
-                    .then_some(record.clone())
-            })
-            .filter(|record| runtime_record_matches_filters(record, &query.filters))
+            .filter_map(
+                |((stored_tenant_id, stored_entity_name, stored_record_id), record)| {
+                    let matches_owner = query.owner_subject.as_deref().is_none_or(|subject| {
+                        record_owners
+                            .get(&(
+                                *stored_tenant_id,
+                                stored_entity_name.clone(),
+                                stored_record_id.clone(),
+                            ))
+                            .map(|owner| owner == subject)
+                            .unwrap_or(false)
+                    });
+
+                    (stored_tenant_id == &tenant_id
+                        && stored_entity_name == entity_logical_name
+                        && matches_owner)
+                        .then_some(record.clone())
+                },
+            )
+            .filter(|record| runtime_record_matches_filters(record, &query))
             .collect();
 
-        listed.sort_by(|left, right| left.record_id().as_str().cmp(right.record_id().as_str()));
+        if query.sort.is_empty() {
+            listed.sort_by(|left, right| left.record_id().as_str().cmp(right.record_id().as_str()));
+        } else {
+            listed.sort_by(|left, right| {
+                for sort in &query.sort {
+                    let ordering = compare_values_for_sort(
+                        left,
+                        right,
+                        sort.field_logical_name.as_str(),
+                        sort.field_type,
+                        sort.direction,
+                    );
+                    if ordering != Ordering::Equal {
+                        return ordering;
+                    }
+                }
+
+                left.record_id().as_str().cmp(right.record_id().as_str())
+            });
+        }
 
         Ok(listed
             .into_iter()
@@ -363,6 +428,12 @@ impl MetadataRepository for InMemoryMetadataRepository {
                 !(entity == entity_logical_name && existing_record_id == record_id)
             });
 
+        self.record_owners.write().await.remove(&(
+            tenant_id,
+            entity_logical_name.to_owned(),
+            record_id.to_owned(),
+        ));
+
         Ok(())
     }
 
@@ -377,6 +448,26 @@ impl MetadataRepository for InMemoryMetadataRepository {
             entity_logical_name.to_owned(),
             record_id.to_owned(),
         )))
+    }
+
+    async fn runtime_record_owned_by_subject(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        record_id: &str,
+        subject: &str,
+    ) -> AppResult<bool> {
+        Ok(self
+            .record_owners
+            .read()
+            .await
+            .get(&(
+                tenant_id,
+                entity_logical_name.to_owned(),
+                record_id.to_owned(),
+            ))
+            .map(|owner| owner == subject)
+            .unwrap_or(false))
     }
 
     async fn has_relation_reference(
@@ -439,15 +530,134 @@ impl MetadataRepository for InMemoryMetadataRepository {
     }
 }
 
-fn runtime_record_matches_filters(record: &RuntimeRecord, filters: &[RuntimeRecordFilter]) -> bool {
-    filters.iter().all(|filter| {
-        record
+fn runtime_record_matches_filters(record: &RuntimeRecord, query: &RuntimeRecordQuery) -> bool {
+    if query.filters.is_empty() {
+        return true;
+    }
+
+    let evaluate = |filter: &RuntimeRecordFilter| {
+        let value = record
             .data()
             .as_object()
-            .and_then(|data| data.get(filter.field_logical_name.as_str()))
-            .map(|value| value == &filter.field_value)
-            .unwrap_or(false)
-    })
+            .and_then(|data| data.get(filter.field_logical_name.as_str()));
+
+        runtime_record_filter_matches_value(value, filter)
+    };
+
+    match query.logical_mode {
+        RuntimeRecordLogicalMode::And => query.filters.iter().all(evaluate),
+        RuntimeRecordLogicalMode::Or => query.filters.iter().any(evaluate),
+    }
+}
+
+fn runtime_record_filter_matches_value(
+    value: Option<&Value>,
+    filter: &RuntimeRecordFilter,
+) -> bool {
+    let Some(value) = value else {
+        return false;
+    };
+
+    match filter.operator {
+        RuntimeRecordOperator::Eq => value == &filter.field_value,
+        RuntimeRecordOperator::Neq => value != &filter.field_value,
+        RuntimeRecordOperator::Gt => {
+            compare_filter_values(value, &filter.field_value, filter).is_gt()
+        }
+        RuntimeRecordOperator::Gte => {
+            let comparison = compare_filter_values(value, &filter.field_value, filter);
+            comparison.is_gt() || comparison.is_eq()
+        }
+        RuntimeRecordOperator::Lt => {
+            compare_filter_values(value, &filter.field_value, filter).is_lt()
+        }
+        RuntimeRecordOperator::Lte => {
+            let comparison = compare_filter_values(value, &filter.field_value, filter);
+            comparison.is_lt() || comparison.is_eq()
+        }
+        RuntimeRecordOperator::Contains => value
+            .as_str()
+            .zip(filter.field_value.as_str())
+            .map(|(stored, expected)| stored.contains(expected))
+            .unwrap_or(false),
+        RuntimeRecordOperator::In => filter
+            .field_value
+            .as_array()
+            .map(|values| values.iter().any(|candidate| candidate == value))
+            .unwrap_or(false),
+    }
+}
+
+fn compare_filter_values(
+    stored: &Value,
+    expected: &Value,
+    filter: &RuntimeRecordFilter,
+) -> Ordering {
+    match filter.field_type {
+        FieldType::Number => stored
+            .as_f64()
+            .zip(expected.as_f64())
+            .and_then(|(left, right)| left.partial_cmp(&right))
+            .unwrap_or(Ordering::Equal),
+        FieldType::Date | FieldType::DateTime | FieldType::Text | FieldType::Relation => stored
+            .as_str()
+            .zip(expected.as_str())
+            .map(|(left, right)| left.cmp(right))
+            .unwrap_or(Ordering::Equal),
+        FieldType::Boolean => stored
+            .as_bool()
+            .zip(expected.as_bool())
+            .map(|(left, right)| left.cmp(&right))
+            .unwrap_or(Ordering::Equal),
+        FieldType::Json => Ordering::Equal,
+    }
+}
+
+fn compare_values_for_sort(
+    left: &RuntimeRecord,
+    right: &RuntimeRecord,
+    field_logical_name: &str,
+    field_type: FieldType,
+    direction: RuntimeRecordSortDirection,
+) -> Ordering {
+    let left_value = left
+        .data()
+        .as_object()
+        .and_then(|data| data.get(field_logical_name));
+    let right_value = right
+        .data()
+        .as_object()
+        .and_then(|data| data.get(field_logical_name));
+
+    let mut ordering = match (left_value, right_value) {
+        (Some(left), Some(right)) => match field_type {
+            FieldType::Number => left
+                .as_f64()
+                .zip(right.as_f64())
+                .and_then(|(left, right)| left.partial_cmp(&right))
+                .unwrap_or(Ordering::Equal),
+            FieldType::Boolean => left
+                .as_bool()
+                .zip(right.as_bool())
+                .map(|(left, right)| left.cmp(&right))
+                .unwrap_or(Ordering::Equal),
+            FieldType::Date | FieldType::DateTime | FieldType::Text | FieldType::Relation => left
+                .as_str()
+                .zip(right.as_str())
+                .map(|(left, right)| left.cmp(right))
+                .unwrap_or(Ordering::Equal),
+            FieldType::Json => Ordering::Equal,
+        },
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => Ordering::Equal,
+    };
+
+    if direction == RuntimeRecordSortDirection::Desc {
+        ordering = ordering.reverse();
+    }
+
+    ordering
 }
 
 #[cfg(test)]

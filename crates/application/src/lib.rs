@@ -24,18 +24,24 @@ pub use auth_event_service::{AuthEvent, AuthEventRepository, AuthEventService};
 pub use auth_token_service::{
     AuthTokenRecord, AuthTokenRepository, AuthTokenService, EmailService,
 };
-pub use authorization_service::{AuthorizationRepository, AuthorizationService};
+pub use authorization_service::{
+    AuthorizationRepository, AuthorizationService, RuntimeFieldAccess, RuntimeFieldGrant,
+    TemporaryPermissionGrant,
+};
 pub use contact_bootstrap_service::ContactBootstrapService;
 pub use metadata_ports::{
     AuditEvent, AuditRepository, MetadataRepository, RecordListQuery, RuntimeRecordFilter,
-    RuntimeRecordQuery, SaveFieldInput, TenantRepository, UniqueFieldValue,
+    RuntimeRecordLogicalMode, RuntimeRecordOperator, RuntimeRecordQuery, RuntimeRecordSort,
+    RuntimeRecordSortDirection, SaveFieldInput, TenantRepository, UniqueFieldValue,
 };
 pub use metadata_service::MetadataService;
 pub use mfa_service::{MfaService, SecretEncryptor, TotpEnrollment, TotpProvider};
 pub use rate_limit_service::{AttemptInfo, RateLimitRepository, RateLimitRule, RateLimitService};
 pub use security_admin_service::{
-    AuditLogEntry, AuditLogQuery, AuditLogRepository, CreateRoleInput, RoleAssignment,
-    RoleDefinition, SecurityAdminRepository, SecurityAdminService,
+    AuditLogEntry, AuditLogQuery, AuditLogRepository, AuditPurgeResult, AuditRetentionPolicy,
+    CreateRoleInput, CreateTemporaryAccessGrantInput, RoleAssignment, RoleDefinition,
+    RuntimeFieldPermissionEntry, RuntimeFieldPermissionInput, SaveRuntimeFieldPermissionsInput,
+    SecurityAdminRepository, SecurityAdminService, TemporaryAccessGrant, TemporaryAccessGrantQuery,
 };
 pub use user_service::{
     AuthOutcome, PasswordHasher, RegisterParams, UserRecord, UserRepository, UserService,

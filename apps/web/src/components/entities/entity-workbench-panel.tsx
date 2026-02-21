@@ -469,6 +469,9 @@ export function EntityWorkbenchPanel({
       const payload: QueryRuntimeRecordsRequest = {
         limit: parsedLimit,
         offset: parsedOffset,
+        logical_mode: null,
+        conditions: null,
+        sort: null,
         filters: parsedFilters,
       };
 

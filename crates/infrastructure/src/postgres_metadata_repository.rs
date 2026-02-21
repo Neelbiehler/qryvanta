@@ -2,7 +2,9 @@ use std::str::FromStr;
 
 use async_trait::async_trait;
 use qryvanta_application::{
-    MetadataRepository, RecordListQuery, RuntimeRecordQuery, UniqueFieldValue,
+    MetadataRepository, RecordListQuery, RuntimeRecordFilter, RuntimeRecordLogicalMode,
+    RuntimeRecordOperator, RuntimeRecordQuery, RuntimeRecordSort, RuntimeRecordSortDirection,
+    UniqueFieldValue,
 };
 use qryvanta_core::{AppError, AppResult, TenantId};
 use qryvanta_domain::{
@@ -384,6 +386,7 @@ impl MetadataRepository for PostgresMetadataRepository {
         entity_logical_name: &str,
         data: Value,
         unique_values: Vec<UniqueFieldValue>,
+        created_by_subject: &str,
     ) -> AppResult<RuntimeRecord> {
         let mut transaction = self.pool.begin().await.map_err(|error| {
             AppError::Internal(format!(
@@ -394,14 +397,15 @@ impl MetadataRepository for PostgresMetadataRepository {
 
         let created = sqlx::query_as::<_, RuntimeRecordRow>(
             r#"
-            INSERT INTO runtime_records (tenant_id, entity_logical_name, data)
-            VALUES ($1, $2, $3)
+            INSERT INTO runtime_records (tenant_id, entity_logical_name, data, created_by_subject)
+            VALUES ($1, $2, $3, $4)
             RETURNING id, entity_logical_name, data
             "#,
         )
         .bind(tenant_id.as_uuid())
         .bind(entity_logical_name)
         .bind(&data)
+        .bind(created_by_subject)
         .fetch_one(&mut *transaction)
         .await
         .map_err(|error| {
@@ -600,13 +604,16 @@ impl MetadataRepository for PostgresMetadataRepository {
             r#"
             SELECT id, entity_logical_name, data
             FROM runtime_records
-            WHERE tenant_id = $1 AND entity_logical_name = $2
+            WHERE tenant_id = $1
+              AND entity_logical_name = $2
+              AND ($3::TEXT IS NULL OR created_by_subject = $3)
             ORDER BY created_at DESC
-            LIMIT $3 OFFSET $4
+            LIMIT $4 OFFSET $5
             "#,
         )
         .bind(tenant_id.as_uuid())
         .bind(entity_logical_name)
+        .bind(query.owner_subject.as_deref())
         .bind(limit)
         .bind(offset)
         .fetch_all(&self.pool)
@@ -643,14 +650,44 @@ impl MetadataRepository for PostgresMetadataRepository {
         builder.push(" AND entity_logical_name = ");
         builder.push_bind(entity_logical_name);
 
-        for filter in query.filters {
-            builder.push(" AND data -> ");
-            builder.push_bind(filter.field_logical_name);
-            builder.push(" = ");
-            builder.push_bind(filter.field_value);
+        if let Some(owner_subject) = query.owner_subject {
+            builder.push(" AND created_by_subject = ");
+            builder.push_bind(owner_subject);
         }
 
-        builder.push(" ORDER BY created_at DESC LIMIT ");
+        if !query.filters.is_empty() {
+            builder.push(" AND (");
+            for (index, filter) in query.filters.iter().enumerate() {
+                if index > 0 {
+                    match query.logical_mode {
+                        RuntimeRecordLogicalMode::And => {
+                            builder.push(" AND ");
+                        }
+                        RuntimeRecordLogicalMode::Or => {
+                            builder.push(" OR ");
+                        }
+                    };
+                }
+
+                push_runtime_filter_condition(&mut builder, filter);
+            }
+            builder.push(')');
+        }
+
+        if query.sort.is_empty() {
+            builder.push(" ORDER BY created_at DESC");
+        } else {
+            builder.push(" ORDER BY ");
+            for (index, sort) in query.sort.iter().enumerate() {
+                if index > 0 {
+                    builder.push(", ");
+                }
+                push_runtime_sort_clause(&mut builder, sort);
+            }
+            builder.push(", created_at DESC");
+        }
+
+        builder.push(" LIMIT ");
         builder.push_bind(limit);
         builder.push(" OFFSET ");
         builder.push_bind(offset);
@@ -785,6 +822,46 @@ impl MetadataRepository for PostgresMetadataRepository {
         })
     }
 
+    async fn runtime_record_owned_by_subject(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        record_id: &str,
+        subject: &str,
+    ) -> AppResult<bool> {
+        let record_uuid = Uuid::parse_str(record_id).map_err(|error| {
+            AppError::Validation(format!(
+                "invalid runtime record id '{}': {error}",
+                record_id
+            ))
+        })?;
+
+        sqlx::query_scalar(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM runtime_records
+                WHERE tenant_id = $1
+                  AND entity_logical_name = $2
+                  AND id = $3
+                  AND created_by_subject = $4
+            )
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(entity_logical_name)
+        .bind(record_uuid)
+        .bind(subject)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to evaluate runtime record ownership for entity '{}' in tenant '{}': {error}",
+                entity_logical_name, tenant_id
+            ))
+        })
+    }
+
     async fn has_relation_reference(
         &self,
         tenant_id: TenantId,
@@ -870,6 +947,102 @@ impl MetadataRepository for PostgresMetadataRepository {
 
         Ok(false)
     }
+}
+
+fn push_runtime_filter_condition(
+    builder: &mut QueryBuilder<'_, Postgres>,
+    filter: &RuntimeRecordFilter,
+) {
+    match filter.operator {
+        RuntimeRecordOperator::Eq => {
+            builder.push("data -> ");
+            builder.push_bind(filter.field_logical_name.clone());
+            builder.push(" = ");
+            builder.push_bind(filter.field_value.clone());
+        }
+        RuntimeRecordOperator::Neq => {
+            builder.push("data -> ");
+            builder.push_bind(filter.field_logical_name.clone());
+            builder.push(" <> ");
+            builder.push_bind(filter.field_value.clone());
+        }
+        RuntimeRecordOperator::Gt
+        | RuntimeRecordOperator::Gte
+        | RuntimeRecordOperator::Lt
+        | RuntimeRecordOperator::Lte => {
+            let operator = match filter.operator {
+                RuntimeRecordOperator::Gt => ">",
+                RuntimeRecordOperator::Gte => ">=",
+                RuntimeRecordOperator::Lt => "<",
+                RuntimeRecordOperator::Lte => "<=",
+                _ => unreachable!(),
+            };
+
+            match filter.field_type {
+                FieldType::Number => {
+                    builder.push("(data ->> ");
+                    builder.push_bind(filter.field_logical_name.clone());
+                    builder.push(")::NUMERIC ");
+                    builder.push(operator);
+                    builder.push(" (");
+                    builder.push_bind(filter.field_value.to_string());
+                    builder.push(")::NUMERIC");
+                }
+                _ => {
+                    builder.push("data ->> ");
+                    builder.push_bind(filter.field_logical_name.clone());
+                    builder.push(' ');
+                    builder.push(operator);
+                    builder.push(' ');
+                    builder.push_bind(filter.field_value.as_str().unwrap_or_default().to_owned());
+                }
+            }
+        }
+        RuntimeRecordOperator::Contains => {
+            builder.push("data ->> ");
+            builder.push_bind(filter.field_logical_name.clone());
+            builder.push(" ILIKE ");
+            builder.push_bind(format!(
+                "%{}%",
+                filter.field_value.as_str().unwrap_or_default()
+            ));
+        }
+        RuntimeRecordOperator::In => {
+            let values = filter.field_value.as_array().cloned().unwrap_or_default();
+            builder.push('(');
+            for (index, value) in values.iter().enumerate() {
+                if index > 0 {
+                    builder.push(" OR ");
+                }
+
+                builder.push("data -> ");
+                builder.push_bind(filter.field_logical_name.clone());
+                builder.push(" = ");
+                builder.push_bind(value.clone());
+            }
+            builder.push(')');
+        }
+    }
+}
+
+fn push_runtime_sort_clause(builder: &mut QueryBuilder<'_, Postgres>, sort: &RuntimeRecordSort) {
+    match sort.field_type {
+        FieldType::Number => {
+            builder.push("(data ->> ");
+            builder.push_bind(sort.field_logical_name.clone());
+            builder.push(")::NUMERIC");
+        }
+        _ => {
+            builder.push("data ->> ");
+            builder.push_bind(sort.field_logical_name.clone());
+        }
+    }
+
+    builder.push(' ');
+    match sort.direction {
+        RuntimeRecordSortDirection::Asc => builder.push("ASC"),
+        RuntimeRecordSortDirection::Desc => builder.push("DESC"),
+    };
 }
 
 #[cfg(test)]

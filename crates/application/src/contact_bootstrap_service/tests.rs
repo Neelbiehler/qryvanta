@@ -140,6 +140,7 @@ impl MetadataRepository for FakeMetadataRepository {
         entity_logical_name: &str,
         data: Value,
         _unique_values: Vec<UniqueFieldValue>,
+        _created_by_subject: &str,
     ) -> AppResult<RuntimeRecord> {
         let record = RuntimeRecord::new(Uuid::new_v4().to_string(), entity_logical_name, data)?;
         self.runtime_records.lock().await.insert(
@@ -227,6 +228,16 @@ impl MetadataRepository for FakeMetadataRepository {
             entity_logical_name.to_owned(),
             record_id.to_owned(),
         )))
+    }
+
+    async fn runtime_record_owned_by_subject(
+        &self,
+        _tenant_id: TenantId,
+        _entity_logical_name: &str,
+        _record_id: &str,
+        _subject: &str,
+    ) -> AppResult<bool> {
+        Ok(false)
     }
 
     async fn has_relation_reference(

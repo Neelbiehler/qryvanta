@@ -20,17 +20,26 @@ import {
   apiServerFetch,
   type RoleAssignmentResponse,
   type RoleResponse,
+  type RuntimeFieldPermissionResponse,
+  type TemporaryAccessGrantResponse,
   type TenantRegistrationModeResponse,
 } from "@/lib/api";
 
 export default async function RolesPage() {
   const cookieHeader = (await cookies()).toString();
-  const [response, assignmentsResponse, registrationModeResponse] =
-    await Promise.all([
-      apiServerFetch("/api/security/roles", cookieHeader),
-      apiServerFetch("/api/security/role-assignments", cookieHeader),
-      apiServerFetch("/api/security/registration-mode", cookieHeader),
-    ]);
+  const [
+    response,
+    assignmentsResponse,
+    registrationModeResponse,
+    runtimeFieldPermissionsResponse,
+    temporaryAccessGrantsResponse,
+  ] = await Promise.all([
+    apiServerFetch("/api/security/roles", cookieHeader),
+    apiServerFetch("/api/security/role-assignments", cookieHeader),
+    apiServerFetch("/api/security/registration-mode", cookieHeader),
+    apiServerFetch("/api/security/runtime-field-permissions", cookieHeader),
+    apiServerFetch("/api/security/temporary-access-grants?limit=50", cookieHeader),
+  ]);
 
   if (response.status === 401) {
     redirect("/login");
@@ -44,10 +53,20 @@ export default async function RolesPage() {
     redirect("/login");
   }
 
+  if (runtimeFieldPermissionsResponse.status === 401) {
+    redirect("/login");
+  }
+
+  if (temporaryAccessGrantsResponse.status === 401) {
+    redirect("/login");
+  }
+
   if (
     response.status === 403 ||
     assignmentsResponse.status === 403 ||
-    registrationModeResponse.status === 403
+    registrationModeResponse.status === 403 ||
+    runtimeFieldPermissionsResponse.status === 403 ||
+    temporaryAccessGrantsResponse.status === 403
   ) {
     return (
       <AccessDeniedCard
@@ -70,11 +89,23 @@ export default async function RolesPage() {
     throw new Error("Failed to load tenant registration mode");
   }
 
+  if (!runtimeFieldPermissionsResponse.ok) {
+    throw new Error("Failed to load runtime field permissions");
+  }
+
+  if (!temporaryAccessGrantsResponse.ok) {
+    throw new Error("Failed to load temporary access grants");
+  }
+
   const roles = (await response.json()) as RoleResponse[];
   const assignments =
     (await assignmentsResponse.json()) as RoleAssignmentResponse[];
   const registrationMode =
     (await registrationModeResponse.json()) as TenantRegistrationModeResponse;
+  const runtimeFieldPermissions =
+    (await runtimeFieldPermissionsResponse.json()) as RuntimeFieldPermissionResponse[];
+  const temporaryAccessGrants =
+    (await temporaryAccessGrantsResponse.json()) as TemporaryAccessGrantResponse[];
 
   return (
     <Card>
@@ -90,6 +121,8 @@ export default async function RolesPage() {
           roles={roles}
           assignments={assignments}
           registrationMode={registrationMode.registration_mode}
+          runtimeFieldPermissions={runtimeFieldPermissions}
+          temporaryAccessGrants={temporaryAccessGrants}
         />
 
         <Table>

@@ -11,8 +11,8 @@ use sha2::{Digest, Sha256};
 
 use crate::AuthorizationService;
 use crate::metadata_ports::{
-    AuditEvent, AuditRepository, MetadataRepository, RecordListQuery, RuntimeRecordQuery,
-    SaveFieldInput, UniqueFieldValue,
+    AuditEvent, AuditRepository, MetadataRepository, RecordListQuery, RuntimeRecordFilter,
+    RuntimeRecordOperator, RuntimeRecordQuery, RuntimeRecordSort, SaveFieldInput, UniqueFieldValue,
 };
 
 /// Application service for metadata and runtime record operations.
@@ -21,6 +21,12 @@ pub struct MetadataService {
     repository: Arc<dyn MetadataRepository>,
     authorization_service: AuthorizationService,
     audit_repository: Arc<dyn AuditRepository>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RuntimeAccessScope {
+    All,
+    Own,
 }
 
 impl MetadataService {
@@ -280,13 +286,14 @@ impl MetadataService {
         entity_logical_name: &str,
         data: Value,
     ) -> AppResult<RuntimeRecord> {
-        self.authorization_service
-            .require_permission(
-                actor.tenant_id(),
-                actor.subject(),
-                Permission::RuntimeRecordWrite,
-            )
+        self.runtime_write_scope_for_actor(actor).await?;
+
+        let field_access = self
+            .runtime_field_access_for_actor(actor, entity_logical_name)
             .await?;
+        if let Some(access) = &field_access {
+            Self::enforce_writable_fields(&data, access)?;
+        }
 
         let schema = self
             .published_schema_for_runtime(actor.tenant_id(), entity_logical_name)
@@ -303,6 +310,7 @@ impl MetadataService {
                 entity_logical_name,
                 normalized_data,
                 unique_values,
+                actor.subject(),
             )
             .await?;
 
@@ -321,7 +329,7 @@ impl MetadataService {
             })
             .await?;
 
-        Ok(record)
+        Self::redact_runtime_record_if_needed(record, field_access.as_ref())
     }
 
     /// Creates a runtime record without global permission checks.
@@ -331,6 +339,15 @@ impl MetadataService {
         entity_logical_name: &str,
         data: Value,
     ) -> AppResult<RuntimeRecord> {
+        self.runtime_write_scope_for_actor_optional(actor).await?;
+
+        let field_access = self
+            .runtime_field_access_for_actor(actor, entity_logical_name)
+            .await?;
+        if let Some(access) = &field_access {
+            Self::enforce_writable_fields(&data, access)?;
+        }
+
         let schema = self
             .published_schema_for_runtime(actor.tenant_id(), entity_logical_name)
             .await?;
@@ -346,6 +363,7 @@ impl MetadataService {
                 entity_logical_name,
                 normalized_data,
                 unique_values,
+                actor.subject(),
             )
             .await?;
 
@@ -364,7 +382,7 @@ impl MetadataService {
             })
             .await?;
 
-        Ok(record)
+        Self::redact_runtime_record_if_needed(record, field_access.as_ref())
     }
 
     /// Updates a runtime record using the latest published entity schema.
@@ -375,13 +393,32 @@ impl MetadataService {
         record_id: &str,
         data: Value,
     ) -> AppResult<RuntimeRecord> {
-        self.authorization_service
-            .require_permission(
-                actor.tenant_id(),
+        let write_scope = self.runtime_write_scope_for_actor(actor).await?;
+
+        if write_scope == RuntimeAccessScope::Own
+            && !self
+                .repository
+                .runtime_record_owned_by_subject(
+                    actor.tenant_id(),
+                    entity_logical_name,
+                    record_id,
+                    actor.subject(),
+                )
+                .await?
+        {
+            return Err(AppError::Forbidden(format!(
+                "subject '{}' can only update owned runtime records for entity '{}'",
                 actor.subject(),
-                Permission::RuntimeRecordWrite,
-            )
+                entity_logical_name
+            )));
+        }
+
+        let field_access = self
+            .runtime_field_access_for_actor(actor, entity_logical_name)
             .await?;
+        if let Some(access) = &field_access {
+            Self::enforce_writable_fields(&data, access)?;
+        }
 
         let schema = self
             .published_schema_for_runtime(actor.tenant_id(), entity_logical_name)
@@ -417,7 +454,7 @@ impl MetadataService {
             })
             .await?;
 
-        Ok(record)
+        Self::redact_runtime_record_if_needed(record, field_access.as_ref())
     }
 
     /// Updates a runtime record without global permission checks.
@@ -428,6 +465,36 @@ impl MetadataService {
         record_id: &str,
         data: Value,
     ) -> AppResult<RuntimeRecord> {
+        let write_scope = self
+            .runtime_write_scope_for_actor_optional(actor)
+            .await?
+            .unwrap_or(RuntimeAccessScope::All);
+
+        if write_scope == RuntimeAccessScope::Own
+            && !self
+                .repository
+                .runtime_record_owned_by_subject(
+                    actor.tenant_id(),
+                    entity_logical_name,
+                    record_id,
+                    actor.subject(),
+                )
+                .await?
+        {
+            return Err(AppError::Forbidden(format!(
+                "subject '{}' can only update owned runtime records for entity '{}'",
+                actor.subject(),
+                entity_logical_name
+            )));
+        }
+
+        let field_access = self
+            .runtime_field_access_for_actor(actor, entity_logical_name)
+            .await?;
+        if let Some(access) = &field_access {
+            Self::enforce_writable_fields(&data, access)?;
+        }
+
         let schema = self
             .published_schema_for_runtime(actor.tenant_id(), entity_logical_name)
             .await?;
@@ -462,7 +529,7 @@ impl MetadataService {
             })
             .await?;
 
-        Ok(record)
+        Self::redact_runtime_record_if_needed(record, field_access.as_ref())
     }
 
     /// Lists runtime records for an entity.
@@ -470,22 +537,26 @@ impl MetadataService {
         &self,
         actor: &UserIdentity,
         entity_logical_name: &str,
-        query: RecordListQuery,
+        mut query: RecordListQuery,
     ) -> AppResult<Vec<RuntimeRecord>> {
-        self.authorization_service
-            .require_permission(
-                actor.tenant_id(),
-                actor.subject(),
-                Permission::RuntimeRecordRead,
-            )
+        let read_scope = self.runtime_read_scope_for_actor(actor).await?;
+        let field_access = self
+            .runtime_field_access_for_actor(actor, entity_logical_name)
             .await?;
+
+        if read_scope == RuntimeAccessScope::Own {
+            query.owner_subject = Some(actor.subject().to_owned());
+        }
 
         self.published_schema_for_runtime(actor.tenant_id(), entity_logical_name)
             .await?;
 
-        self.repository
+        let records = self
+            .repository
             .list_runtime_records(actor.tenant_id(), entity_logical_name, query)
-            .await
+            .await?;
+
+        Self::redact_runtime_records_if_needed(records, field_access.as_ref())
     }
 
     /// Queries runtime records with exact-match field filters.
@@ -493,33 +564,38 @@ impl MetadataService {
         &self,
         actor: &UserIdentity,
         entity_logical_name: &str,
-        query: RuntimeRecordQuery,
+        mut query: RuntimeRecordQuery,
     ) -> AppResult<Vec<RuntimeRecord>> {
-        self.authorization_service
-            .require_permission(
-                actor.tenant_id(),
-                actor.subject(),
-                Permission::RuntimeRecordRead,
-            )
+        let read_scope = self.runtime_read_scope_for_actor(actor).await?;
+        let field_access = self
+            .runtime_field_access_for_actor(actor, entity_logical_name)
             .await?;
+
+        if read_scope == RuntimeAccessScope::Own {
+            query.owner_subject = Some(actor.subject().to_owned());
+        }
+
+        if let Some(access) = &field_access {
+            Self::enforce_query_readable_fields(&query, access)?;
+        }
 
         let schema = self
             .published_schema_for_runtime(actor.tenant_id(), entity_logical_name)
             .await?;
+
+        if query.limit == 0 {
+            return Err(AppError::Validation(
+                "runtime record query limit must be greater than zero".to_owned(),
+            ));
+        }
+
         let schema_fields: BTreeMap<&str, &EntityFieldDefinition> = schema
             .fields()
             .iter()
             .map(|field| (field.logical_name().as_str(), field))
             .collect();
-        let mut seen_filter_fields = BTreeSet::new();
-        for filter in &query.filters {
-            if !seen_filter_fields.insert(filter.field_logical_name.as_str()) {
-                return Err(AppError::Validation(format!(
-                    "duplicate runtime query filter field '{}'",
-                    filter.field_logical_name
-                )));
-            }
 
+        for filter in &query.filters {
             let Some(field) = schema_fields.get(filter.field_logical_name.as_str()) else {
                 return Err(AppError::Validation(format!(
                     "unknown filter field '{}' for entity '{}'",
@@ -527,12 +603,34 @@ impl MetadataService {
                 )));
             };
 
-            field.validate_runtime_value(&filter.field_value)?;
+            Self::validate_runtime_query_filter(field, filter)?;
         }
 
-        self.repository
+        let mut seen_sort_fields = BTreeSet::new();
+        for sort in &query.sort {
+            if !seen_sort_fields.insert(sort.field_logical_name.as_str()) {
+                return Err(AppError::Validation(format!(
+                    "duplicate runtime query sort field '{}'",
+                    sort.field_logical_name
+                )));
+            }
+
+            let Some(field) = schema_fields.get(sort.field_logical_name.as_str()) else {
+                return Err(AppError::Validation(format!(
+                    "unknown sort field '{}' for entity '{}'",
+                    sort.field_logical_name, entity_logical_name
+                )));
+            };
+
+            Self::validate_runtime_query_sort(field, sort)?;
+        }
+
+        let records = self
+            .repository
             .query_runtime_records(actor.tenant_id(), entity_logical_name, query)
-            .await
+            .await?;
+
+        Self::redact_runtime_records_if_needed(records, field_access.as_ref())
     }
 
     /// Lists runtime records without global permission checks.
@@ -540,14 +638,29 @@ impl MetadataService {
         &self,
         actor: &UserIdentity,
         entity_logical_name: &str,
-        query: RecordListQuery,
+        mut query: RecordListQuery,
     ) -> AppResult<Vec<RuntimeRecord>> {
+        let read_scope = self
+            .runtime_read_scope_for_actor_optional(actor)
+            .await?
+            .unwrap_or(RuntimeAccessScope::All);
+        let field_access = self
+            .runtime_field_access_for_actor(actor, entity_logical_name)
+            .await?;
+
+        if read_scope == RuntimeAccessScope::Own {
+            query.owner_subject = Some(actor.subject().to_owned());
+        }
+
         self.published_schema_for_runtime(actor.tenant_id(), entity_logical_name)
             .await?;
 
-        self.repository
+        let records = self
+            .repository
             .list_runtime_records(actor.tenant_id(), entity_logical_name, query)
-            .await
+            .await?;
+
+        Self::redact_runtime_records_if_needed(records, field_access.as_ref())
     }
 
     /// Gets a runtime record by identifier.
@@ -557,18 +670,34 @@ impl MetadataService {
         entity_logical_name: &str,
         record_id: &str,
     ) -> AppResult<RuntimeRecord> {
-        self.authorization_service
-            .require_permission(
-                actor.tenant_id(),
-                actor.subject(),
-                Permission::RuntimeRecordRead,
-            )
+        let read_scope = self.runtime_read_scope_for_actor(actor).await?;
+        let field_access = self
+            .runtime_field_access_for_actor(actor, entity_logical_name)
             .await?;
+
+        if read_scope == RuntimeAccessScope::Own
+            && !self
+                .repository
+                .runtime_record_owned_by_subject(
+                    actor.tenant_id(),
+                    entity_logical_name,
+                    record_id,
+                    actor.subject(),
+                )
+                .await?
+        {
+            return Err(AppError::Forbidden(format!(
+                "subject '{}' can only read owned runtime records for entity '{}'",
+                actor.subject(),
+                entity_logical_name
+            )));
+        }
 
         self.published_schema_for_runtime(actor.tenant_id(), entity_logical_name)
             .await?;
 
-        self.repository
+        let record = self
+            .repository
             .find_runtime_record(actor.tenant_id(), entity_logical_name, record_id)
             .await?
             .ok_or_else(|| {
@@ -576,7 +705,32 @@ impl MetadataService {
                     "runtime record '{}' does not exist for entity '{}'",
                     record_id, entity_logical_name
                 ))
-            })
+            })?;
+
+        Self::redact_runtime_record_if_needed(record, field_access.as_ref())
+    }
+
+    /// Returns whether the runtime record owner subject matches.
+    pub async fn runtime_record_owned_by_subject(
+        &self,
+        actor: &UserIdentity,
+        entity_logical_name: &str,
+        record_id: &str,
+        subject: &str,
+    ) -> AppResult<bool> {
+        self.runtime_read_scope_for_actor(actor).await?;
+
+        self.published_schema_for_runtime(actor.tenant_id(), entity_logical_name)
+            .await?;
+
+        self.repository
+            .runtime_record_owned_by_subject(
+                actor.tenant_id(),
+                entity_logical_name,
+                record_id,
+                subject,
+            )
+            .await
     }
 
     /// Gets a runtime record without global permission checks.
@@ -586,10 +740,37 @@ impl MetadataService {
         entity_logical_name: &str,
         record_id: &str,
     ) -> AppResult<RuntimeRecord> {
+        let read_scope = self
+            .runtime_read_scope_for_actor_optional(actor)
+            .await?
+            .unwrap_or(RuntimeAccessScope::All);
+        let field_access = self
+            .runtime_field_access_for_actor(actor, entity_logical_name)
+            .await?;
+
+        if read_scope == RuntimeAccessScope::Own
+            && !self
+                .repository
+                .runtime_record_owned_by_subject(
+                    actor.tenant_id(),
+                    entity_logical_name,
+                    record_id,
+                    actor.subject(),
+                )
+                .await?
+        {
+            return Err(AppError::Forbidden(format!(
+                "subject '{}' can only read owned runtime records for entity '{}'",
+                actor.subject(),
+                entity_logical_name
+            )));
+        }
+
         self.published_schema_for_runtime(actor.tenant_id(), entity_logical_name)
             .await?;
 
-        self.repository
+        let record = self
+            .repository
             .find_runtime_record(actor.tenant_id(), entity_logical_name, record_id)
             .await?
             .ok_or_else(|| {
@@ -597,7 +778,30 @@ impl MetadataService {
                     "runtime record '{}' does not exist for entity '{}'",
                     record_id, entity_logical_name
                 ))
-            })
+            })?;
+
+        Self::redact_runtime_record_if_needed(record, field_access.as_ref())
+    }
+
+    /// Returns whether the runtime record owner subject matches without global checks.
+    pub async fn runtime_record_owned_by_subject_unchecked(
+        &self,
+        actor: &UserIdentity,
+        entity_logical_name: &str,
+        record_id: &str,
+        subject: &str,
+    ) -> AppResult<bool> {
+        self.published_schema_for_runtime(actor.tenant_id(), entity_logical_name)
+            .await?;
+
+        self.repository
+            .runtime_record_owned_by_subject(
+                actor.tenant_id(),
+                entity_logical_name,
+                record_id,
+                subject,
+            )
+            .await
     }
 
     /// Deletes a runtime record after enforcing relation-reference safeguards.
@@ -607,13 +811,25 @@ impl MetadataService {
         entity_logical_name: &str,
         record_id: &str,
     ) -> AppResult<()> {
-        self.authorization_service
-            .require_permission(
-                actor.tenant_id(),
+        let write_scope = self.runtime_write_scope_for_actor(actor).await?;
+
+        if write_scope == RuntimeAccessScope::Own
+            && !self
+                .repository
+                .runtime_record_owned_by_subject(
+                    actor.tenant_id(),
+                    entity_logical_name,
+                    record_id,
+                    actor.subject(),
+                )
+                .await?
+        {
+            return Err(AppError::Forbidden(format!(
+                "subject '{}' can only delete owned runtime records for entity '{}'",
                 actor.subject(),
-                Permission::RuntimeRecordWrite,
-            )
-            .await?;
+                entity_logical_name
+            )));
+        }
 
         self.published_schema_for_runtime(actor.tenant_id(), entity_logical_name)
             .await?;
@@ -657,6 +873,29 @@ impl MetadataService {
         entity_logical_name: &str,
         record_id: &str,
     ) -> AppResult<()> {
+        let write_scope = self
+            .runtime_write_scope_for_actor_optional(actor)
+            .await?
+            .unwrap_or(RuntimeAccessScope::All);
+
+        if write_scope == RuntimeAccessScope::Own
+            && !self
+                .repository
+                .runtime_record_owned_by_subject(
+                    actor.tenant_id(),
+                    entity_logical_name,
+                    record_id,
+                    actor.subject(),
+                )
+                .await?
+        {
+            return Err(AppError::Forbidden(format!(
+                "subject '{}' can only delete owned runtime records for entity '{}'",
+                actor.subject(),
+                entity_logical_name
+            )));
+        }
+
         self.published_schema_for_runtime(actor.tenant_id(), entity_logical_name)
             .await?;
 
@@ -690,6 +929,245 @@ impl MetadataService {
             .await?;
 
         Ok(())
+    }
+
+    async fn runtime_read_scope_for_actor_optional(
+        &self,
+        actor: &UserIdentity,
+    ) -> AppResult<Option<RuntimeAccessScope>> {
+        if self
+            .authorization_service
+            .has_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::RuntimeRecordRead,
+            )
+            .await?
+        {
+            return Ok(Some(RuntimeAccessScope::All));
+        }
+
+        if self
+            .authorization_service
+            .has_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::RuntimeRecordReadOwn,
+            )
+            .await?
+        {
+            return Ok(Some(RuntimeAccessScope::Own));
+        }
+
+        Ok(None)
+    }
+
+    async fn runtime_write_scope_for_actor_optional(
+        &self,
+        actor: &UserIdentity,
+    ) -> AppResult<Option<RuntimeAccessScope>> {
+        if self
+            .authorization_service
+            .has_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::RuntimeRecordWrite,
+            )
+            .await?
+        {
+            return Ok(Some(RuntimeAccessScope::All));
+        }
+
+        if self
+            .authorization_service
+            .has_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::RuntimeRecordWriteOwn,
+            )
+            .await?
+        {
+            return Ok(Some(RuntimeAccessScope::Own));
+        }
+
+        Ok(None)
+    }
+
+    async fn runtime_read_scope_for_actor(
+        &self,
+        actor: &UserIdentity,
+    ) -> AppResult<RuntimeAccessScope> {
+        if self
+            .authorization_service
+            .has_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::RuntimeRecordRead,
+            )
+            .await?
+        {
+            return Ok(RuntimeAccessScope::All);
+        }
+
+        if self
+            .authorization_service
+            .has_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::RuntimeRecordReadOwn,
+            )
+            .await?
+        {
+            return Ok(RuntimeAccessScope::Own);
+        }
+
+        Err(AppError::Forbidden(format!(
+            "subject '{}' is missing runtime record read permissions in tenant '{}'",
+            actor.subject(),
+            actor.tenant_id()
+        )))
+    }
+
+    async fn runtime_write_scope_for_actor(
+        &self,
+        actor: &UserIdentity,
+    ) -> AppResult<RuntimeAccessScope> {
+        if self
+            .authorization_service
+            .has_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::RuntimeRecordWrite,
+            )
+            .await?
+        {
+            return Ok(RuntimeAccessScope::All);
+        }
+
+        if self
+            .authorization_service
+            .has_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::RuntimeRecordWriteOwn,
+            )
+            .await?
+        {
+            return Ok(RuntimeAccessScope::Own);
+        }
+
+        Err(AppError::Forbidden(format!(
+            "subject '{}' is missing runtime record write permissions in tenant '{}'",
+            actor.subject(),
+            actor.tenant_id()
+        )))
+    }
+
+    async fn runtime_field_access_for_actor(
+        &self,
+        actor: &UserIdentity,
+        entity_logical_name: &str,
+    ) -> AppResult<Option<crate::RuntimeFieldAccess>> {
+        self.authorization_service
+            .runtime_field_access(actor.tenant_id(), actor.subject(), entity_logical_name)
+            .await
+    }
+
+    fn enforce_writable_fields(
+        data: &Value,
+        field_access: &crate::RuntimeFieldAccess,
+    ) -> AppResult<()> {
+        let object = data.as_object().ok_or_else(|| {
+            AppError::Validation("runtime record payload must be a JSON object".to_owned())
+        })?;
+
+        for key in object.keys() {
+            if !field_access.writable_fields.contains(key.as_str()) {
+                return Err(AppError::Forbidden(format!(
+                    "field '{}' is not writable for this subject",
+                    key
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn enforce_query_readable_fields(
+        query: &RuntimeRecordQuery,
+        field_access: &crate::RuntimeFieldAccess,
+    ) -> AppResult<()> {
+        for filter in &query.filters {
+            if !field_access
+                .readable_fields
+                .contains(filter.field_logical_name.as_str())
+            {
+                return Err(AppError::Forbidden(format!(
+                    "field '{}' is not readable for query filters",
+                    filter.field_logical_name
+                )));
+            }
+        }
+
+        for sort in &query.sort {
+            if !field_access
+                .readable_fields
+                .contains(sort.field_logical_name.as_str())
+            {
+                return Err(AppError::Forbidden(format!(
+                    "field '{}' is not readable for query sorting",
+                    sort.field_logical_name
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn redact_runtime_records_if_needed(
+        records: Vec<RuntimeRecord>,
+        field_access: Option<&crate::RuntimeFieldAccess>,
+    ) -> AppResult<Vec<RuntimeRecord>> {
+        let Some(field_access) = field_access else {
+            return Ok(records);
+        };
+
+        records
+            .into_iter()
+            .map(|record| Self::redact_runtime_record(record, field_access))
+            .collect()
+    }
+
+    fn redact_runtime_record_if_needed(
+        record: RuntimeRecord,
+        field_access: Option<&crate::RuntimeFieldAccess>,
+    ) -> AppResult<RuntimeRecord> {
+        let Some(field_access) = field_access else {
+            return Ok(record);
+        };
+
+        Self::redact_runtime_record(record, field_access)
+    }
+
+    fn redact_runtime_record(
+        record: RuntimeRecord,
+        field_access: &crate::RuntimeFieldAccess,
+    ) -> AppResult<RuntimeRecord> {
+        let mut redacted = serde_json::Map::new();
+
+        if let Some(object) = record.data().as_object() {
+            for (key, value) in object {
+                if field_access.readable_fields.contains(key.as_str()) {
+                    redacted.insert(key.clone(), value.clone());
+                }
+            }
+        }
+
+        RuntimeRecord::new(
+            record.record_id().as_str(),
+            record.entity_logical_name().as_str(),
+            Value::Object(redacted),
+        )
     }
 
     async fn require_entity_exists(
@@ -858,6 +1336,103 @@ impl MetadataService {
                     relation_target.as_str()
                 )));
             }
+        }
+
+        Ok(())
+    }
+
+    fn validate_runtime_query_filter(
+        field: &EntityFieldDefinition,
+        filter: &RuntimeRecordFilter,
+    ) -> AppResult<()> {
+        if field.field_type() != filter.field_type {
+            return Err(AppError::Validation(format!(
+                "query filter field type mismatch for '{}': expected '{}', got '{}'",
+                filter.field_logical_name,
+                field.field_type().as_str(),
+                filter.field_type.as_str()
+            )));
+        }
+
+        match filter.operator {
+            RuntimeRecordOperator::Eq | RuntimeRecordOperator::Neq => {
+                field.validate_runtime_value(&filter.field_value)?;
+            }
+            RuntimeRecordOperator::Gt
+            | RuntimeRecordOperator::Gte
+            | RuntimeRecordOperator::Lt
+            | RuntimeRecordOperator::Lte => {
+                if !matches!(
+                    field.field_type(),
+                    FieldType::Number | FieldType::Date | FieldType::DateTime
+                ) {
+                    return Err(AppError::Validation(format!(
+                        "operator '{}' is not supported for field '{}' with type '{}'",
+                        filter.operator.as_str(),
+                        filter.field_logical_name,
+                        field.field_type().as_str()
+                    )));
+                }
+
+                field.validate_runtime_value(&filter.field_value)?;
+            }
+            RuntimeRecordOperator::Contains => {
+                if field.field_type() != FieldType::Text {
+                    return Err(AppError::Validation(format!(
+                        "operator 'contains' requires text field type for '{}'",
+                        filter.field_logical_name
+                    )));
+                }
+
+                if !filter.field_value.is_string() {
+                    return Err(AppError::Validation(format!(
+                        "operator 'contains' requires string value for '{}'",
+                        filter.field_logical_name
+                    )));
+                }
+            }
+            RuntimeRecordOperator::In => {
+                let values = filter.field_value.as_array().ok_or_else(|| {
+                    AppError::Validation(format!(
+                        "operator 'in' requires array value for '{}'",
+                        filter.field_logical_name
+                    ))
+                })?;
+
+                if values.is_empty() {
+                    return Err(AppError::Validation(format!(
+                        "operator 'in' requires at least one value for '{}'",
+                        filter.field_logical_name
+                    )));
+                }
+
+                for value in values {
+                    field.validate_runtime_value(value)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn validate_runtime_query_sort(
+        field: &EntityFieldDefinition,
+        sort: &RuntimeRecordSort,
+    ) -> AppResult<()> {
+        if field.field_type() != sort.field_type {
+            return Err(AppError::Validation(format!(
+                "query sort field type mismatch for '{}': expected '{}', got '{}'",
+                sort.field_logical_name,
+                field.field_type().as_str(),
+                sort.field_type.as_str()
+            )));
+        }
+
+        if field.field_type() == FieldType::Json {
+            return Err(AppError::Validation(format!(
+                "sorting is not supported for json field '{}'",
+                sort.field_logical_name
+            )));
         }
 
         Ok(())
