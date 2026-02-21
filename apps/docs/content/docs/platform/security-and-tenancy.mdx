@@ -24,6 +24,12 @@ Repository methods should require tenant scope in query paths to prevent leakage
 
 Phase 1 metadata operations require `TenantId` and query with `WHERE tenant_id = $1`.
 
+Tenant-boundary regression guardrails:
+
+- Integration coverage runs across in-memory and Postgres metadata repositories.
+- Critical runtime paths (list/query/find/delete/relation reference checks) validate tenant scoping.
+- Cross-tenant leakage scenarios are CI-gated so regressions fail deterministically.
+
 ## Authorization Layers
 
 1. Route-level authentication
