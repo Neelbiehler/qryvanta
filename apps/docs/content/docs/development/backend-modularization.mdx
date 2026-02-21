@@ -1,0 +1,45 @@
+---
+title: Backend Modularization
+description: How we break up large Rust backend modules without violating layer boundaries.
+---
+
+## Why This Exists
+
+Qryvanta grows quickly, and a few backend files can become too large to reason about.
+When modules get large, we split by responsibility while keeping the same runtime behavior.
+
+## Refactor Rules
+
+- Keep layer boundaries intact (`domain` -> `application` -> `infrastructure` -> `apps/api`).
+- Prefer coarse modules by concern instead of many tiny files.
+- Extract shared input/port types into dedicated `*_ports.rs` modules.
+- Move large `#[cfg(test)]` blocks into sibling `tests.rs` modules.
+- Keep API contracts and route shapes unchanged for structural refactors.
+
+## Current Pattern
+
+- `crates/application/src/app_ports.rs`: app-level DTOs and ports.
+- `crates/application/src/metadata_ports.rs`: metadata/runtime ports and shared input/query types.
+- `crates/application/src/app_service/tests.rs`: app service tests isolated from production code.
+- `crates/application/src/metadata_service/tests.rs`: metadata service tests isolated from production code.
+- `crates/infrastructure/src/in_memory_metadata_repository/tests.rs`: in-memory adapter tests isolated.
+- `crates/infrastructure/src/postgres_metadata_repository/tests.rs`: postgres adapter tests isolated.
+- `apps/api/src/auth/mod.rs`: auth module entrypoint with stable handler exports.
+- `apps/api/src/auth/passkey.rs`, `password.rs`, `invite.rs`, `mfa.rs`: auth flow handlers split by concern.
+- `apps/api/src/auth/session_helpers.rs`: shared auth helpers and helper-focused unit tests.
+- `apps/api/src/dto/mod.rs`: DTO entrypoint with re-exports for handlers.
+- `apps/api/src/dto/apps.rs`, `auth.rs`, `common.rs`, `entities.rs`, `runtime.rs`, `security.rs`: contract types split by bounded context.
+- `apps/api/src/api_config.rs`, `api_services.rs`, `api_router.rs`: composition root split into config loading, service wiring, and route assembly.
+- `apps/api/src/handlers/apps/mod.rs`: app handler entrypoint with stable exports.
+- `apps/api/src/handlers/apps/admin.rs`, `workspace.rs`: app admin and workspace handlers split by concern.
+
+## Quality Gate For Refactors
+
+```bash
+cargo fmt --all
+cargo xcheck
+cargo xclippy
+cargo xtest
+```
+
+Treat structural refactors as complete only when these commands pass.
