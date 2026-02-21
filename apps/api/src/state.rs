@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use qryvanta_application::{
-    AuthEventService, AuthTokenService, AuthorizationService, MetadataService, MfaService,
-    RateLimitService, SecurityAdminService, TenantRepository, UserService,
+    AppService, AuthEventService, AuthTokenService, AuthorizationService, MetadataService,
+    MfaService, RateLimitService, SecurityAdminService, TenantRepository, UserService,
 };
 use qryvanta_core::TenantId;
 use qryvanta_infrastructure::PostgresPasskeyRepository;
@@ -11,6 +11,7 @@ use webauthn_rs::Webauthn;
 /// Shared application state.
 #[derive(Clone)]
 pub struct AppState {
+    pub app_service: AppService,
     pub metadata_service: MetadataService,
     pub security_admin_service: SecurityAdminService,
     pub authorization_service: AuthorizationService,

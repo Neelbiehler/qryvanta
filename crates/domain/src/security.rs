@@ -93,8 +93,24 @@ impl FromStr for Permission {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AuditAction {
+    /// Emitted when an app definition is created.
+    AppCreated,
+    /// Emitted when an entity is bound into an app navigation.
+    AppEntityBound,
+    /// Emitted when role permissions are updated for an app entity.
+    AppRoleEntityPermissionSaved,
     /// Emitted when an entity definition is created.
     MetadataEntityCreated,
+    /// Emitted when a metadata field is created or updated.
+    MetadataFieldSaved,
+    /// Emitted when draft metadata is published.
+    MetadataEntityPublished,
+    /// Emitted when a runtime record is created.
+    RuntimeRecordCreated,
+    /// Emitted when a runtime record is updated.
+    RuntimeRecordUpdated,
+    /// Emitted when a runtime record is deleted.
+    RuntimeRecordDeleted,
     /// Emitted when a custom role is created.
     SecurityRoleCreated,
     /// Emitted when a role is assigned to a subject.
@@ -110,7 +126,15 @@ impl AuditAction {
     #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
+            Self::AppCreated => "app.created",
+            Self::AppEntityBound => "app.entity.bound",
+            Self::AppRoleEntityPermissionSaved => "app.role_entity_permission.saved",
             Self::MetadataEntityCreated => "metadata.entity.created",
+            Self::MetadataFieldSaved => "metadata.field.saved",
+            Self::MetadataEntityPublished => "metadata.entity.published",
+            Self::RuntimeRecordCreated => "runtime.record.created",
+            Self::RuntimeRecordUpdated => "runtime.record.updated",
+            Self::RuntimeRecordDeleted => "runtime.record.deleted",
             Self::SecurityRoleCreated => "security.role.created",
             Self::SecurityRoleAssigned => "security.role.assigned",
             Self::SecurityRoleUnassigned => "security.role.unassigned",

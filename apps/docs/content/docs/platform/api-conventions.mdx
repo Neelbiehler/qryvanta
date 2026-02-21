@@ -27,6 +27,35 @@ Keep handlers focused on:
 - Use predictable collection endpoints for list and create paths.
 - Ensure API contracts remain versionable as metadata runtime expands.
 
+## Metadata Runtime Endpoints
+
+- `GET /api/entities` lists metadata entities.
+- `POST /api/entities` creates metadata entities.
+- `GET /api/entities/:entity_logical_name/fields` lists draft fields.
+- `POST /api/entities/:entity_logical_name/fields` creates/updates draft fields.
+- `POST /api/entities/:entity_logical_name/publish` publishes immutable schema version.
+- `GET /api/entities/:entity_logical_name/published` returns latest published schema.
+- `GET /api/runtime/:entity_logical_name/records?limit=50&offset=0` lists runtime records.
+- `POST /api/runtime/:entity_logical_name/records` creates runtime record.
+- `GET /api/runtime/:entity_logical_name/records/:record_id` fetches one runtime record.
+- `PUT /api/runtime/:entity_logical_name/records/:record_id` updates runtime record.
+- `DELETE /api/runtime/:entity_logical_name/records/:record_id` deletes runtime record when no relation fields reference it.
+
+## App Builder and Workspace Endpoints
+
+- `GET /api/apps` lists tenant apps for administrators.
+- `POST /api/apps` creates an app.
+- `GET /api/apps/:app_logical_name/entities` lists app navigation bindings.
+- `POST /api/apps/:app_logical_name/entities` saves app navigation binding.
+- `GET /api/apps/:app_logical_name/permissions` lists app role entity permissions.
+- `PUT /api/apps/:app_logical_name/permissions` saves app role entity permissions.
+- `GET /api/workspace/apps` lists apps accessible to the current subject.
+- `GET /api/workspace/apps/:app_logical_name/navigation` lists worker-visible app entities.
+- `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/capabilities` returns effective worker capabilities.
+- `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/schema` returns published schema for worker forms.
+- `GET|POST /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/records` lists/creates records with app-scoped permissions.
+- `GET|PUT|DELETE /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/records/:record_id` reads/writes/deletes records with app-scoped permissions.
+
 ## Security Admin Endpoints
 
 - `GET /api/security/roles` lists tenant roles and grants.

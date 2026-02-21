@@ -16,7 +16,7 @@ sha2 = "0.10"
 uuid.workspace = true
 
 [dev-dependencies]
-tokio.workspace = true
+tokio = { workspace = true, features = ["sync"] }
 
 [lints]
 workspace = true

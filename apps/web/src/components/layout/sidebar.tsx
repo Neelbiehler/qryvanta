@@ -22,6 +22,12 @@ export function Sidebar() {
           Entities
         </Link>
         <Link
+          href="/apps"
+          className="block rounded-md bg-white px-3 py-2 text-sm font-medium text-zinc-900 shadow-sm transition hover:bg-emerald-100"
+        >
+          Apps
+        </Link>
+        <Link
           href="/security/roles"
           className="block rounded-md bg-white px-3 py-2 text-sm font-medium text-zinc-900 shadow-sm transition hover:bg-emerald-100"
         >

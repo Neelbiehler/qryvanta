@@ -61,6 +61,7 @@ export default async function EntitiesPage() {
             <TableRow>
               <TableHead>Logical Name</TableHead>
               <TableHead>Display Name</TableHead>
+              <TableHead>Runtime</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -71,11 +72,19 @@ export default async function EntitiesPage() {
                     {entity.logical_name}
                   </TableCell>
                   <TableCell>{entity.display_name}</TableCell>
+                  <TableCell>
+                    <Link
+                      className={cn(buttonVariants({ size: "sm", variant: "outline" }))}
+                      href={`/entities/${entity.logical_name}`}
+                    >
+                      Open
+                    </Link>
+                  </TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell className="text-zinc-500" colSpan={2}>
+                <TableCell className="text-zinc-500" colSpan={3}>
                   No entities yet.
                 </TableCell>
               </TableRow>

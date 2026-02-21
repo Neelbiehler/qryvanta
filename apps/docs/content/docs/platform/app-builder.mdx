@@ -7,6 +7,18 @@ description: Render forms and views directly from metadata definitions.
 
 Allow product admins to configure working applications without code changes.
 
+## Implemented Baseline
+
+- Multi-app model per tenant via `app_definitions`.
+- App navigation bound to metadata entities.
+- App access granted by assigned roles.
+- App-scoped role permissions per entity action:
+  - `read`
+  - `create`
+  - `update`
+  - `delete`
+- Worker runtime pages resolve forms from published metadata schemas.
+
 ## Planned Builder Scope
 
 - Entity and field management UI
@@ -22,6 +34,14 @@ Generated pages should:
 2. Render field controls by type.
 3. Apply server-side validation and permissions.
 4. Surface errors with field-level context.
+
+Current worker entry points:
+
+- `GET /api/workspace/apps`
+- `GET /api/workspace/apps/:app/navigation`
+- `GET /api/workspace/apps/:app/entities/:entity/schema`
+- `GET|POST /api/workspace/apps/:app/entities/:entity/records`
+- `GET|PUT|DELETE /api/workspace/apps/:app/entities/:entity/records/:record_id`
 
 ## Non-Goals (Current)
 
