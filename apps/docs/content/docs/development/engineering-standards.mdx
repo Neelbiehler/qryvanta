@@ -20,7 +20,19 @@ description: Mandatory coding and review expectations for Qryvanta contributions
 
 - Keep React and React DOM versions aligned exactly; mismatches fail web builds.
 - Use `eslint .` for frontend linting to stay compatible across Next.js major upgrades.
+- Keep the workspace `pnpm` version current (`packageManager` in root `package.json`) to avoid known CLI deprecations and install-time warnings.
 - Dependabot updates must be CI-green before merge; defer updates with known upstream incompatibilities until compatible releases exist.
+
+## Frontend Quality Gate
+
+- Run React Doctor for significant frontend or UI library changes:
+
+```bash
+npx -y react-doctor@latest . --verbose --project @qryvanta/web
+npx -y react-doctor@latest ./packages/ui --verbose
+```
+
+- Resolve high-signal findings (security, correctness, framework warnings) in the same change set unless intentionally deferred.
 
 ## PR Gate
 

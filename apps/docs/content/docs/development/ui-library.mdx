@@ -6,6 +6,8 @@ description: Shared UI component package for consistent app surfaces.
 Qryvanta ships reusable web primitives from `@qryvanta/ui` in `packages/ui`.
 The package is based on shadcn patterns and is the default source for shared application components.
 
+The current package includes standardized form primitives (`Input`, `Textarea`, `Checkbox`, `Select`), card/layout primitives, table primitives, and accessible menu/avatar controls.
+
 ## Usage
 
 Import components from the package root:
@@ -22,6 +24,13 @@ Do not import from `apps/web/src/components/ui` for shared primitives.
 2. Reuse `packages/ui/src/lib/cn.ts` for class merging.
 3. Export the component from `packages/ui/src/index.ts`.
 4. Update consuming apps to import from `@qryvanta/ui`.
+
+## Form Standards
+
+- Prefer `@qryvanta/ui` form controls over raw HTML controls in app code.
+- Use `Label` with an explicit `htmlFor` for every control.
+- Keep control styling centralized in the UI package to avoid style drift between pages.
+- Use typed API DTOs from `@qryvanta/api-types` when wiring form submissions.
 
 ## Integration Notes
 

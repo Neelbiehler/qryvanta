@@ -1,10 +1,11 @@
 "use client";
 
-import { type FormEvent, useMemo, useState } from "react";
+import { type FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import {
   Button,
+  Checkbox,
   Input,
   Label,
   Table,
@@ -13,6 +14,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  Textarea,
 } from "@qryvanta/ui";
 
 import {
@@ -31,6 +33,25 @@ type WorkspaceEntityPanelProps = {
   records: RuntimeRecordResponse[];
 };
 
+function buildInitialValues(schema: PublishedSchemaResponse): Record<string, unknown> {
+  const values: Record<string, unknown> = {};
+  for (const field of schema.fields) {
+    if (field.default_value !== null) {
+      values[field.logical_name] = field.default_value;
+      continue;
+    }
+
+    if (field.field_type === "boolean") {
+      values[field.logical_name] = false;
+      continue;
+    }
+
+    values[field.logical_name] = "";
+  }
+
+  return values;
+}
+
 export function WorkspaceEntityPanel({
   appLogicalName,
   entityLogicalName,
@@ -40,24 +61,9 @@ export function WorkspaceEntityPanel({
 }: WorkspaceEntityPanelProps) {
   const router = useRouter();
 
-  const initialValues = useMemo(() => {
-    const values: Record<string, unknown> = {};
-    for (const field of schema.fields) {
-      if (field.default_value !== null) {
-        values[field.logical_name] = field.default_value;
-        continue;
-      }
-
-      if (field.field_type === "boolean") {
-        values[field.logical_name] = false;
-      } else {
-        values[field.logical_name] = "";
-      }
-    }
-    return values;
-  }, [schema.fields]);
-
-  const [formValues, setFormValues] = useState<Record<string, unknown>>(initialValues);
+  const [formValues, setFormValues] = useState<Record<string, unknown>>(() =>
+    buildInitialValues(schema),
+  );
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -138,7 +144,7 @@ export function WorkspaceEntityPanel({
       }
 
       setStatusMessage("Record created.");
-      setFormValues(initialValues);
+      setFormValues(buildInitialValues(schema));
       router.refresh();
     } catch {
       setErrorMessage("Unable to create record.");
@@ -198,9 +204,8 @@ export function WorkspaceEntityPanel({
                 <div className="space-y-2" key={field.logical_name}>
                   <Label htmlFor={fieldId}>{field.display_name}</Label>
                   <label className="inline-flex items-center gap-2 text-sm text-zinc-700">
-                    <input
+                    <Checkbox
                       id={fieldId}
-                      type="checkbox"
                       checked={Boolean(value)}
                       onChange={(event) => setFieldValue(field.logical_name, event.target.checked)}
                     />
@@ -214,9 +219,9 @@ export function WorkspaceEntityPanel({
               return (
                 <div className="space-y-2 md:col-span-2" key={field.logical_name}>
                   <Label htmlFor={fieldId}>{field.display_name}</Label>
-                  <textarea
+                  <Textarea
                     id={fieldId}
-                    className="min-h-24 w-full rounded-md border border-zinc-200 bg-white px-3 py-2 font-mono text-xs text-zinc-900"
+                    className="font-mono text-xs"
                     value={String(value ?? "")}
                     onChange={(event) => setFieldValue(field.logical_name, event.target.value)}
                     placeholder='{"value":"example"}'

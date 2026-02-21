@@ -3,13 +3,12 @@
 import { type FormEvent, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { Button, Input, Label } from "@qryvanta/ui";
+import { Button, Checkbox, Input, Label, Select } from "@qryvanta/ui";
 
 import {
   apiFetch,
   type RoleAssignmentResponse,
   type RoleResponse,
-  type TenantRegistrationModeResponse,
   type UpdateTenantRegistrationModeRequest,
 } from "@/lib/api";
 
@@ -45,8 +44,6 @@ export function RoleManagementPanel({
   ]);
   const [assignSubject, setAssignSubject] = useState("");
   const [assignRoleName, setAssignRoleName] = useState("");
-  const [tenantRegistrationMode, setTenantRegistrationMode] =
-    useState(registrationMode);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmittingRole, setIsSubmittingRole] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
@@ -150,8 +147,12 @@ export function RoleManagementPanel({
     setIsUpdatingRegistrationMode(true);
 
     try {
+      const formData = new FormData(event.currentTarget);
+      const selectedMode =
+        formData.get("tenant_registration_mode")?.toString() ?? registrationMode;
+
       const payload: UpdateTenantRegistrationModeRequest = {
-        registration_mode: tenantRegistrationMode,
+        registration_mode: selectedMode,
       };
       const response = await apiFetch("/api/security/registration-mode", {
         method: "PUT",
@@ -163,9 +164,6 @@ export function RoleManagementPanel({
         setErrorMessage(payload.message ?? "Unable to update registration mode.");
         return;
       }
-
-      const updated = (await response.json()) as TenantRegistrationModeResponse;
-      setTenantRegistrationMode(updated.registration_mode);
       router.refresh();
     } catch {
       setErrorMessage("Unable to update registration mode.");
@@ -196,8 +194,7 @@ export function RoleManagementPanel({
                 key={permission}
                 className="flex items-center gap-2 text-sm text-zinc-700"
               >
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={selectedPermissions.includes(permission)}
                   onChange={() => togglePermission(permission)}
                 />
@@ -252,15 +249,14 @@ export function RoleManagementPanel({
           <p className="text-sm text-zinc-600">
             Control whether users can self-register or only join by invite.
           </p>
-          <select
+          <Select
             id="tenant_registration_mode"
-            className="h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-900"
-            value={tenantRegistrationMode}
-            onChange={(event) => setTenantRegistrationMode(event.target.value)}
+            defaultValue={registrationMode}
+            name="tenant_registration_mode"
           >
             <option value="invite_only">Invite only</option>
             <option value="open">Open registration</option>
-          </select>
+          </Select>
         </div>
 
         <Button disabled={isUpdatingRegistrationMode} type="submit" variant="outline">

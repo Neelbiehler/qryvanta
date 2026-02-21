@@ -25,14 +25,17 @@ export function CardHeader({
 }
 
 export function CardTitle({
+  children,
   className,
   ...props
-}: React.HTMLAttributes<HTMLHeadingElement>) {
+}: React.HTMLAttributes<HTMLHeadingElement> & { children: React.ReactNode }) {
   return (
     <h3
       className={cn("text-xl font-semibold leading-none tracking-tight", className)}
       {...props}
-    />
+    >
+      {children}
+    </h3>
   );
 }
 
