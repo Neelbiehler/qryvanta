@@ -30,7 +30,9 @@ export function PasswordCard({
     <Card>
       <CardHeader>
         <CardTitle>Change Password</CardTitle>
-        <CardDescription>Rotate your password without ending your current session.</CardDescription>
+        <CardDescription>
+          Rotate your password without ending your current session.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="space-y-2">

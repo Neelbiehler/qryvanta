@@ -87,7 +87,8 @@ export function EntityWorkbenchPanel({
 
   const [logicalName, setLogicalName] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [fieldType, setFieldType] = useState<(typeof FIELD_TYPE_OPTIONS)[number]>("text");
+  const [fieldType, setFieldType] =
+    useState<(typeof FIELD_TYPE_OPTIONS)[number]>("text");
   const [isRequired, setIsRequired] = useState(false);
   const [isUnique, setIsUnique] = useState(false);
   const [defaultValueText, setDefaultValueText] = useState("");
@@ -97,7 +98,9 @@ export function EntityWorkbenchPanel({
   const [queryFiltersText, setQueryFiltersText] = useState("{}");
   const [queryLimitText, setQueryLimitText] = useState("50");
   const [queryOffsetText, setQueryOffsetText] = useState("0");
-  const [queriedRecords, setQueriedRecords] = useState<RuntimeRecordResponse[] | null>(null);
+  const [queriedRecords, setQueriedRecords] = useState<
+    RuntimeRecordResponse[] | null
+  >(null);
   const [queryPresetName, setQueryPresetName] = useState("");
   const [selectedPresetName, setSelectedPresetName] = useState("");
   const [queryPresets, setQueryPresets] = useState<QueryPreset[]>([]);
@@ -152,7 +155,10 @@ export function EntityWorkbenchPanel({
       return;
     }
 
-    window.localStorage.setItem(queryPresetsStorageKey, JSON.stringify(nextPresets));
+    window.localStorage.setItem(
+      queryPresetsStorageKey,
+      JSON.stringify(nextPresets),
+    );
   }
 
   function clearMessages() {
@@ -301,7 +307,9 @@ export function EntityWorkbenchPanel({
     const nextPresets = [
       ...queryPresets.filter(
         (existingPreset) =>
-          !importedPresets.some((importedPreset) => importedPreset.name === existingPreset.name),
+          !importedPresets.some(
+            (importedPreset) => importedPreset.name === existingPreset.name,
+          ),
       ),
       ...importedPresets,
     ].sort((left, right) => left.name.localeCompare(right.name));
@@ -332,10 +340,13 @@ export function EntityWorkbenchPanel({
           relationTargetEntity.trim().length > 0 ? relationTargetEntity : null,
       };
 
-      const response = await apiFetch(`/api/entities/${entityLogicalName}/fields`, {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
+      const response = await apiFetch(
+        `/api/entities/${entityLogicalName}/fields`,
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        },
+      );
 
       if (!response.ok) {
         const payload = (await response.json()) as { message?: string };
@@ -364,9 +375,12 @@ export function EntityWorkbenchPanel({
     setIsPublishing(true);
 
     try {
-      const response = await apiFetch(`/api/entities/${entityLogicalName}/publish`, {
-        method: "POST",
-      });
+      const response = await apiFetch(
+        `/api/entities/${entityLogicalName}/publish`,
+        {
+          method: "POST",
+        },
+      );
 
       if (!response.ok) {
         const payload = (await response.json()) as { message?: string };
@@ -390,7 +404,11 @@ export function EntityWorkbenchPanel({
 
     try {
       const parsed = JSON.parse(recordPayload) as unknown;
-      if (parsed === null || Array.isArray(parsed) || typeof parsed !== "object") {
+      if (
+        parsed === null ||
+        Array.isArray(parsed) ||
+        typeof parsed !== "object"
+      ) {
         setErrorMessage("Runtime record payload must be a JSON object.");
         return;
       }
@@ -399,10 +417,13 @@ export function EntityWorkbenchPanel({
         data: parsed as Record<string, unknown>,
       };
 
-      const response = await apiFetch(`/api/runtime/${entityLogicalName}/records`, {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
+      const response = await apiFetch(
+        `/api/runtime/${entityLogicalName}/records`,
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        },
+      );
 
       if (!response.ok) {
         const payload = (await response.json()) as { message?: string };
@@ -451,10 +472,13 @@ export function EntityWorkbenchPanel({
         filters: parsedFilters,
       };
 
-      const response = await apiFetch(`/api/runtime/${entityLogicalName}/records/query`, {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
+      const response = await apiFetch(
+        `/api/runtime/${entityLogicalName}/records/query`,
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        },
+      );
 
       if (!response.ok) {
         const payload = (await response.json()) as { message?: string };
@@ -477,9 +501,12 @@ export function EntityWorkbenchPanel({
     setDeletingRecordId(recordId);
 
     try {
-      const response = await apiFetch(`/api/runtime/${entityLogicalName}/records/${recordId}`, {
-        method: "DELETE",
-      });
+      const response = await apiFetch(
+        `/api/runtime/${entityLogicalName}/records/${recordId}`,
+        {
+          method: "DELETE",
+        },
+      );
 
       if (!response.ok) {
         const payload = (await response.json()) as { message?: string };
@@ -504,7 +531,12 @@ export function EntityWorkbenchPanel({
       <section className="space-y-3">
         <div className="flex items-center justify-between">
           <p className="text-sm font-medium text-zinc-800">Draft Fields</p>
-          <Button disabled={isPublishing} onClick={handlePublish} type="button" variant="outline">
+          <Button
+            disabled={isPublishing}
+            onClick={handlePublish}
+            type="button"
+            variant="outline"
+          >
             {isPublishing
               ? "Publishing..."
               : initialPublishedSchema
@@ -543,7 +575,11 @@ export function EntityWorkbenchPanel({
             <Label htmlFor="field_type">Field Type</Label>
             <Select
               id="field_type"
-              onChange={(event) => setFieldType(event.target.value as (typeof FIELD_TYPE_OPTIONS)[number])}
+              onChange={(event) =>
+                setFieldType(
+                  event.target.value as (typeof FIELD_TYPE_OPTIONS)[number],
+                )
+              }
               value={fieldType}
             >
               {FIELD_TYPE_OPTIONS.map((option) => (
@@ -555,7 +591,9 @@ export function EntityWorkbenchPanel({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="relation_target_entity">Relation Target Entity</Label>
+            <Label htmlFor="relation_target_entity">
+              Relation Target Entity
+            </Label>
             <Input
               id="relation_target_entity"
               onChange={(event) => setRelationTargetEntity(event.target.value)}
@@ -612,9 +650,15 @@ export function EntityWorkbenchPanel({
           <TableBody>
             {initialFields.length > 0 ? (
               initialFields.map((field) => (
-                <TableRow key={`${field.entity_logical_name}.${field.logical_name}`}>
-                  <TableCell className="font-mono text-xs">{field.logical_name}</TableCell>
-                  <TableCell className="font-mono text-xs">{field.field_type}</TableCell>
+                <TableRow
+                  key={`${field.entity_logical_name}.${field.logical_name}`}
+                >
+                  <TableCell className="font-mono text-xs">
+                    {field.logical_name}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {field.field_type}
+                  </TableCell>
                   <TableCell>{field.is_required ? "Yes" : "No"}</TableCell>
                   <TableCell>{field.is_unique ? "Yes" : "No"}</TableCell>
                   <TableCell className="font-mono text-xs">
@@ -645,7 +689,10 @@ export function EntityWorkbenchPanel({
           </p>
         </div>
 
-        <form className="space-y-3 rounded-md border border-emerald-100 bg-white p-4" onSubmit={handleCreateRecord}>
+        <form
+          className="space-y-3 rounded-md border border-emerald-100 bg-white p-4"
+          onSubmit={handleCreateRecord}
+        >
           <Label htmlFor="record_payload">Record Payload (JSON object)</Label>
           <Textarea
             id="record_payload"
@@ -654,7 +701,10 @@ export function EntityWorkbenchPanel({
             placeholder='{"name":"Alice"}'
             value={recordPayload}
           />
-          <Button disabled={isCreatingRecord || !initialPublishedSchema} type="submit">
+          <Button
+            disabled={isCreatingRecord || !initialPublishedSchema}
+            type="submit"
+          >
             {isCreatingRecord ? "Creating..." : "Create Runtime Record"}
           </Button>
         </form>
@@ -687,7 +737,9 @@ export function EntityWorkbenchPanel({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="query_filters">Exact-Match Filters (JSON object)</Label>
+            <Label htmlFor="query_filters">
+              Exact-Match Filters (JSON object)
+            </Label>
             <Textarea
               id="query_filters"
               className="font-mono text-xs"
@@ -708,7 +760,12 @@ export function EntityWorkbenchPanel({
               />
             </div>
             <div className="flex items-end">
-              <Button disabled={isSavingPreset} onClick={handleSaveQueryPreset} type="button" variant="outline">
+              <Button
+                disabled={isSavingPreset}
+                onClick={handleSaveQueryPreset}
+                type="button"
+                variant="outline"
+              >
                 {isSavingPreset ? "Saving..." : "Save Preset"}
               </Button>
             </div>
@@ -756,7 +813,9 @@ export function EntityWorkbenchPanel({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="query_preset_transfer">Preset Import/Export (JSON)</Label>
+            <Label htmlFor="query_preset_transfer">
+              Preset Import/Export (JSON)
+            </Label>
             <Textarea
               id="query_preset_transfer"
               className="font-mono text-xs"
@@ -767,10 +826,18 @@ export function EntityWorkbenchPanel({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button onClick={handleExportQueryPresets} type="button" variant="outline">
+            <Button
+              onClick={handleExportQueryPresets}
+              type="button"
+              variant="outline"
+            >
               Export Presets
             </Button>
-            <Button onClick={handleImportQueryPresets} type="button" variant="outline">
+            <Button
+              onClick={handleImportQueryPresets}
+              type="button"
+              variant="outline"
+            >
               Import Presets
             </Button>
             {isPresetCopied ? (
@@ -779,7 +846,11 @@ export function EntityWorkbenchPanel({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button disabled={isQueryingRecords || !initialPublishedSchema} type="submit" variant="outline">
+            <Button
+              disabled={isQueryingRecords || !initialPublishedSchema}
+              type="submit"
+              variant="outline"
+            >
               {isQueryingRecords ? "Querying..." : "Query Records"}
             </Button>
             <Button
@@ -808,7 +879,9 @@ export function EntityWorkbenchPanel({
             {displayedRecords.length > 0 ? (
               displayedRecords.map((record) => (
                 <TableRow key={record.record_id}>
-                  <TableCell className="font-mono text-xs">{record.record_id}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {record.record_id}
+                  </TableCell>
                   <TableCell className="font-mono text-xs">
                     {JSON.stringify(record.data)}
                   </TableCell>
@@ -820,7 +893,9 @@ export function EntityWorkbenchPanel({
                       type="button"
                       variant="outline"
                     >
-                      {deletingRecordId === record.record_id ? "Deleting..." : "Delete"}
+                      {deletingRecordId === record.record_id
+                        ? "Deleting..."
+                        : "Delete"}
                     </Button>
                   </TableCell>
                 </TableRow>

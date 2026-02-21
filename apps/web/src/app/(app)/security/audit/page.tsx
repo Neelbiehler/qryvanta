@@ -27,14 +27,18 @@ type AuditLogPageProps = {
   }>;
 };
 
-export default async function AuditLogPage({ searchParams }: AuditLogPageProps) {
+export default async function AuditLogPage({
+  searchParams,
+}: AuditLogPageProps) {
   const resolvedParams = (await searchParams) ?? {};
   const limit = Number.parseInt(resolvedParams.limit ?? "50", 10);
   const offset = Number.parseInt(resolvedParams.offset ?? "0", 10);
   const action = resolvedParams.action?.trim() ?? "";
   const subject = resolvedParams.subject?.trim() ?? "";
 
-  const safeLimit = Number.isNaN(limit) ? 50 : Math.max(1, Math.min(limit, 100));
+  const safeLimit = Number.isNaN(limit)
+    ? 50
+    : Math.max(1, Math.min(limit, 100));
   const safeOffset = Number.isNaN(offset) ? 0 : Math.max(0, offset);
 
   const query = new URLSearchParams({
@@ -81,7 +85,9 @@ export default async function AuditLogPage({ searchParams }: AuditLogPageProps) 
   return (
     <Card>
       <CardHeader>
-        <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Security</p>
+        <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
+          Security
+        </p>
         <CardTitle className="font-serif text-3xl">Audit Log</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -133,9 +139,13 @@ export default async function AuditLogPage({ searchParams }: AuditLogPageProps) 
             {entries.length > 0 ? (
               entries.map((entry) => (
                 <TableRow key={entry.event_id}>
-                  <TableCell className="font-mono text-xs">{entry.created_at}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {entry.created_at}
+                  </TableCell>
                   <TableCell>{entry.subject}</TableCell>
-                  <TableCell className="font-mono text-xs">{entry.action}</TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {entry.action}
+                  </TableCell>
                   <TableCell className="font-mono text-xs">
                     {entry.resource_type}:{entry.resource_id}
                   </TableCell>

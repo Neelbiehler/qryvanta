@@ -47,7 +47,9 @@ export default async function EntitiesPage() {
     <Card>
       <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Metadata</p>
+          <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
+            Metadata
+          </p>
           <CardTitle className="font-serif text-3xl">Entities</CardTitle>
         </div>
         <Link href="/entities/new" className={cn(buttonVariants())}>
@@ -74,7 +76,9 @@ export default async function EntitiesPage() {
                   <TableCell>{entity.display_name}</TableCell>
                   <TableCell>
                     <Link
-                      className={cn(buttonVariants({ size: "sm", variant: "outline" }))}
+                      className={cn(
+                        buttonVariants({ size: "sm", variant: "outline" }),
+                      )}
                       href={`/entities/${entity.logical_name}`}
                     >
                       Open

@@ -6,7 +6,9 @@ type VerifyEmailPageProps = {
   }>;
 };
 
-export default async function VerifyEmailPage({ searchParams }: VerifyEmailPageProps) {
+export default async function VerifyEmailPage({
+  searchParams,
+}: VerifyEmailPageProps) {
   const resolvedSearchParams = (await searchParams) ?? {};
   return <VerifyEmailForm token={resolvedSearchParams.token ?? ""} />;
 }

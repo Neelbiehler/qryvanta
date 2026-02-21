@@ -6,7 +6,9 @@ type AcceptInvitePageProps = {
   }>;
 };
 
-export default async function AcceptInvitePage({ searchParams }: AcceptInvitePageProps) {
+export default async function AcceptInvitePage({
+  searchParams,
+}: AcceptInvitePageProps) {
   const resolvedSearchParams = (await searchParams) ?? {};
   return <AcceptInviteForm token={resolvedSearchParams.token ?? ""} />;
 }

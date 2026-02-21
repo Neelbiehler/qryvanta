@@ -2,7 +2,13 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-import { Card, CardContent, CardHeader, CardTitle, buttonVariants } from "@qryvanta/ui";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  buttonVariants,
+} from "@qryvanta/ui";
 
 import { EntityWorkbenchPanel } from "@/components/entities/entity-workbench-panel";
 import { AccessDeniedCard } from "@/components/shared/access-denied-card";
@@ -20,7 +26,9 @@ type EntityWorkbenchPageProps = {
   }>;
 };
 
-export default async function EntityWorkbenchPage({ params }: EntityWorkbenchPageProps) {
+export default async function EntityWorkbenchPage({
+  params,
+}: EntityWorkbenchPageProps) {
   const { entityLogicalName } = await params;
   const cookieHeader = (await cookies()).toString();
 
@@ -73,7 +81,8 @@ export default async function EntityWorkbenchPage({ params }: EntityWorkbenchPag
     if (!publishedResponse.ok) {
       throw new Error("Failed to load published schema");
     }
-    publishedSchema = (await publishedResponse.json()) as PublishedSchemaResponse;
+    publishedSchema =
+      (await publishedResponse.json()) as PublishedSchemaResponse;
   }
 
   let records: RuntimeRecordResponse[] = [];
@@ -108,10 +117,17 @@ export default async function EntityWorkbenchPage({ params }: EntityWorkbenchPag
     <Card>
       <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Entity Workbench</p>
-          <CardTitle className="font-serif text-3xl">{entityLogicalName}</CardTitle>
+          <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
+            Entity Workbench
+          </p>
+          <CardTitle className="font-serif text-3xl">
+            {entityLogicalName}
+          </CardTitle>
         </div>
-        <Link href="/entities" className={cn(buttonVariants({ variant: "outline" }))}>
+        <Link
+          href="/entities"
+          className={cn(buttonVariants({ variant: "outline" }))}
+        >
           Back to entities
         </Link>
       </CardHeader>

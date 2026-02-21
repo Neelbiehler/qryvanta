@@ -25,7 +25,10 @@ type ErrorResponse = {
   message?: string;
 };
 
-async function readErrorMessage(response: Response, fallback: string): Promise<string> {
+async function readErrorMessage(
+  response: Response,
+  fallback: string,
+): Promise<string> {
   try {
     const contentType = response.headers.get("content-type") ?? "";
     if (contentType.includes("application/json")) {
@@ -103,7 +106,10 @@ export default function LoginPage() {
     setIsLoading(true);
     setStatus("");
     try {
-      const payload: AuthMfaVerifyRequest = { code: mfaCode, method: mfaMethod };
+      const payload: AuthMfaVerifyRequest = {
+        code: mfaCode,
+        method: mfaMethod,
+      };
       const response = await fetch(`${API_BASE_URL}/auth/login/mfa`, {
         method: "POST",
         credentials: "include",
@@ -177,7 +183,9 @@ export default function LoginPage() {
       });
 
       if (!response.ok) {
-        setStatus(await readErrorMessage(response, "Password reset request failed."));
+        setStatus(
+          await readErrorMessage(response, "Password reset request failed."),
+        );
         return;
       }
 
@@ -200,7 +208,8 @@ export default function LoginPage() {
             </p>
             <CardTitle className="font-serif text-3xl">Sign In</CardTitle>
             <CardDescription>
-              Use your email and password. If MFA is enabled, you will be prompted for a code.
+              Use your email and password. If MFA is enabled, you will be
+              prompted for a code.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -224,7 +233,11 @@ export default function LoginPage() {
                 placeholder="Your password"
               />
             </div>
-            <Button onClick={handleLogin} disabled={isLoading} className="w-full">
+            <Button
+              onClick={handleLogin}
+              disabled={isLoading}
+              className="w-full"
+            >
               Continue
             </Button>
 
@@ -253,7 +266,11 @@ export default function LoginPage() {
                     Recovery Code
                   </Button>
                 </div>
-                <Button onClick={handleMfaVerify} disabled={isLoading} className="w-full">
+                <Button
+                  onClick={handleMfaVerify}
+                  disabled={isLoading}
+                  className="w-full"
+                >
                   Verify MFA
                 </Button>
               </div>
@@ -268,13 +285,21 @@ export default function LoginPage() {
                 onChange={(event) => setForgotEmail(event.target.value)}
                 placeholder="you@company.com"
               />
-              <Button onClick={handleForgotPassword} disabled={isLoading} variant="outline" className="w-full">
+              <Button
+                onClick={handleForgotPassword}
+                disabled={isLoading}
+                variant="outline"
+                className="w-full"
+              >
                 Send reset link
               </Button>
             </div>
 
             {status ? (
-              <p aria-live="polite" className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-700">
+              <p
+                aria-live="polite"
+                className="rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm text-zinc-700"
+              >
                 {status}
               </p>
             ) : null}
@@ -283,9 +308,12 @@ export default function LoginPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="font-serif text-2xl">Create Account</CardTitle>
+            <CardTitle className="font-serif text-2xl">
+              Create Account
+            </CardTitle>
             <CardDescription>
-              Register a workspace user. You will receive an email verification link.
+              Register a workspace user. You will receive an email verification
+              link.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -319,7 +347,11 @@ export default function LoginPage() {
               />
             </div>
 
-            <Button onClick={handleRegister} disabled={isLoading} className="w-full">
+            <Button
+              onClick={handleRegister}
+              disabled={isLoading}
+              className="w-full"
+            >
               Register
             </Button>
           </CardContent>

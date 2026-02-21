@@ -46,10 +46,17 @@ export function MfaCard({
     <Card>
       <CardHeader>
         <CardTitle>MFA (TOTP)</CardTitle>
-        <CardDescription>Enable authenticator-based MFA and manage recovery codes.</CardDescription>
+        <CardDescription>
+          Enable authenticator-based MFA and manage recovery codes.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <Button onClick={onStartMfaEnrollment} disabled={busy} variant="outline" className="w-full">
+        <Button
+          onClick={onStartMfaEnrollment}
+          disabled={busy}
+          variant="outline"
+          className="w-full"
+        >
           Start TOTP enrollment
         </Button>
         {enrollment ? (
@@ -61,7 +68,8 @@ export function MfaCard({
               <strong>URI:</strong> {enrollment.otpauth_uri}
             </p>
             <p>
-              <strong>Recovery Codes:</strong> {enrollment.recovery_codes.join(", ")}
+              <strong>Recovery Codes:</strong>{" "}
+              {enrollment.recovery_codes.join(", ")}
             </p>
           </div>
         ) : null}
@@ -74,7 +82,11 @@ export function MfaCard({
             placeholder="123456"
           />
         </div>
-        <Button onClick={onConfirmMfaEnrollment} disabled={busy} className="w-full">
+        <Button
+          onClick={onConfirmMfaEnrollment}
+          disabled={busy}
+          className="w-full"
+        >
           Confirm MFA enrollment
         </Button>
         <div className="space-y-2 pt-2">
@@ -86,7 +98,12 @@ export function MfaCard({
             onChange={(event) => onDisablePasswordChange(event.target.value)}
           />
         </div>
-        <Button onClick={onDisableMfa} disabled={busy} variant="outline" className="w-full">
+        <Button
+          onClick={onDisableMfa}
+          disabled={busy}
+          variant="outline"
+          className="w-full"
+        >
           Disable MFA
         </Button>
         <div className="space-y-2 pt-2">
@@ -98,7 +115,12 @@ export function MfaCard({
             onChange={(event) => onRegeneratePasswordChange(event.target.value)}
           />
         </div>
-        <Button onClick={onRegenerateCodes} disabled={busy} variant="outline" className="w-full">
+        <Button
+          onClick={onRegenerateCodes}
+          disabled={busy}
+          variant="outline"
+          className="w-full"
+        >
           Regenerate recovery codes
         </Button>
         {newRecoveryCodes.length > 0 ? (

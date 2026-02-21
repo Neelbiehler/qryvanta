@@ -65,7 +65,9 @@ export function AcceptInviteForm({ token }: AcceptInviteFormProps) {
       });
 
       if (!response.ok) {
-        const errorPayload = (await response.json().catch(() => ({}))) as ErrorResponse;
+        const errorPayload = (await response
+          .json()
+          .catch(() => ({}))) as ErrorResponse;
         setStatus(errorPayload.message ?? "Invite acceptance failed.");
         return;
       }
@@ -82,7 +84,9 @@ export function AcceptInviteForm({ token }: AcceptInviteFormProps) {
     <main className="grid min-h-screen place-items-center bg-app px-6 py-12">
       <Card className="w-full max-w-lg">
         <CardHeader>
-          <CardTitle className="font-serif text-3xl">Accept Invitation</CardTitle>
+          <CardTitle className="font-serif text-3xl">
+            Accept Invitation
+          </CardTitle>
           <CardDescription>
             Set a display name and password if this is your first time joining.
           </CardDescription>

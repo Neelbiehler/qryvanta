@@ -38,9 +38,13 @@ type AppStudioPanelProps = {
 export function AppStudioPanel({ apps, entities, roles }: AppStudioPanelProps) {
   const router = useRouter();
 
-  const [selectedApp, setSelectedApp] = useState(apps.at(0)?.logical_name ?? "");
+  const [selectedApp, setSelectedApp] = useState(
+    apps.at(0)?.logical_name ?? "",
+  );
   const [bindings, setBindings] = useState<AppEntityBindingResponse[]>([]);
-  const [permissions, setPermissions] = useState<AppRoleEntityPermissionResponse[]>([]);
+  const [permissions, setPermissions] = useState<
+    AppRoleEntityPermissionResponse[]
+  >([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
@@ -48,12 +52,18 @@ export function AppStudioPanel({ apps, entities, roles }: AppStudioPanelProps) {
   const [newAppDisplayName, setNewAppDisplayName] = useState("");
   const [newAppDescription, setNewAppDescription] = useState("");
 
-  const [entityToBind, setEntityToBind] = useState(entities.at(0)?.logical_name ?? "");
+  const [entityToBind, setEntityToBind] = useState(
+    entities.at(0)?.logical_name ?? "",
+  );
   const [navigationLabel, setNavigationLabel] = useState("");
   const [navigationOrder, setNavigationOrder] = useState(0);
 
-  const [permissionRoleName, setPermissionRoleName] = useState(roles.at(0)?.name ?? "");
-  const [permissionEntityName, setPermissionEntityName] = useState(entities.at(0)?.logical_name ?? "");
+  const [permissionRoleName, setPermissionRoleName] = useState(
+    roles.at(0)?.name ?? "",
+  );
+  const [permissionEntityName, setPermissionEntityName] = useState(
+    entities.at(0)?.logical_name ?? "",
+  );
   const [canRead, setCanRead] = useState(true);
   const [canCreate, setCanCreate] = useState(false);
   const [canUpdate, setCanUpdate] = useState(false);
@@ -64,10 +74,12 @@ export function AppStudioPanel({ apps, entities, roles }: AppStudioPanelProps) {
   const [isSavingPermission, setIsSavingPermission] = useState(false);
   const [isLoadingAppData, setIsLoadingAppData] = useState(false);
 
-  const hasStudioData = apps.length > 0 && entities.length > 0 && roles.length > 0;
+  const hasStudioData =
+    apps.length > 0 && entities.length > 0 && roles.length > 0;
 
   const selectedAppDisplayName =
-    apps.find((app) => app.logical_name === selectedApp)?.display_name ?? selectedApp;
+    apps.find((app) => app.logical_name === selectedApp)?.display_name ??
+    selectedApp;
 
   function resetMessages() {
     setErrorMessage(null);
@@ -93,8 +105,12 @@ export function AppStudioPanel({ apps, entities, roles }: AppStudioPanelProps) {
         return;
       }
 
-      setBindings((await bindingsResponse.json()) as AppEntityBindingResponse[]);
-      setPermissions((await permissionsResponse.json()) as AppRoleEntityPermissionResponse[]);
+      setBindings(
+        (await bindingsResponse.json()) as AppEntityBindingResponse[],
+      );
+      setPermissions(
+        (await permissionsResponse.json()) as AppRoleEntityPermissionResponse[],
+      );
     } catch {
       setErrorMessage("Unable to load app studio data.");
     } finally {
@@ -115,7 +131,8 @@ export function AppStudioPanel({ apps, entities, roles }: AppStudioPanelProps) {
       const payload: CreateAppRequest = {
         logical_name: newAppLogicalName,
         display_name: newAppDisplayName,
-        description: newAppDescription.trim().length > 0 ? newAppDescription : null,
+        description:
+          newAppDescription.trim().length > 0 ? newAppDescription : null,
       };
       const response = await apiFetch("/api/apps", {
         method: "POST",
@@ -152,7 +169,8 @@ export function AppStudioPanel({ apps, entities, roles }: AppStudioPanelProps) {
     try {
       const payload: BindAppEntityRequest = {
         entity_logical_name: entityToBind,
-        navigation_label: navigationLabel.trim().length > 0 ? navigationLabel : null,
+        navigation_label:
+          navigationLabel.trim().length > 0 ? navigationLabel : null,
         navigation_order: navigationOrder,
       };
       const response = await apiFetch(`/api/apps/${selectedApp}/entities`, {
@@ -219,22 +237,43 @@ export function AppStudioPanel({ apps, entities, roles }: AppStudioPanelProps) {
     <div className="space-y-6">
       {!hasStudioData ? (
         <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          Create at least one app, one entity, and one role before configuring app access.
+          Create at least one app, one entity, and one role before configuring
+          app access.
         </p>
       ) : null}
 
-      <form className="grid gap-3 rounded-md border border-emerald-100 bg-white p-4 md:grid-cols-3" onSubmit={handleCreateApp}>
+      <form
+        className="grid gap-3 rounded-md border border-emerald-100 bg-white p-4 md:grid-cols-3"
+        onSubmit={handleCreateApp}
+      >
         <div className="space-y-2">
           <Label htmlFor="new_app_logical_name">App Logical Name</Label>
-          <Input id="new_app_logical_name" value={newAppLogicalName} onChange={(event) => setNewAppLogicalName(event.target.value)} placeholder="sales" required />
+          <Input
+            id="new_app_logical_name"
+            value={newAppLogicalName}
+            onChange={(event) => setNewAppLogicalName(event.target.value)}
+            placeholder="sales"
+            required
+          />
         </div>
         <div className="space-y-2">
           <Label htmlFor="new_app_display_name">App Display Name</Label>
-          <Input id="new_app_display_name" value={newAppDisplayName} onChange={(event) => setNewAppDisplayName(event.target.value)} placeholder="Sales App" required />
+          <Input
+            id="new_app_display_name"
+            value={newAppDisplayName}
+            onChange={(event) => setNewAppDisplayName(event.target.value)}
+            placeholder="Sales App"
+            required
+          />
         </div>
         <div className="space-y-2">
           <Label htmlFor="new_app_description">Description</Label>
-          <Input id="new_app_description" value={newAppDescription} onChange={(event) => setNewAppDescription(event.target.value)} placeholder="Lead and account workflows" />
+          <Input
+            id="new_app_description"
+            value={newAppDescription}
+            onChange={(event) => setNewAppDescription(event.target.value)}
+            placeholder="Lead and account workflows"
+          />
         </div>
         <div className="md:col-span-3">
           <Button disabled={isCreatingApp} type="submit">
@@ -290,20 +329,33 @@ export function AppStudioPanel({ apps, entities, roles }: AppStudioPanelProps) {
             <Input
               id="bind_navigation_order"
               value={String(navigationOrder)}
-              onChange={(event) => setNavigationOrder(Number.parseInt(event.target.value || "0", 10))}
+              onChange={(event) =>
+                setNavigationOrder(
+                  Number.parseInt(event.target.value || "0", 10),
+                )
+              }
               type="number"
               min={0}
             />
           </div>
 
           <div className="md:col-span-3">
-            <Button disabled={isBindingEntity || isLoadingAppData} type="submit" variant="outline">
-              {isBindingEntity ? "Saving..." : `Bind Entity to ${selectedAppDisplayName}`}
+            <Button
+              disabled={isBindingEntity || isLoadingAppData}
+              type="submit"
+              variant="outline"
+            >
+              {isBindingEntity
+                ? "Saving..."
+                : `Bind Entity to ${selectedAppDisplayName}`}
             </Button>
           </div>
         </form>
 
-        <form className="grid gap-3 md:grid-cols-4" onSubmit={handleSavePermission}>
+        <form
+          className="grid gap-3 md:grid-cols-4"
+          onSubmit={handleSavePermission}
+        >
           <div className="space-y-2">
             <Label htmlFor="permission_role_name">Role</Label>
             <Select
@@ -370,8 +422,14 @@ export function AppStudioPanel({ apps, entities, roles }: AppStudioPanelProps) {
           </div>
 
           <div className="md:col-span-4">
-            <Button disabled={isSavingPermission || isLoadingAppData} type="submit" variant="outline">
-              {isSavingPermission ? "Saving..." : "Save Role Entity Permissions"}
+            <Button
+              disabled={isSavingPermission || isLoadingAppData}
+              type="submit"
+              variant="outline"
+            >
+              {isSavingPermission
+                ? "Saving..."
+                : "Save Role Entity Permissions"}
             </Button>
           </div>
         </form>
@@ -387,9 +445,15 @@ export function AppStudioPanel({ apps, entities, roles }: AppStudioPanelProps) {
           <TableBody>
             {bindings.length > 0 ? (
               bindings.map((binding) => (
-                <TableRow key={`${binding.app_logical_name}.${binding.entity_logical_name}`}>
-                  <TableCell className="font-mono text-xs">{binding.entity_logical_name}</TableCell>
-                  <TableCell>{binding.navigation_label ?? binding.entity_logical_name}</TableCell>
+                <TableRow
+                  key={`${binding.app_logical_name}.${binding.entity_logical_name}`}
+                >
+                  <TableCell className="font-mono text-xs">
+                    {binding.entity_logical_name}
+                  </TableCell>
+                  <TableCell>
+                    {binding.navigation_label ?? binding.entity_logical_name}
+                  </TableCell>
                   <TableCell>{binding.navigation_order}</TableCell>
                 </TableRow>
               ))
@@ -418,9 +482,16 @@ export function AppStudioPanel({ apps, entities, roles }: AppStudioPanelProps) {
                   key={`${permission.app_logical_name}.${permission.role_name}.${permission.entity_logical_name}`}
                 >
                   <TableCell>{permission.role_name}</TableCell>
-                  <TableCell className="font-mono text-xs">{permission.entity_logical_name}</TableCell>
                   <TableCell className="font-mono text-xs">
-                    {[permission.can_read ? "read" : null, permission.can_create ? "create" : null, permission.can_update ? "update" : null, permission.can_delete ? "delete" : null]
+                    {permission.entity_logical_name}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {[
+                      permission.can_read ? "read" : null,
+                      permission.can_create ? "create" : null,
+                      permission.can_update ? "update" : null,
+                      permission.can_delete ? "delete" : null,
+                    ]
                       .filter((value): value is string => value !== null)
                       .join(", ") || "none"}
                   </TableCell>
@@ -438,10 +509,14 @@ export function AppStudioPanel({ apps, entities, roles }: AppStudioPanelProps) {
       </div>
 
       {errorMessage ? (
-        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessage}</p>
+        <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {errorMessage}
+        </p>
       ) : null}
       {statusMessage ? (
-        <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{statusMessage}</p>
+        <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          {statusMessage}
+        </p>
       ) : null}
     </div>
   );
