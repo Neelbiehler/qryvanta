@@ -20,14 +20,16 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type AppEntityPageProps = {
+type WorkerAppEntityPageProps = {
   params: Promise<{
     appLogicalName: string;
     entityLogicalName: string;
   }>;
 };
 
-export default async function AppEntityPage({ params }: AppEntityPageProps) {
+export default async function WorkerAppEntityPage({
+  params,
+}: WorkerAppEntityPageProps) {
   const { appLogicalName, entityLogicalName } = await params;
   const cookieHeader = (await cookies()).toString();
 
@@ -54,9 +56,9 @@ export default async function AppEntityPage({ params }: AppEntityPageProps) {
   if (schemaResponse.status === 403) {
     return (
       <AccessDeniedCard
-        section="Workspace"
+        section="Worker Apps"
         title="Entity Access"
-        message="Your account is authenticated but does not have read access to this app entity."
+        message="Your account does not have read access to this app entity."
       />
     );
   }
@@ -75,14 +77,14 @@ export default async function AppEntityPage({ params }: AppEntityPageProps) {
       <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-            Worker App
+            Worker Apps
           </p>
           <CardTitle className="font-serif text-3xl">
-            {schema.entity_display_name} · {appLogicalName}
+            {schema.entity_display_name} &middot; {appLogicalName}
           </CardTitle>
         </div>
         <Link
-          href={`/apps/${appLogicalName}`}
+          href={`/worker/apps/${appLogicalName}`}
           className={cn(buttonVariants({ variant: "outline" }))}
         >
           Back to app

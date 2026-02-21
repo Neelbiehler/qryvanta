@@ -20,15 +20,15 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type EntityWorkbenchPageProps = {
+type MakerEntityWorkbenchPageProps = {
   params: Promise<{
     entityLogicalName: string;
   }>;
 };
 
-export default async function EntityWorkbenchPage({
+export default async function MakerEntityWorkbenchPage({
   params,
-}: EntityWorkbenchPageProps) {
+}: MakerEntityWorkbenchPageProps) {
   const { entityLogicalName } = await params;
   const cookieHeader = (await cookies()).toString();
 
@@ -44,9 +44,9 @@ export default async function EntityWorkbenchPage({
   if (fieldsResponse.status === 403) {
     return (
       <AccessDeniedCard
-        section="Metadata"
+        section="Maker Center"
         title="Entity Workbench"
-        message="Your account is authenticated but does not have metadata field permissions."
+        message="Your account does not have metadata field permissions."
       />
     );
   }
@@ -69,9 +69,9 @@ export default async function EntityWorkbenchPage({
   if (publishedResponse.status === 403) {
     return (
       <AccessDeniedCard
-        section="Metadata"
+        section="Maker Center"
         title="Entity Workbench"
-        message="Your account is authenticated but does not have metadata read permissions."
+        message="Your account does not have metadata read permissions."
       />
     );
   }
@@ -99,9 +99,9 @@ export default async function EntityWorkbenchPage({
     if (recordsResponse.status === 403) {
       return (
         <AccessDeniedCard
-          section="Runtime"
+          section="Maker Center"
           title="Records"
-          message="Your account is authenticated but does not have runtime record read permissions."
+          message="Your account does not have runtime record read permissions."
         />
       );
     }
@@ -118,14 +118,14 @@ export default async function EntityWorkbenchPage({
       <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-            Entity Workbench
+            Maker Center
           </p>
           <CardTitle className="font-serif text-3xl">
             {entityLogicalName}
           </CardTitle>
         </div>
         <Link
-          href="/entities"
+          href="/maker/entities"
           className={cn(buttonVariants({ variant: "outline" }))}
         >
           Back to entities

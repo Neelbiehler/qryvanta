@@ -25,7 +25,7 @@ import {
   type TenantRegistrationModeResponse,
 } from "@/lib/api";
 
-export default async function RolesPage() {
+export default async function AdminRolesPage() {
   const cookieHeader = (await cookies()).toString();
   const [
     response,
@@ -38,26 +38,13 @@ export default async function RolesPage() {
     apiServerFetch("/api/security/role-assignments", cookieHeader),
     apiServerFetch("/api/security/registration-mode", cookieHeader),
     apiServerFetch("/api/security/runtime-field-permissions", cookieHeader),
-    apiServerFetch("/api/security/temporary-access-grants?limit=50", cookieHeader),
+    apiServerFetch(
+      "/api/security/temporary-access-grants?limit=50",
+      cookieHeader,
+    ),
   ]);
 
   if (response.status === 401) {
-    redirect("/login");
-  }
-
-  if (assignmentsResponse.status === 401) {
-    redirect("/login");
-  }
-
-  if (registrationModeResponse.status === 401) {
-    redirect("/login");
-  }
-
-  if (runtimeFieldPermissionsResponse.status === 401) {
-    redirect("/login");
-  }
-
-  if (temporaryAccessGrantsResponse.status === 401) {
     redirect("/login");
   }
 
@@ -70,9 +57,9 @@ export default async function RolesPage() {
   ) {
     return (
       <AccessDeniedCard
-        section="Security"
+        section="Admin Center"
         title="Roles"
-        message="Your account is authenticated but does not have role management permissions."
+        message="Your account does not have role management permissions."
       />
     );
   }
@@ -111,7 +98,7 @@ export default async function RolesPage() {
     <Card>
       <CardHeader>
         <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-          Security
+          Admin Center
         </p>
         <CardTitle className="font-serif text-3xl">Roles</CardTitle>
       </CardHeader>

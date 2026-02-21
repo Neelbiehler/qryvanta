@@ -6,7 +6,7 @@ import { MfaCard } from "@/components/security/account/mfa-card";
 import { PasswordCard } from "@/components/security/account/password-card";
 import { useSecurityAccount } from "@/components/security/account/use-security-account";
 
-export default function SecurityAccountPage() {
+export default function AdminSecurityAccountPage() {
   const {
     activeAction,
     confirmCode,
@@ -42,7 +42,12 @@ export default function SecurityAccountPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-serif text-3xl text-zinc-900">Security Settings</h1>
+        <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
+          Admin Center
+        </p>
+        <h1 className="font-serif text-3xl text-zinc-900">
+          Security Settings
+        </h1>
         <p className="mt-2 text-sm text-zinc-600">
           Manage your account verification, password, MFA, and tenant invites.
         </p>

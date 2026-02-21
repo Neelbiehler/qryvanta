@@ -11,7 +11,7 @@ pub use app::{AppDefinition, AppEntityAction, AppEntityBinding, AppEntityRolePer
 pub use metadata::{
     EntityDefinition, EntityFieldDefinition, FieldType, PublishedEntitySchema, RuntimeRecord,
 };
-pub use security::{AuditAction, Permission};
+pub use security::{AuditAction, Permission, Surface};
 pub use user::{
     AuthTokenType, EmailAddress, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH_WITH_MFA,
     PASSWORD_MIN_LENGTH_WITHOUT_MFA, RegistrationMode, UserId, validate_password,

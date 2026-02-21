@@ -13,12 +13,19 @@ import {
   DropdownMenuTrigger,
 } from "@qryvanta/ui";
 import { apiFetch, type UserIdentityResponse } from "@/lib/api";
+import {
+  readAccessibleSurfaces,
+  type SurfaceId,
+  SURFACES,
+  SURFACE_ORDER,
+} from "@/lib/surfaces";
 
 type HeaderProps = {
   user: UserIdentityResponse;
+  surfaceId?: SurfaceId;
 };
 
-export function Header({ user }: HeaderProps) {
+export function Header({ user, surfaceId }: HeaderProps) {
   const [isPending, startTransition] = useTransition();
   const name = user.display_name.trim();
   const initials = name
@@ -28,6 +35,12 @@ export function Header({ user }: HeaderProps) {
         .map((part) => part.at(0)?.toUpperCase() ?? "")
         .join("")
     : "U";
+
+  const surfaceLabel = surfaceId ? SURFACES[surfaceId].label : "Workspace";
+  const resolvedAccessibleSurfaces = readAccessibleSurfaces(user);
+  const accessibleSurfaces = SURFACE_ORDER.filter((id) =>
+    resolvedAccessibleSurfaces.includes(id),
+  );
 
   async function handleLogout() {
     startTransition(() => {
@@ -42,9 +55,9 @@ export function Header({ user }: HeaderProps) {
     <header className="flex items-center justify-between border-b border-emerald-100 bg-white/90 px-6 py-3 backdrop-blur">
       <div>
         <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-          Workspace
+          {surfaceLabel}
         </p>
-        <h1 className="font-serif text-xl text-zinc-900">Metadata Builder</h1>
+        <h1 className="font-serif text-xl text-zinc-900">Qryvanta</h1>
       </div>
 
       <DropdownMenu>
@@ -61,6 +74,21 @@ export function Header({ user }: HeaderProps) {
         </DropdownMenuTrigger>
 
         <DropdownMenuContent>
+          {accessibleSurfaces.map((id) => {
+            const target = SURFACES[id];
+            const isCurrent = surfaceId === id;
+            return (
+              <DropdownMenuItem
+                key={id}
+                disabled={isCurrent}
+                onClick={() => {
+                  window.location.href = target.basePath;
+                }}
+              >
+                {isCurrent ? `${target.label} (Current)` : target.label}
+              </DropdownMenuItem>
+            );
+          })}
           <p className="px-2 py-1 text-xs uppercase tracking-[0.14em] text-zinc-500">
             {user.email ?? user.subject}
           </p>

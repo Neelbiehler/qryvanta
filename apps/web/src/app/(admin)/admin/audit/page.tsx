@@ -32,7 +32,7 @@ type AuditLogPageProps = {
   }>;
 };
 
-export default async function AuditLogPage({
+export default async function AdminAuditLogPage({
   searchParams,
 }: AuditLogPageProps) {
   const resolvedParams = (await searchParams) ?? {};
@@ -66,9 +66,9 @@ export default async function AuditLogPage({
   if (response.status === 403) {
     return (
       <AccessDeniedCard
-        section="Security"
+        section="Admin Center"
         title="Audit Log"
-        message="Your account is authenticated but does not have audit log read permissions."
+        message="Your account does not have audit log read permissions."
       />
     );
   }
@@ -102,7 +102,7 @@ export default async function AuditLogPage({
     <Card>
       <CardHeader>
         <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-          Security
+          Admin Center
         </p>
         <CardTitle className="font-serif text-3xl">Audit Log</CardTitle>
       </CardHeader>
@@ -139,7 +139,7 @@ export default async function AuditLogPage({
             type="hidden"
           />
           <button
-            className="md:col-span-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800"
+            className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-800 md:col-span-4"
             type="submit"
           >
             Apply Filters
@@ -186,14 +186,14 @@ export default async function AuditLogPage({
         <div className="flex items-center justify-between">
           <Link
             className="rounded-md border border-emerald-100 bg-white px-3 py-2 text-sm"
-            href={`/security/audit?${previousParams.toString()}`}
+            href={`/admin/audit?${previousParams.toString()}`}
           >
             Previous
           </Link>
           <p className="text-xs text-zinc-500">Offset {safeOffset}</p>
           <Link
             className="rounded-md border border-emerald-100 bg-white px-3 py-2 text-sm"
-            href={`/security/audit?${nextParams.toString()}`}
+            href={`/admin/audit?${nextParams.toString()}`}
           >
             Next
           </Link>

@@ -20,13 +20,15 @@ import { AccessDeniedCard } from "@/components/shared/access-denied-card";
 import { apiServerFetch, type AppEntityBindingResponse } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type AppHomePageProps = {
+type WorkerAppHomePageProps = {
   params: Promise<{
     appLogicalName: string;
   }>;
 };
 
-export default async function AppHomePage({ params }: AppHomePageProps) {
+export default async function WorkerAppHomePage({
+  params,
+}: WorkerAppHomePageProps) {
   const { appLogicalName } = await params;
   const cookieHeader = (await cookies()).toString();
   const navigationResponse = await apiServerFetch(
@@ -41,9 +43,9 @@ export default async function AppHomePage({ params }: AppHomePageProps) {
   if (navigationResponse.status === 403) {
     return (
       <AccessDeniedCard
-        section="Workspace"
+        section="Worker Apps"
         title="App Access"
-        message="Your account is authenticated but does not have access to this app."
+        message="Your account does not have access to this app."
       />
     );
   }
@@ -60,14 +62,14 @@ export default async function AppHomePage({ params }: AppHomePageProps) {
       <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">
-            App Workspace
+            Worker Apps
           </p>
           <CardTitle className="font-serif text-3xl">
             {appLogicalName}
           </CardTitle>
         </div>
         <Link
-          href="/apps"
+          href="/worker/apps"
           className={cn(buttonVariants({ variant: "outline" }))}
         >
           Back to apps
@@ -100,7 +102,7 @@ export default async function AppHomePage({ params }: AppHomePageProps) {
                       className={cn(
                         buttonVariants({ size: "sm", variant: "outline" }),
                       )}
-                      href={`/apps/${appLogicalName}/${item.entity_logical_name}`}
+                      href={`/worker/apps/${appLogicalName}/${item.entity_logical_name}`}
                     >
                       Open
                     </Link>

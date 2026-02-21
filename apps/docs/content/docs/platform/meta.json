@@ -3,6 +3,7 @@
   "pages": [
     "metadata-runtime",
     "app-builder",
+    "ux-surfaces",
     "automation",
     "security-and-tenancy",
     "api-conventions"
