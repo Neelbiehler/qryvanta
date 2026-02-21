@@ -5,14 +5,17 @@ import { useRouter } from "next/navigation";
 
 import {
   Button,
+  Checkbox,
   Input,
   Label,
+  Select,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
+  Textarea,
 } from "@qryvanta/ui";
 
 import {
@@ -247,9 +250,8 @@ export function EntityWorkbenchPanel({
 
           <div className="space-y-2">
             <Label htmlFor="field_type">Field Type</Label>
-            <select
+            <Select
               id="field_type"
-              className="h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-900"
               onChange={(event) => setFieldType(event.target.value as (typeof FIELD_TYPE_OPTIONS)[number])}
               value={fieldType}
             >
@@ -258,7 +260,7 @@ export function EntityWorkbenchPanel({
                   {option}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
 
           <div className="space-y-2">
@@ -273,32 +275,31 @@ export function EntityWorkbenchPanel({
 
           <div className="space-y-2 md:col-span-2">
             <Label htmlFor="default_value">Default Value (JSON)</Label>
-            <textarea
+            <Textarea
               id="default_value"
-              className="min-h-20 w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900"
               onChange={(event) => setDefaultValueText(event.target.value)}
               placeholder='"Acme" or true or {"enabled":true}'
               value={defaultValueText}
             />
           </div>
 
-          <label className="flex items-center gap-2 text-sm text-zinc-700">
-            <input
+          <div className="flex items-center gap-2 text-sm text-zinc-700">
+            <Checkbox
+              id="field_is_required"
               checked={isRequired}
               onChange={(event) => setIsRequired(event.target.checked)}
-              type="checkbox"
             />
-            Required
-          </label>
+            <Label htmlFor="field_is_required">Required</Label>
+          </div>
 
-          <label className="flex items-center gap-2 text-sm text-zinc-700">
-            <input
+          <div className="flex items-center gap-2 text-sm text-zinc-700">
+            <Checkbox
+              id="field_is_unique"
               checked={isUnique}
               onChange={(event) => setIsUnique(event.target.checked)}
-              type="checkbox"
             />
-            Unique
-          </label>
+            <Label htmlFor="field_is_unique">Unique</Label>
+          </div>
 
           <div className="md:col-span-2">
             <Button disabled={isSavingField} type="submit">
@@ -355,9 +356,9 @@ export function EntityWorkbenchPanel({
 
         <form className="space-y-3 rounded-md border border-emerald-100 bg-white p-4" onSubmit={handleCreateRecord}>
           <Label htmlFor="record_payload">Record Payload (JSON object)</Label>
-          <textarea
+          <Textarea
             id="record_payload"
-            className="min-h-24 w-full rounded-md border border-zinc-200 bg-white px-3 py-2 font-mono text-xs text-zinc-900"
+            className="font-mono text-xs"
             onChange={(event) => setRecordPayload(event.target.value)}
             placeholder='{"name":"Alice"}'
             value={recordPayload}

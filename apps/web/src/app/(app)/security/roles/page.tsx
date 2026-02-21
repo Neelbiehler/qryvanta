@@ -25,15 +25,12 @@ import {
 
 export default async function RolesPage() {
   const cookieHeader = (await cookies()).toString();
-  const response = await apiServerFetch("/api/security/roles", cookieHeader);
-  const assignmentsResponse = await apiServerFetch(
-    "/api/security/role-assignments",
-    cookieHeader,
-  );
-  const registrationModeResponse = await apiServerFetch(
-    "/api/security/registration-mode",
-    cookieHeader,
-  );
+  const [response, assignmentsResponse, registrationModeResponse] =
+    await Promise.all([
+      apiServerFetch("/api/security/roles", cookieHeader),
+      apiServerFetch("/api/security/role-assignments", cookieHeader),
+      apiServerFetch("/api/security/registration-mode", cookieHeader),
+    ]);
 
   if (response.status === 401) {
     redirect("/login");

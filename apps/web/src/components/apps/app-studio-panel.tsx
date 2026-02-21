@@ -1,9 +1,21 @@
 "use client";
 
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { Button, Input, Label, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@qryvanta/ui";
+import {
+  Button,
+  Checkbox,
+  Input,
+  Label,
+  Select,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@qryvanta/ui";
 
 import {
   apiFetch,
@@ -54,10 +66,8 @@ export function AppStudioPanel({ apps, entities, roles }: AppStudioPanelProps) {
 
   const hasStudioData = apps.length > 0 && entities.length > 0 && roles.length > 0;
 
-  const selectedAppDisplayName = useMemo(
-    () => apps.find((app) => app.logical_name === selectedApp)?.display_name ?? selectedApp,
-    [apps, selectedApp],
-  );
+  const selectedAppDisplayName =
+    apps.find((app) => app.logical_name === selectedApp)?.display_name ?? selectedApp;
 
   function resetMessages() {
     setErrorMessage(null);
@@ -236,9 +246,8 @@ export function AppStudioPanel({ apps, entities, roles }: AppStudioPanelProps) {
       <div className="space-y-3 rounded-md border border-emerald-100 bg-white p-4">
         <div className="space-y-2">
           <Label htmlFor="studio_app_selector">Active App</Label>
-          <select
+          <Select
             id="studio_app_selector"
-            className="h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-900"
             value={selectedApp}
             onChange={(event) => setSelectedApp(event.target.value)}
           >
@@ -247,15 +256,14 @@ export function AppStudioPanel({ apps, entities, roles }: AppStudioPanelProps) {
                 {app.display_name} ({app.logical_name})
               </option>
             ))}
-          </select>
+          </Select>
         </div>
 
         <form className="grid gap-3 md:grid-cols-3" onSubmit={handleBindEntity}>
           <div className="space-y-2">
             <Label htmlFor="bind_entity_name">Entity</Label>
-            <select
+            <Select
               id="bind_entity_name"
-              className="h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-900"
               value={entityToBind}
               onChange={(event) => setEntityToBind(event.target.value)}
             >
@@ -264,7 +272,7 @@ export function AppStudioPanel({ apps, entities, roles }: AppStudioPanelProps) {
                   {entity.display_name} ({entity.logical_name})
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
 
           <div className="space-y-2">
@@ -298,9 +306,8 @@ export function AppStudioPanel({ apps, entities, roles }: AppStudioPanelProps) {
         <form className="grid gap-3 md:grid-cols-4" onSubmit={handleSavePermission}>
           <div className="space-y-2">
             <Label htmlFor="permission_role_name">Role</Label>
-            <select
+            <Select
               id="permission_role_name"
-              className="h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-900"
               value={permissionRoleName}
               onChange={(event) => setPermissionRoleName(event.target.value)}
             >
@@ -309,14 +316,13 @@ export function AppStudioPanel({ apps, entities, roles }: AppStudioPanelProps) {
                   {role.name}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="permission_entity_name">Entity</Label>
-            <select
+            <Select
               id="permission_entity_name"
-              className="h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-900"
               value={permissionEntityName}
               onChange={(event) => setPermissionEntityName(event.target.value)}
             >
@@ -325,26 +331,42 @@ export function AppStudioPanel({ apps, entities, roles }: AppStudioPanelProps) {
                   {entity.display_name} ({entity.logical_name})
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
 
           <div className="space-y-1 pt-6 md:col-span-2">
-            <label className="mr-3 inline-flex items-center gap-1 text-sm">
-              <input type="checkbox" checked={canRead} onChange={(event) => setCanRead(event.target.checked)} />
-              Read
-            </label>
-            <label className="mr-3 inline-flex items-center gap-1 text-sm">
-              <input type="checkbox" checked={canCreate} onChange={(event) => setCanCreate(event.target.checked)} />
-              Create
-            </label>
-            <label className="mr-3 inline-flex items-center gap-1 text-sm">
-              <input type="checkbox" checked={canUpdate} onChange={(event) => setCanUpdate(event.target.checked)} />
-              Update
-            </label>
-            <label className="inline-flex items-center gap-1 text-sm">
-              <input type="checkbox" checked={canDelete} onChange={(event) => setCanDelete(event.target.checked)} />
-              Delete
-            </label>
+            <div className="mr-3 inline-flex items-center gap-1 text-sm">
+              <Checkbox
+                id="permission_can_read"
+                checked={canRead}
+                onChange={(event) => setCanRead(event.target.checked)}
+              />
+              <Label htmlFor="permission_can_read">Read</Label>
+            </div>
+            <div className="mr-3 inline-flex items-center gap-1 text-sm">
+              <Checkbox
+                id="permission_can_create"
+                checked={canCreate}
+                onChange={(event) => setCanCreate(event.target.checked)}
+              />
+              <Label htmlFor="permission_can_create">Create</Label>
+            </div>
+            <div className="mr-3 inline-flex items-center gap-1 text-sm">
+              <Checkbox
+                id="permission_can_update"
+                checked={canUpdate}
+                onChange={(event) => setCanUpdate(event.target.checked)}
+              />
+              <Label htmlFor="permission_can_update">Update</Label>
+            </div>
+            <div className="inline-flex items-center gap-1 text-sm">
+              <Checkbox
+                id="permission_can_delete"
+                checked={canDelete}
+                onChange={(event) => setCanDelete(event.target.checked)}
+              />
+              <Label htmlFor="permission_can_delete">Delete</Label>
+            </div>
           </div>
 
           <div className="md:col-span-4">

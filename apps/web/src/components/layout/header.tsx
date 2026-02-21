@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useTransition } from "react";
 import { LogOut, ChevronDown } from "lucide-react";
 
 import {
@@ -19,21 +19,23 @@ type HeaderProps = {
 };
 
 export function Header({ user }: HeaderProps) {
-  const [open, setOpen] = useState(false);
-  const initials = useMemo(() => {
-    const name = user.display_name.trim();
-    if (!name) return "U";
-
-    return name
-      .split(" ")
-      .slice(0, 2)
-      .map((part) => part.at(0)?.toUpperCase() ?? "")
-      .join("");
-  }, [user.display_name]);
+  const [isPending, startTransition] = useTransition();
+  const name = user.display_name.trim();
+  const initials = name
+    ? name
+        .split(" ")
+        .slice(0, 2)
+        .map((part) => part.at(0)?.toUpperCase() ?? "")
+        .join("")
+    : "U";
 
   async function handleLogout() {
-    await apiFetch("/auth/logout", { method: "POST" });
-    window.location.href = "/login";
+    startTransition(() => {
+      void (async () => {
+        await apiFetch("/auth/logout", { method: "POST" });
+        window.location.href = "/login";
+      })();
+    });
   }
 
   return (
@@ -45,12 +47,7 @@ export function Header({ user }: HeaderProps) {
 
       <DropdownMenu>
         <DropdownMenuTrigger>
-          <Button
-            variant="outline"
-            className="gap-2"
-            onClick={() => setOpen((current) => !current)}
-            type="button"
-          >
+          <Button variant="outline" className="gap-2" type="button">
             <Avatar>
               <AvatarFallback>{initials}</AvatarFallback>
             </Avatar>
@@ -59,17 +56,15 @@ export function Header({ user }: HeaderProps) {
           </Button>
         </DropdownMenuTrigger>
 
-        {open ? (
-          <DropdownMenuContent>
-            <p className="px-2 py-1 text-xs uppercase tracking-[0.14em] text-zinc-500">
-              {user.email ?? user.subject}
-            </p>
-            <DropdownMenuItem onClick={handleLogout}>
-              <LogOut className="mr-2 h-4 w-4" />
-              Logout
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        ) : null}
+        <DropdownMenuContent>
+          <p className="px-2 py-1 text-xs uppercase tracking-[0.14em] text-zinc-500">
+            {user.email ?? user.subject}
+          </p>
+          <DropdownMenuItem onClick={handleLogout} disabled={isPending}>
+            <LogOut className="mr-2 h-4 w-4" />
+            {isPending ? "Logging out..." : "Logout"}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
       </DropdownMenu>
     </header>
   );

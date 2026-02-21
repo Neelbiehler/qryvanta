@@ -23,13 +23,20 @@ import type {
   RuntimeRecordResponse,
   SaveAppRoleEntityPermissionRequest,
   TenantRegistrationModeResponse,
-  UpdateRuntimeRecordRequest,
   UpdateTenantRegistrationModeRequest,
   UserIdentityResponse,
 } from "@qryvanta/api-types";
 
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
+
+function resolveApiUrl(path: string): string {
+  if (process.env.NODE_ENV === "production" && API_BASE_URL.startsWith("http://")) {
+    throw new Error("NEXT_PUBLIC_API_BASE_URL must use HTTPS in production");
+  }
+
+  return `${API_BASE_URL}${path}`;
+}
 
 export type {
   AcceptInviteRequest,
@@ -56,14 +63,21 @@ export type {
   RuntimeRecordResponse,
   SaveAppRoleEntityPermissionRequest,
   TenantRegistrationModeResponse,
-  UpdateRuntimeRecordRequest,
   UpdateTenantRegistrationModeRequest,
   UserIdentityResponse,
 };
 
-function withDefaultHeaders(headers?: HeadersInit): Headers {
+function shouldSetJsonContentType(body: BodyInit | null | undefined): boolean {
+  if (!body) {
+    return false;
+  }
+
+  return typeof body === "string";
+}
+
+function withDefaultHeaders(headers?: HeadersInit, body?: BodyInit | null): Headers {
   const requestHeaders = new Headers(headers);
-  if (!requestHeaders.has("Content-Type")) {
+  if (!requestHeaders.has("Content-Type") && shouldSetJsonContentType(body)) {
     requestHeaders.set("Content-Type", "application/json");
   }
   return requestHeaders;
@@ -73,11 +87,11 @@ export async function apiFetch(
   path: string,
   init: RequestInit = {},
 ): Promise<Response> {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(resolveApiUrl(path), {
     ...init,
     cache: "no-store",
     credentials: "include",
-    headers: withDefaultHeaders(init.headers),
+    headers: withDefaultHeaders(init.headers, init.body),
   });
 
   if (response.status === 401 && typeof window !== "undefined") {
@@ -92,12 +106,12 @@ export async function apiServerFetch(
   cookieHeader: string,
   init: RequestInit = {},
 ): Promise<Response> {
-  const headers = withDefaultHeaders(init.headers);
+  const headers = withDefaultHeaders(init.headers, init.body);
   if (cookieHeader) {
     headers.set("cookie", cookieHeader);
   }
 
-  return fetch(`${API_BASE_URL}${path}`, {
+  return fetch(resolveApiUrl(path), {
     ...init,
     cache: "no-store",
     headers,
