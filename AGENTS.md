@@ -50,6 +50,30 @@ Commands:
 - `pnpm contracts:generate` — regenerate TypeScript types from Rust DTOs.
 - `pnpm contracts:check` — fail if generated types are stale.
 
+## Shared Package Publishing (`@qryvanta/ui`)
+
+Qryvanta publishes the shared UI library from `packages/ui` so external repositories (including `qryvanta.com`) can consume one canonical component package.
+
+Rules:
+
+1. Treat `packages/ui` as a public package surface with stable exports.
+2. Any change affecting `@qryvanta/ui` behavior or API must include a changeset.
+3. Keep cloud-only product flows out of `@qryvanta/ui`; compose those in consumer apps.
+4. Do not publish manually from ad-hoc local state when the release workflow can be used.
+
+Commands:
+
+- `pnpm --filter @qryvanta/ui check` — validate TypeScript API surface.
+- `pnpm --filter @qryvanta/ui build` — build publishable `dist` artifacts.
+- `pnpm changeset` — create package release notes and bump intent.
+- `pnpm changeset:version` — apply version updates from pending changesets.
+- `pnpm changeset:publish` — publish pending package releases.
+
+Automation:
+
+- `.github/workflows/release-packages.yml` runs Changesets release automation on `main`.
+- The workflow requires `NPM_TOKEN` repository secret for npm publish access.
+
 ## Documentation-First Requirement
 
 Documentation is a required deliverable for every feature.

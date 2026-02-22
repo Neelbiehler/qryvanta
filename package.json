@@ -22,9 +22,16 @@
     "dev:api": "pnpm --filter @qryvanta/api dev",
     "rust:check": "cargo check --workspace --all-targets",
     "rust:test": "cargo test --workspace",
-    "rust:lint": "cargo clippy --workspace --all-targets -- -D warnings"
+    "rust:lint": "cargo clippy --workspace --all-targets -- -D warnings",
+    "changeset": "changeset",
+    "changeset:version": "changeset version",
+    "changeset:publish": "changeset publish",
+    "ui:build": "pnpm --filter @qryvanta/ui build",
+    "ui:publish": "pnpm ui:build && pnpm --filter @qryvanta/ui publish --access public"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.29.7",
+    "tsup": "^8.5.0",
     "turbo": "^2.8.10"
   }
 }
