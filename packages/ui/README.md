@@ -2,6 +2,8 @@
 
 Shared React UI primitives used across Qryvanta surfaces.
 
+This package is based on shadcn/ui patterns and adapted for Qryvanta product surfaces.
+
 ## Install
 
 ```bash
