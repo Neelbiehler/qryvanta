@@ -16,10 +16,12 @@ description: Trigger and action model for background business workflows.
 
 1. A workflow definition is saved in tenant scope (`/api/workflows`).
 2. A run starts either by manual execute or runtime-record-created dispatch.
-3. Actions execute with bounded retry attempts.
-4. Condition steps evaluate payload paths and execute one branch.
-5. Failed terminal runs are marked `dead_lettered` with captured reason.
-6. Run + attempt history is persisted for tenant observability.
+3. In `inline` mode, runs execute immediately in API request flow.
+4. In `queued` mode, API enqueues run jobs and worker runtimes claim + execute them asynchronously.
+5. Actions execute with bounded retry attempts.
+6. Condition steps evaluate payload paths and execute one branch.
+7. Failed terminal runs are marked `dead_lettered` with captured reason.
+8. Run + attempt history is persisted for tenant observability.
 
 ## API Endpoints (v1)
 
@@ -28,6 +30,12 @@ description: Trigger and action model for background business workflows.
 - `POST /api/workflows/:workflow_logical_name/execute`
 - `GET /api/workflows/runs?workflow_logical_name=&limit=50&offset=0`
 - `GET /api/workflows/runs/:run_id/attempts`
+
+Internal worker endpoint:
+
+- `POST /api/internal/worker/jobs/claim` (requires `Authorization: Bearer <WORKER_SHARED_SECRET>` and `x-qryvanta-worker-id`)
+- `POST /api/internal/worker/heartbeat` records worker liveness and claimed/executed/failed cycle counts.
+- `GET /api/internal/worker/jobs/stats?active_window_seconds=120` returns queue depth, expired leases, and active worker count.
 
 ## Maker Automation Canvas
 

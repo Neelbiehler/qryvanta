@@ -20,6 +20,7 @@ Our goal is to build a practical alternative to traditional enterprise business 
 ## Monorepo Layout
 
 - `apps/api`: Rust HTTP API binary (Axum)
+- `apps/worker`: Rust workflow worker runtime (queued execution mode)
 - `apps/web`: Next.js frontend
 - `apps/landing`: Next.js landing app
 - `apps/docs`: Fumadocs documentation website
@@ -43,6 +44,7 @@ Our goal is to build a practical alternative to traditional enterprise business 
 Default local ports:
 
 - API: `http://localhost:3001`
+- Worker: runs as a separate process when `WORKFLOW_EXECUTION_MODE=queued`
 - Web: `http://localhost:3000`
 - Landing: `http://localhost:3003`
 - Docs: `http://127.0.0.1:3002`
@@ -74,6 +76,7 @@ Keep auth-related URLs on `localhost` during local development to avoid passkey 
 - `cargo xcheck` - Rust checks
 - `cargo xclippy` - Rust lints
 - `cargo xtest` - Rust tests
+- `cargo run -p qryvanta-worker` - run workflow worker runtime
 
 ## Contributing
 

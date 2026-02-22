@@ -44,6 +44,15 @@ description: Configuration strategy for local, staging, and production environme
 | `SMTP_USERNAME` | Required if `EMAIL_PROVIDER=smtp` | SMTP username (must be non-empty) |
 | `SMTP_PASSWORD` | Required if `EMAIL_PROVIDER=smtp` | SMTP password (must be non-empty) |
 | `SMTP_FROM_ADDRESS` | Required if `EMAIL_PROVIDER=smtp` | Sender address used for auth/invite emails (must be non-empty and valid) |
+| `WORKFLOW_EXECUTION_MODE` | No | Workflow runtime mode (`inline` default, `queued` enables remote worker claim flow) |
+| `WORKER_SHARED_SECRET` | Required if `WORKFLOW_EXECUTION_MODE=queued` | Shared bearer token used by worker-to-API internal claim channel |
+| `WORKFLOW_WORKER_DEFAULT_LEASE_SECONDS` | No | Default worker job lease duration in seconds for internal claim requests (`30` default) |
+| `WORKFLOW_WORKER_MAX_CLAIM_LIMIT` | No | Upper bound for jobs returned per worker claim request (`25` default) |
+| `WORKER_API_BASE_URL` | Required for `qryvanta-worker` | API base URL used by worker process for internal claim requests |
+| `WORKER_ID` | No | Stable worker identity sent to API (`worker-<pid>` default when unset) |
+| `WORKER_CLAIM_LIMIT` | No | Number of jobs requested per worker poll (`10` default) |
+| `WORKER_LEASE_SECONDS` | No | Job lease duration requested by worker claim calls (`30` default) |
+| `WORKER_POLL_INTERVAL_MS` | No | Worker poll interval in milliseconds (`1500` default) |
 | `NEXT_PUBLIC_API_BASE_URL` | No | Browser-facing API base URL for web app |
 
 For local passkey and session stability, keep `FRONTEND_URL`, `WEBAUTHN_RP_ORIGIN`, and `NEXT_PUBLIC_API_BASE_URL` aligned to `localhost` hosts.

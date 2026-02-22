@@ -165,6 +165,7 @@ pub fn build_app_state(pool: PgPool, config: &ApiConfig) -> Result<AppState, App
                 audit_repository.clone(),
             )),
             audit_repository.clone(),
+            config.workflow_execution_mode,
         ),
         mfa_service,
         rate_limit_service,
@@ -174,6 +175,9 @@ pub fn build_app_state(pool: PgPool, config: &ApiConfig) -> Result<AppState, App
         frontend_url: config.frontend_url.clone(),
         bootstrap_token: config.bootstrap_token.clone(),
         bootstrap_tenant_id: config.bootstrap_tenant_id,
+        worker_shared_secret: config.worker_shared_secret.clone(),
+        workflow_worker_default_lease_seconds: config.workflow_worker_default_lease_seconds,
+        workflow_worker_max_claim_limit: config.workflow_worker_max_claim_limit,
     })
 }
 

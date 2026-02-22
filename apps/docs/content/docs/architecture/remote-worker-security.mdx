@@ -1,0 +1,49 @@
+---
+title: Remote Worker Security Model
+description: Threat model and security boundaries for queued workflow workers.
+---
+
+## Scope
+
+This model applies when `WORKFLOW_EXECUTION_MODE=queued` and one or more `qryvanta-worker` processes execute workflow runs outside API request handlers.
+
+## Trust Boundaries
+
+1. Browser/user traffic terminates at API session/auth middleware.
+2. Worker traffic uses a separate internal channel (`/api/internal/worker/jobs/claim`) with bearer-token authentication.
+3. Workflow workers use database credentials to execute workflow actions and persist run outcomes.
+
+## Worker Auth and Transport
+
+- Worker claim requests require `Authorization: Bearer <WORKER_SHARED_SECRET>`.
+- Worker identity is explicit via `x-qryvanta-worker-id` and used for job leasing.
+- Worker heartbeat and queue-stats endpoints share the same internal auth model.
+- Internal worker routes bypass browser same-origin checks and rely on worker auth middleware.
+- Operators should restrict internal route reachability to private networks or service mesh paths.
+
+## Threat Scenarios and Controls
+
+### RCE (Remote Code Execution)
+
+- Workflow actions are constrained to platform-defined action types (`log_message`, `create_runtime_record`).
+- No user-supplied executable code is evaluated in worker runtime.
+- Worker binaries should run with least privilege and isolated OS/container identities.
+
+### XSS (Cross-Site Scripting)
+
+- Worker endpoints are not browser-facing APIs and do not use session cookies.
+- Browser mutation defenses remain active for non-worker routes.
+- Workflow payloads are treated as data and should still be escaped/sanitized at presentation boundaries in web clients.
+
+### SQLi (SQL Injection)
+
+- Queue claims, run updates, and metadata writes use parameterized SQL via repository adapters.
+- Tenant IDs are explicit in workflow repository operations to preserve tenant scope isolation.
+- Worker-auth headers are never interpolated into SQL statements.
+
+## Operational Hardening
+
+- Rotate `WORKER_SHARED_SECRET` on a fixed schedule and after incident response events.
+- Use distinct DB credentials for worker and API processes when infrastructure supports role scoping.
+- Monitor queue lease churn (`leased` jobs with repeated expiry) as a reliability and abuse signal.
+- Keep worker nodes patched and restart on known-bad runtime states.

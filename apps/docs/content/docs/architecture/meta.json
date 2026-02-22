@@ -5,6 +5,7 @@
     "database",
     "auth-and-sessions",
     "rust-layers",
-    "runtime-components"
+    "runtime-components",
+    "remote-worker-security"
   ]
 }

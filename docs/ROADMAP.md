@@ -81,7 +81,7 @@ Exit criteria:
 ## Phase 4: Automation Runtime
 
 Status:
-- Backlog
+- In progress
 
 Target outcome:
 - Event and schedule-driven workflows.
@@ -91,6 +91,7 @@ Scope:
 2. Implement execution runtime and worker loop.
 3. Add retry policy and dead-letter handling.
 4. Store execution history for observability.
+5. Support queued worker execution with authenticated worker claim channel.
 
 Exit criteria:
 - Workflow triggers execute reliably with traceable run history.

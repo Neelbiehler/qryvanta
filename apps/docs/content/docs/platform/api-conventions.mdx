@@ -66,6 +66,12 @@ Keep handlers focused on:
 - `GET /api/workflows/runs?workflow_logical_name=&limit=50&offset=0` lists workflow execution runs.
 - `GET /api/workflows/runs/:run_id/attempts` lists attempt history for one workflow run.
 
+Internal worker APIs:
+
+- `POST /api/internal/worker/jobs/claim` claims queued workflow jobs for one worker identity.
+- `POST /api/internal/worker/heartbeat` updates worker heartbeat and cycle counters.
+- `GET /api/internal/worker/jobs/stats` returns aggregate queue and active worker metrics.
+
 ## Security Admin Endpoints
 
 - `GET /api/security/roles` lists tenant roles and grants.

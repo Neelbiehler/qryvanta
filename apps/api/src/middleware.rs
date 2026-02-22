@@ -15,6 +15,18 @@ use crate::state::AppState;
 /// of activity to limit the window for session hijacking.
 const ABSOLUTE_SESSION_TIMEOUT_SECONDS: i64 = 8 * 60 * 60;
 
+#[derive(Debug, Clone)]
+pub struct WorkerIdentity {
+    worker_id: String,
+}
+
+impl WorkerIdentity {
+    #[must_use]
+    pub fn worker_id(&self) -> &str {
+        self.worker_id.as_str()
+    }
+}
+
 pub async fn require_auth(
     session: Session,
     mut request: Request,
@@ -52,6 +64,10 @@ pub async fn require_same_origin_for_mutations(
     request: Request,
     next: Next,
 ) -> ApiResult<Response> {
+    if request.uri().path().starts_with("/api/internal/worker/") {
+        return Ok(next.run(request).await);
+    }
+
     if is_state_changing_method(request.method()) {
         let headers = request.headers();
 
@@ -78,6 +94,49 @@ pub async fn require_same_origin_for_mutations(
             return Err(AppError::Unauthorized("origin validation failed".to_owned()).into());
         }
     }
+
+    Ok(next.run(request).await)
+}
+
+pub async fn require_worker_auth(
+    State(state): State<AppState>,
+    mut request: Request,
+    next: Next,
+) -> ApiResult<Response> {
+    let configured_secret = state
+        .worker_shared_secret
+        .as_deref()
+        .ok_or_else(|| AppError::Unauthorized("worker auth is not configured".to_owned()))?;
+
+    let authorization_header = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(|| AppError::Unauthorized("worker authorization header missing".to_owned()))?;
+
+    let provided_secret = authorization_header
+        .strip_prefix("Bearer ")
+        .map(str::trim)
+        .ok_or_else(|| AppError::Unauthorized("worker auth scheme must be Bearer".to_owned()))?;
+
+    if provided_secret != configured_secret {
+        return Err(AppError::Unauthorized("worker auth token is invalid".to_owned()).into());
+    }
+
+    let worker_id = request
+        .headers()
+        .get("x-qryvanta-worker-id")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            AppError::Unauthorized("x-qryvanta-worker-id header is required".to_owned())
+        })?
+        .to_owned();
+
+    request
+        .extensions_mut()
+        .insert(WorkerIdentity { worker_id });
 
     Ok(next.run(request).await)
 }

@@ -9,7 +9,7 @@ description: Deployment expectations for running Qryvanta on your own infrastruc
 - Web app
 - Docs app
 - Postgres database
-- Background worker process
+- Background worker process (`qryvanta-worker`) when workflow execution is queued
 - Optional cache/queue service
 
 ## Packaging Direction
@@ -25,3 +25,13 @@ description: Deployment expectations for running Qryvanta on your own infrastruc
 - Secrets managed outside source control
 - Database backups scheduled and tested
 - Health endpoints monitored
+
+## Worker Runtime Startup
+
+When `WORKFLOW_EXECUTION_MODE=queued`, run at least one worker process:
+
+```bash
+cargo run -p qryvanta-worker
+```
+
+Scale horizontally by increasing worker replicas; each worker claims leased jobs with `x-qryvanta-worker-id` identity.
