@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "predev": "pnpm --filter @qryvanta/ui build",
-    "dev": "next dev -p 3000",
+    "dev": "next dev --webpack -p 3000",
     "prebuild": "pnpm --filter @qryvanta/ui build",
     "build": "next build",
     "start": "next start",

@@ -16,13 +16,15 @@ import {
   Avatar,
   AvatarFallback,
   Button,
+  Input,
+  StatusBadge,
+} from "@qryvanta/ui";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  Input,
-  StatusBadge,
-} from "@qryvanta/ui";
+} from "@qryvanta/ui/dropdown-menu";
 import { apiFetch, type UserIdentityResponse } from "@/lib/api";
 import {
   readAccessibleSurfaces,
