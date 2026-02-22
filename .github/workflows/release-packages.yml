@@ -1,7 +1,6 @@
 name: release-packages
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - main
@@ -13,7 +12,6 @@ permissions:
 
 jobs:
   release:
-    if: ${{ secrets.NPM_TOKEN != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -31,12 +29,26 @@ jobs:
       - name: Verify UI package
         run: pnpm --filter @qryvanta/ui check && pnpm --filter @qryvanta/ui build
 
+      - name: Check npm token availability
+        id: token_check
+        run: |
+          if [ -n "${NPM_TOKEN}" ]; then
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+            echo "NPM_TOKEN is not configured; release step will be skipped."
+          fi
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - name: Configure npm authentication
+        if: steps.token_check.outputs.has_token == 'true'
         run: echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create release PR or publish
+        if: steps.token_check.outputs.has_token == 'true'
         uses: changesets/action@v1
         with:
           version: pnpm changeset:version
