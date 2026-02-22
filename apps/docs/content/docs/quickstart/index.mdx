@@ -1,27 +1,56 @@
 ---
 title: Quickstart
-description: Install prerequisites and run Qryvanta locally.
+description: First-run steps for installing dependencies and running Qryvanta locally.
 ---
+
+Qryvanta is in active development and is not ready for production use yet.
+
+Use this page as the canonical local setup path.
 
 ## Prerequisites
 
 - Rust stable (`rustup`)
 - Node.js 22+
 - pnpm 10+
+- Docker + Docker Compose
 
-## Install and Run
+## First Run
+
+1. Install workspace dependencies:
 
 ```bash
 pnpm install
+```
+
+2. Start local infrastructure:
+
+```bash
+docker compose up -d
+```
+
+3. Create local environment file:
+
+```bash
+cp .env.example .env
+```
+
+4. Run baseline Rust checks:
+
+```bash
 cargo xcheck
+```
+
+5. Start development apps:
+
+```bash
 pnpm dev
 ```
 
-Services:
+Default local services:
 
-- API: `http://127.0.0.1:3001`
-- Web: `http://127.0.0.1:3000`
-- Landing: `http://127.0.0.1:3003`
+- API: `http://localhost:3001`
+- Web: `http://localhost:3000`
+- Landing: `http://localhost:3003`
 - Docs: `http://127.0.0.1:3002`
 
 ## Verify Baseline
@@ -35,3 +64,9 @@ Expected:
 ```json
 {"status":"ok"}
 ```
+
+## Next Pages
+
+- `Docker Setup`: infrastructure details and env bootstrap guidance.
+- `Local Development`: day-to-day commands and quality gates.
+- `Landing App`: run and adjust the public site in `apps/landing`.

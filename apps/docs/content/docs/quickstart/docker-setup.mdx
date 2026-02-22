@@ -1,6 +1,6 @@
 ---
 title: Docker Setup
-description: Start PostgreSQL locally for Phase 1 development.
+description: Start local infrastructure required for API and web development.
 ---
 
 ## Prerequisites
@@ -8,7 +8,7 @@ description: Start PostgreSQL locally for Phase 1 development.
 - Docker Desktop (or Docker Engine) with Compose support
 - Port `5432` available
 
-## Start Local Infrastructure
+## Start Infrastructure
 
 ```bash
 docker compose up -d
@@ -24,7 +24,7 @@ This starts:
 cp .env.example .env
 ```
 
-Set these values before starting the API:
+Before using auth flows, set these values in `.env`:
 
 - `AUTH_BOOTSTRAP_TOKEN`
 - `SESSION_SECRET`
@@ -38,3 +38,9 @@ docker compose ps
 ```
 
 `qryvanta-postgres` should show healthy status before running API/web apps.
+
+## Stop Infrastructure
+
+```bash
+docker compose down
+```

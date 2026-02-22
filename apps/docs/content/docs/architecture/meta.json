@@ -1,6 +1,7 @@
 {
   "title": "Architecture",
   "pages": [
+    "index",
     "overview",
     "database",
     "auth-and-sessions",

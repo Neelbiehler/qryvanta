@@ -1,24 +1,33 @@
 ---
 title: Qryvanta Documentation
-description: Open-source, self-hostable platform docs for architecture, metadata runtime, automation, and operations.
+description: Open-source docs for local setup, architecture boundaries, platform behavior, and self-hosting operations.
 ---
 
-Qryvanta is a metadata-driven business platform built to be a practical, open alternative to closed, proprietary business platform suites.
+Qryvanta is an open-source, self-hostable, metadata-driven business platform.
 
-Use this documentation to move from local setup to platform implementation and production operations.
+Qryvanta is in active development and is not ready for production use yet.
+
+Use this documentation to run the project locally, understand current implementation boundaries, and contribute safely.
 
 Primary project domain: `qryvanta.org`. The `qryvanta.com` domain is reserved for a future cloud offering.
 
+## Start Here
+
+1. Follow `Quickstart` to run API, web, landing, and docs locally.
+2. Read `Architecture` before changing runtime behavior or persistence.
+3. Use `Platform` to understand metadata runtime, app builder scope, automation, and API contracts.
+4. Use `Operations` for environment configuration and deployment guidance.
+5. Use `Development` for standards, contribution workflow, and roadmap status.
+
 ## Documentation Areas
 
-- `Quickstart`: install dependencies, run the stack, and validate baseline health.
-- `Architecture`: understand layer boundaries and runtime composition.
-- `Platform`: design metadata models, app surfaces, automations, and API behavior.
-- `Operations`: self-hosting, configuration, and reliability controls.
-- `Development`: engineering standards and roadmap sequencing.
+- `Quickstart`: first-run sequence and local development loop.
+- `Architecture`: monorepo boundaries, auth/session model, database model, worker trust boundaries.
+- `Platform`: metadata runtime model, app builder scope, UX surfaces, automation engine, API route conventions.
+- `Operations`: self-hosting baseline, configuration variables, email delivery, observability targets.
+- `Development`: engineering standards, docs policy, API contract workflow, roadmap.
 
-## First Steps
+## Product Boundary
 
-1. Open `Quickstart` and run the local environment.
-2. Read `Architecture` before adding new modules.
-3. Follow `Development` standards for all pull requests.
+- `qryvanta.org` docs cover the OSS platform.
+- Cloud-control-plane behavior belongs to `qryvanta.com` and is documented separately.

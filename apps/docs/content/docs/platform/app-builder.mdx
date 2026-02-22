@@ -3,9 +3,9 @@ title: App Builder
 description: Render forms and views directly from metadata definitions.
 ---
 
-## Objective
+Phase status: in progress.
 
-Allow product admins to configure working applications without code changes.
+The current app-builder baseline supports metadata-driven workspace behavior without custom frontend deployments.
 
 ## Implemented Baseline
 
@@ -13,44 +13,48 @@ Allow product admins to configure working applications without code changes.
 - App navigation bound to metadata entities.
 - App access granted by assigned roles.
 - App-scoped presentation metadata on entity bindings:
-  - `form_field_logical_names` for worker create-form field ordering
-  - `list_field_logical_names` for worker grid column ordering
+  - `form_field_logical_names` for create-form field order
+  - `list_field_logical_names` for grid column order
   - `default_view_mode` (`grid` | `json`) for initial workspace rendering
-- App-scoped role permissions per entity action:
-  - `read`
-  - `create`
-  - `update`
-  - `delete`
+- App-scoped role permissions per entity action (`read`, `create`, `update`, `delete`).
 - Worker runtime pages resolve forms from published metadata schemas.
 - Worker runtime resolves per-app entity presentation overrides before rendering forms and list views.
 - Entity workbench runtime query supports typed condition arrays (logical mode, operators, sort) with local saved presets (browser-local storage), including JSON import/export for sharing.
 - Maker and admin workbenches use sectioned command views (schema/runtime, app/navigation/permissions, roles/registration/temporary access) to reduce control-plane overload.
 - Worker entity workspaces provide command-bar style controls (create toggle, refresh, grid/json view mode, quick search) to support high-throughput record handling.
 
-## Planned Builder Scope
+## Runtime Behavior
+
+Generated worker pages follow the same flow for each entity workspace:
+
+1. Read app and entity metadata through API contract types.
+2. Resolve effective permissions for the authenticated subject.
+3. Render forms and list views from published schema + app overrides.
+4. Apply server-side validation and return field-scoped errors.
+
+## Current Endpoints
+
+App-builder and workspace routes are documented in `API Conventions`:
+
+- `GET /api/apps`
+- `POST /api/apps`
+- `GET /api/apps/:app_logical_name/entities`
+- `POST /api/apps/:app_logical_name/entities`
+- `GET /api/apps/:app_logical_name/permissions`
+- `PUT /api/apps/:app_logical_name/permissions`
+- `GET /api/workspace/apps`
+- `GET /api/workspace/apps/:app_logical_name/navigation`
+- `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/schema`
+- `GET|POST /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/records`
+- `POST /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/records/query`
+- `GET|PUT|DELETE /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/records/:record_id`
+
+## Planned Scope
 
 - Entity and field management UI
 - Form layout editor
 - List view configuration (columns, sorting, filtering)
 - Saved view presets
-
-## Runtime UX
-
-Generated pages should:
-
-1. Read metadata from API contracts.
-2. Render field controls by type.
-3. Apply server-side validation and permissions.
-4. Surface errors with field-level context.
-
-Current worker entry points:
-
-- `GET /api/workspace/apps`
-- `GET /api/workspace/apps/:app/navigation`
-- `GET /api/workspace/apps/:app/entities/:entity/schema`
-- `GET|POST /api/workspace/apps/:app/entities/:entity/records`
-- `POST /api/workspace/apps/:app/entities/:entity/records/query`
-- `GET|PUT|DELETE /api/workspace/apps/:app/entities/:entity/records/:record_id`
 
 ## Non-Goals (Current)
 

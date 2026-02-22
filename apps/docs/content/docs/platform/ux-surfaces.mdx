@@ -3,23 +3,25 @@ title: UX Surfaces
 description: Persona-specific product surfaces for Admin Center, Maker Center, and Worker Apps.
 ---
 
-## Why Qryvanta Splits Surfaces
+Phase status: in progress.
 
-Qryvanta now separates the product into three distinct UX surfaces so each persona lands in the right workspace with clear boundaries:
+## Surface Model
 
-- **Admin Center** (`/admin/*`) for tenant administration and security governance.
-- **Maker Center** (`/maker/*`) for low-code modeling and app configuration.
-- **Worker Apps** (`/worker/*`) for day-to-day operational app usage.
+Qryvanta separates the product into route-scoped surfaces so each persona enters the correct workspace with explicit access checks.
 
-This aligns with Phase 3 app-builder goals and removes the mixed-control-plane/runtime navigation from a single workspace shell.
+- Admin Center (`/admin/*`) for tenant administration and security governance.
+- Maker Center (`/maker/*`) for metadata and app configuration.
+- Worker Apps (`/worker/*`) for day-to-day operational usage.
+
+This removes mixed control-plane/runtime navigation from a single shell.
 
 ## Surface Boundaries
 
-| Surface      | Persona                           | URL Prefix | Primary Navigation                            |
-| ------------ | --------------------------------- | ---------- | --------------------------------------------- |
-| Admin Center | Tenant admins, security operators | `/admin`   | Overview, Roles, Audit Log, Security Settings |
-| Maker Center | Builders, solution engineers      | `/maker`   | Overview, Entities, App Studio                |
-| Worker Apps  | End users, operators              | `/worker`  | Overview, My Apps                             |
+| Surface | Persona | URL Prefix | Primary Navigation |
+| --- | --- | --- | --- |
+| Admin Center | Tenant admins, security operators | `/admin` | Overview, Roles, Audit Log, Security Settings |
+| Maker Center | Builders, solution engineers | `/maker` | Overview, Entities, App Studio |
+| Worker Apps | End users, operators | `/worker` | Overview, My Apps |
 
 Each surface has:
 
@@ -27,41 +29,28 @@ Each surface has:
 2. Its own sidebar navigation.
 3. Explicit access checks before rendering children.
 
-## Shared Shell Conventions
-
-Surface shells now follow control-plane conventions inspired by enterprise builder tools:
+## Shared Shell Behavior
 
 - Sticky surface header with breadcrumb context.
-- Surface overview hubs at `/admin`, `/maker`, and `/worker` for quick entry routing.
-- Workbench pages use split rails (context panel + action/data panel) for faster operator orientation.
-- Command-jump input in the header (`/` keyboard shortcut) for fast navigation to known surface routes.
-- Active-state sidebar navigation for current section orientation.
-- Surface status chips to communicate current workspace mode at a glance.
+- Surface overview hubs at `/admin`, `/maker`, and `/worker`.
+- Split rails for workbench pages (context + action/data panel).
+- Header command-jump input (`/`) for route navigation.
+- Active-state sidebar navigation.
+- Surface status chips for workspace mode.
 
-These shell patterns are shared across Admin, Maker, and Worker surfaces to reduce context switching friction while keeping each surface's route boundary and permission model intact.
+These patterns are shared across all three surfaces to reduce context switching while preserving route and permission boundaries.
 
 Legacy URLs (`/entities`, `/apps`, `/security/*`) are preserved as redirects to the surface URLs.
 
-## Role-Based Entry Checks
+## Access Resolution
 
 Surface access is resolved server-side from RBAC permissions and returned by `GET /auth/me` as `accessible_surfaces`.
 
-The API resolves surfaces by mapping permissions to surfaces:
+Permission mapping baseline:
 
-- **Admin Center**: any of
-  - `security.role.manage`
-  - `security.audit.read`
-  - `security.invite.send`
-- **Maker Center**: any of
-  - `metadata.entity.read`
-  - `metadata.entity.create`
-  - `metadata.field.read`
-  - `metadata.field.write`
-- **Worker Apps**: any of
-  - `runtime.record.read`
-  - `runtime.record.read.own`
-  - `runtime.record.write`
-  - `runtime.record.write.own`
+- Admin Center: `security.role.manage`, `security.audit.read`, `security.invite.send`.
+- Maker Center: `metadata.entity.read`, `metadata.entity.create`, `metadata.field.read`, `metadata.field.write`.
+- Worker Apps: `runtime.record.read`, `runtime.record.read.own`, `runtime.record.write`, `runtime.record.write.own`.
 
 On the web app:
 
@@ -71,28 +60,8 @@ On the web app:
 
 API endpoint-level authorization is still enforced by application permission checks (surface access does not replace API authorization).
 
-## Persona Flows
-
-### Admin Flow
-
-1. Sign in.
-2. Land in **Admin Center** if admin permissions exist and no higher-priority surface is available.
-3. Manage roles, assignments, audit retention, and account security in `/admin/*`.
-
-### Maker Flow
-
-1. Sign in.
-2. Enter **Maker Center**.
-3. Create entities and fields, publish schemas, configure app/entity bindings and role permissions, and manage internal automation workflows.
-
-### Worker Flow
-
-1. Sign in.
-2. Enter **Worker Apps**.
-3. Open assigned apps and interact with runtime records based on app/entity capabilities.
-
 ## Operational Notes
 
 - Keep new pages within the correct surface route group.
 - Add new navigation items to the surface definition in `apps/web/src/lib/surfaces.ts`.
-- When adding new RBAC permissions that should unlock a surface, update `Surface::required_permissions()` in `crates/domain/src/security.rs`.
+- When adding new RBAC permissions that should grant access to a surface, update `Surface::required_permissions()` in `crates/domain/src/security.rs`.
