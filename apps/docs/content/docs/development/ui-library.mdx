@@ -6,6 +6,8 @@ description: Shared UI component package for consistent app surfaces.
 Qryvanta ships reusable web primitives from `@qryvanta/ui` in `packages/ui`.
 The package is based on shadcn patterns and is the default source for shared application components.
 
+`@qryvanta/ui` is publishable as a standalone npm package so other repositories (including `qryvanta.com`) can consume the same component library without source duplication.
+
 The current package includes standardized form primitives (`Input`, `Textarea`, `Checkbox`, `Select`), card/layout primitives, table primitives, accessible menu/avatar controls, feedback primitives (`Notice`), and workspace experience primitives (`PageHeader`, `StatusBadge`).
 
 ## Usage
@@ -43,3 +45,34 @@ Do not import from `apps/web/src/components/ui` for shared primitives.
 - Next.js apps should include `@qryvanta/ui` in `transpilePackages`.
 - Tailwind consumers should include `packages/ui/src` as a source so classes are detected.
 - Keep package APIs stable to avoid broad refactors across apps.
+
+## Versioning and Publish
+
+Release flow uses Changesets and GitHub Actions:
+
+1. Add package changes in `packages/ui`.
+2. Create a changeset with `pnpm changeset`.
+3. Merge to `main`.
+4. `.github/workflows/release-packages.yml` creates a release PR or publishes pending package versions.
+
+Local commands:
+
+```bash
+pnpm --filter @qryvanta/ui check
+pnpm --filter @qryvanta/ui build
+pnpm changeset
+pnpm changeset:version
+pnpm changeset:publish
+```
+
+The publish workflow requires `NPM_TOKEN` in repository secrets.
+
+## Consuming from `qryvanta.com`
+
+After first publish, install by version in the cloud repository:
+
+```bash
+pnpm add @qryvanta/ui@latest
+```
+
+This keeps shared primitives centralized while cloud-specific components remain in `qryvanta.com`.

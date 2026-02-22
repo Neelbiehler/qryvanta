@@ -10,6 +10,7 @@ node_modules
 out
 .turbo
 *.tsbuildinfo
+packages/ui/dist
 
 # Env
 .env

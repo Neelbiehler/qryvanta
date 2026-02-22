@@ -33,6 +33,21 @@ cp -R .agent.example .agent
 - Keep domain logic in `crates/domain` and use-cases in `crates/application`.
 - Update docs in the same PR for any externally meaningful change.
 
+## Shared Package Releases
+
+`@qryvanta/ui` is a publishable package from `packages/ui`.
+
+- Use `pnpm changeset` when changing package behavior or exports.
+- Validate package quality before release:
+
+```bash
+pnpm --filter @qryvanta/ui check
+pnpm --filter @qryvanta/ui build
+```
+
+- Release automation is handled by `.github/workflows/release-packages.yml` using Changesets.
+- Publishing requires `NPM_TOKEN` repository secret.
+
 ## Required Validation
 
 ```bash
