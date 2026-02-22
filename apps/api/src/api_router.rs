@@ -247,6 +247,24 @@ pub fn build_router(
         ))
         .layer(axum::Extension(invite_accept_rate_rule));
 
+    let worker_internal_routes = Router::new()
+        .route(
+            "/api/internal/worker/jobs/claim",
+            post(handlers::worker::claim_workflow_jobs_handler),
+        )
+        .route(
+            "/api/internal/worker/heartbeat",
+            post(handlers::worker::worker_heartbeat_handler),
+        )
+        .route(
+            "/api/internal/worker/jobs/stats",
+            get(handlers::worker::workflow_queue_stats_handler),
+        )
+        .route_layer(from_fn_with_state(
+            app_state.clone(),
+            middleware::require_worker_auth,
+        ));
+
     Ok(Router::new()
         .route("/health", get(handlers::health::health_handler))
         .route("/auth/bootstrap", post(auth::bootstrap_handler))
@@ -254,6 +272,7 @@ pub fn build_router(
         .merge(register_routes)
         .merge(forgot_password_routes)
         .merge(invite_accept_routes)
+        .merge(worker_internal_routes)
         .route("/auth/verify-email", post(auth::verify_email_handler))
         .route("/auth/logout", post(auth::logout_handler))
         .merge(protected_routes)

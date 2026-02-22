@@ -24,5 +24,13 @@ description: Planned runtime pieces for metadata, workflows, and operations.
 - Web app
 - Docs app
 - Database
-- Background worker runtime
+- Background worker runtime (`qryvanta-worker`) for queued workflow execution
 - Optional cache/queue for scale
+
+## Worker Queue Topology
+
+1. API creates workflow execution runs in `running` state.
+2. In queued mode, API enqueues run IDs into `workflow_execution_jobs`.
+3. Worker processes claim leased jobs through authenticated internal API requests.
+4. Workers execute run attempts and write run/attempt outcomes in tenant scope.
+5. Completed jobs are marked terminal (`completed` or `failed`) for operator triage.

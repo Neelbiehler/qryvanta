@@ -20,6 +20,7 @@
     "dev:web": "pnpm --filter @qryvanta/web dev",
     "dev:docs": "pnpm --filter @qryvanta/docs dev",
     "dev:api": "pnpm --filter @qryvanta/api dev",
+    "dev:worker": "cargo run -p qryvanta-worker",
     "rust:check": "cargo check --workspace --all-targets",
     "rust:test": "cargo test --workspace",
     "rust:lint": "cargo clippy --workspace --all-targets -- -D warnings",

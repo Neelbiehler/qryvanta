@@ -2,6 +2,7 @@ use std::env;
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 
+use qryvanta_application::WorkflowExecutionMode;
 use qryvanta_core::{AppError, TenantId};
 use tracing_subscriber::EnvFilter;
 
@@ -35,6 +36,10 @@ pub struct ApiConfig {
     pub bootstrap_tenant_id: Option<TenantId>,
     pub totp_encryption_key: String,
     pub email_provider: EmailProviderConfig,
+    pub workflow_execution_mode: WorkflowExecutionMode,
+    pub worker_shared_secret: Option<String>,
+    pub workflow_worker_default_lease_seconds: u32,
+    pub workflow_worker_max_claim_limit: usize,
 }
 
 impl ApiConfig {
@@ -104,6 +109,35 @@ impl ApiConfig {
             }
         };
 
+        let workflow_execution_mode =
+            match env::var("WORKFLOW_EXECUTION_MODE").unwrap_or_else(|_| "inline".to_owned()) {
+                value if value.eq_ignore_ascii_case("inline") => WorkflowExecutionMode::Inline,
+                value if value.eq_ignore_ascii_case("queued") => WorkflowExecutionMode::Queued,
+                other => {
+                    return Err(AppError::Validation(format!(
+                        "WORKFLOW_EXECUTION_MODE must be either 'inline' or 'queued', got '{other}'"
+                    )));
+                }
+            };
+
+        let worker_shared_secret = env::var("WORKER_SHARED_SECRET")
+            .ok()
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty());
+
+        if matches!(workflow_execution_mode, WorkflowExecutionMode::Queued)
+            && worker_shared_secret.is_none()
+        {
+            return Err(AppError::Validation(
+                "WORKER_SHARED_SECRET is required when WORKFLOW_EXECUTION_MODE=queued".to_owned(),
+            ));
+        }
+
+        let workflow_worker_default_lease_seconds =
+            parse_env_u32("WORKFLOW_WORKER_DEFAULT_LEASE_SECONDS", 30)?;
+        let workflow_worker_max_claim_limit =
+            parse_env_usize("WORKFLOW_WORKER_MAX_CLAIM_LIMIT", 25)?;
+
         Ok(Self {
             migrate_only,
             database_url,
@@ -118,6 +152,10 @@ impl ApiConfig {
             bootstrap_tenant_id,
             totp_encryption_key,
             email_provider,
+            workflow_execution_mode,
+            worker_shared_secret,
+            workflow_worker_default_lease_seconds,
+            workflow_worker_max_claim_limit,
         })
     }
 
@@ -150,4 +188,22 @@ fn required_non_empty_env(name: &str) -> Result<String, AppError> {
     }
 
     Ok(value)
+}
+
+fn parse_env_u32(name: &str, default: u32) -> Result<u32, AppError> {
+    match env::var(name) {
+        Ok(value) => value.parse::<u32>().map_err(|error| {
+            AppError::Validation(format!("invalid {name} value '{value}': {error}"))
+        }),
+        Err(_) => Ok(default),
+    }
+}
+
+fn parse_env_usize(name: &str, default: usize) -> Result<usize, AppError> {
+    match env::var(name) {
+        Ok(value) => value.parse::<usize>().map_err(|error| {
+            AppError::Validation(format!("invalid {name} value '{value}': {error}"))
+        }),
+        Err(_) => Ok(default),
+    }
 }

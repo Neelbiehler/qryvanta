@@ -50,8 +50,9 @@ pub use user_service::{
     AuthOutcome, PasswordHasher, RegisterParams, UserRecord, UserRepository, UserService,
 };
 pub use workflow_ports::{
-    CompleteWorkflowRunInput, CreateWorkflowRunInput, SaveWorkflowInput, WorkflowRepository,
-    WorkflowRun, WorkflowRunAttempt, WorkflowRunAttemptStatus, WorkflowRunListQuery,
-    WorkflowRunStatus, WorkflowRuntimeRecordService,
+    ClaimedWorkflowJob, CompleteWorkflowRunInput, CreateWorkflowRunInput, SaveWorkflowInput,
+    WorkflowExecutionMode, WorkflowQueueStats, WorkflowRepository, WorkflowRun, WorkflowRunAttempt,
+    WorkflowRunAttemptStatus, WorkflowRunListQuery, WorkflowRunStatus,
+    WorkflowRuntimeRecordService, WorkflowWorkerHeartbeatInput,
 };
 pub use workflow_service::WorkflowService;

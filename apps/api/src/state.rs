@@ -29,4 +29,7 @@ pub struct AppState {
     pub frontend_url: String,
     pub bootstrap_token: String,
     pub bootstrap_tenant_id: Option<TenantId>,
+    pub worker_shared_secret: Option<String>,
+    pub workflow_worker_default_lease_seconds: u32,
+    pub workflow_worker_max_claim_limit: usize,
 }

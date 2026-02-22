@@ -6,6 +6,15 @@ use qryvanta_domain::{
 };
 use serde_json::Value;
 
+/// Workflow execution mode used by application services.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkflowExecutionMode {
+    /// Execute workflows inside API request flow.
+    Inline,
+    /// Queue workflow runs and execute from worker runtimes.
+    Queued,
+}
+
 /// Workflow creation/update payload.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SaveWorkflowInput {
@@ -170,6 +179,49 @@ pub struct CompleteWorkflowRunInput {
     pub dead_letter_reason: Option<String>,
 }
 
+/// Claimed queued workflow job returned to one worker.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClaimedWorkflowJob {
+    /// Job identifier.
+    pub job_id: String,
+    /// Tenant scope for the job.
+    pub tenant_id: TenantId,
+    /// Associated workflow run identifier.
+    pub run_id: String,
+    /// Workflow definition snapshot used for execution.
+    pub workflow: WorkflowDefinition,
+    /// Trigger payload captured when the run was enqueued.
+    pub trigger_payload: Value,
+}
+
+/// Worker heartbeat payload persisted for queue observability.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkflowWorkerHeartbeatInput {
+    /// Number of jobs claimed in the latest worker cycle.
+    pub claimed_jobs: u32,
+    /// Number of jobs completed in the latest worker cycle.
+    pub executed_jobs: u32,
+    /// Number of jobs that failed in the latest worker cycle.
+    pub failed_jobs: u32,
+}
+
+/// Aggregated queue stats for operations visibility.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorkflowQueueStats {
+    /// Jobs waiting to be claimed.
+    pub pending_jobs: i64,
+    /// Jobs currently leased by workers.
+    pub leased_jobs: i64,
+    /// Jobs completed successfully.
+    pub completed_jobs: i64,
+    /// Jobs marked failed at queue level.
+    pub failed_jobs: i64,
+    /// Leased jobs whose lease is expired.
+    pub expired_leases: i64,
+    /// Workers with a heartbeat in the active window.
+    pub active_workers: i64,
+}
+
 /// Repository port for workflow definitions and execution history.
 #[async_trait]
 pub trait WorkflowRepository: Send + Sync {
@@ -203,6 +255,44 @@ pub trait WorkflowRepository: Send + Sync {
         tenant_id: TenantId,
         input: CreateWorkflowRunInput,
     ) -> AppResult<WorkflowRun>;
+
+    /// Enqueues one workflow run for worker execution.
+    async fn enqueue_run_job(&self, tenant_id: TenantId, run_id: &str) -> AppResult<()>;
+
+    /// Claims queued jobs for one worker with a bounded lease.
+    async fn claim_jobs(
+        &self,
+        worker_id: &str,
+        limit: usize,
+        lease_seconds: u32,
+    ) -> AppResult<Vec<ClaimedWorkflowJob>>;
+
+    /// Marks one leased job as completed.
+    async fn complete_job(
+        &self,
+        tenant_id: TenantId,
+        job_id: &str,
+        worker_id: &str,
+    ) -> AppResult<()>;
+
+    /// Marks one leased job as failed with an error message.
+    async fn fail_job(
+        &self,
+        tenant_id: TenantId,
+        job_id: &str,
+        worker_id: &str,
+        error_message: &str,
+    ) -> AppResult<()>;
+
+    /// Updates one worker heartbeat snapshot.
+    async fn upsert_worker_heartbeat(
+        &self,
+        worker_id: &str,
+        input: WorkflowWorkerHeartbeatInput,
+    ) -> AppResult<()>;
+
+    /// Returns aggregate queue and worker heartbeat stats.
+    async fn queue_stats(&self, active_window_seconds: u32) -> AppResult<WorkflowQueueStats>;
 
     /// Appends one attempt row to a workflow run.
     async fn append_run_attempt(

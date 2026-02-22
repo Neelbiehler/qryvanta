@@ -1,7 +1,8 @@
 use async_trait::async_trait;
 use qryvanta_application::{
-    CompleteWorkflowRunInput, CreateWorkflowRunInput, WorkflowRepository, WorkflowRun,
-    WorkflowRunAttempt, WorkflowRunAttemptStatus, WorkflowRunListQuery, WorkflowRunStatus,
+    ClaimedWorkflowJob, CompleteWorkflowRunInput, CreateWorkflowRunInput, WorkflowQueueStats,
+    WorkflowRepository, WorkflowRun, WorkflowRunAttempt, WorkflowRunAttemptStatus,
+    WorkflowRunListQuery, WorkflowRunStatus, WorkflowWorkerHeartbeatInput,
 };
 use qryvanta_core::{AppError, AppResult, TenantId};
 use qryvanta_domain::{WorkflowAction, WorkflowDefinition, WorkflowStep, WorkflowTrigger};
@@ -58,6 +59,34 @@ struct WorkflowRunAttemptRow {
     status: String,
     error_message: Option<String>,
     executed_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, FromRow)]
+struct ClaimedWorkflowJobRow {
+    job_id: uuid::Uuid,
+    tenant_id: uuid::Uuid,
+    run_id: uuid::Uuid,
+    trigger_payload: Value,
+    logical_name: String,
+    display_name: String,
+    description: Option<String>,
+    trigger_type: String,
+    trigger_entity_logical_name: Option<String>,
+    action_type: String,
+    action_entity_logical_name: Option<String>,
+    action_payload: Value,
+    action_steps: Option<Value>,
+    max_attempts: i16,
+    is_enabled: bool,
+}
+
+#[derive(Debug, FromRow)]
+struct WorkflowQueueStatsRow {
+    pending_jobs: i64,
+    leased_jobs: i64,
+    completed_jobs: i64,
+    failed_jobs: i64,
+    expired_leases: i64,
 }
 
 #[async_trait]
@@ -294,6 +323,309 @@ impl WorkflowRepository for PostgresWorkflowRepository {
         })?;
 
         workflow_run_from_row(row)
+    }
+
+    async fn enqueue_run_job(&self, tenant_id: TenantId, run_id: &str) -> AppResult<()> {
+        let run_uuid = uuid::Uuid::parse_str(run_id).map_err(|error| {
+            AppError::Validation(format!("invalid workflow run id '{run_id}': {error}"))
+        })?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO workflow_execution_jobs (
+                tenant_id,
+                run_id,
+                status,
+                created_at,
+                updated_at
+            )
+            VALUES ($1, $2, 'pending', now(), now())
+            ON CONFLICT (run_id)
+            DO NOTHING
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(run_uuid)
+        .execute(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to enqueue workflow run '{run_id}' for tenant '{tenant_id}': {error}"
+            ))
+        })?;
+
+        Ok(())
+    }
+
+    async fn claim_jobs(
+        &self,
+        worker_id: &str,
+        limit: usize,
+        lease_seconds: u32,
+    ) -> AppResult<Vec<ClaimedWorkflowJob>> {
+        let mut transaction = self.pool.begin().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to start workflow job claim transaction: {error}"
+            ))
+        })?;
+
+        let claim_rows = sqlx::query_as::<_, ClaimedWorkflowJobRow>(
+            r#"
+            WITH candidate_jobs AS (
+                SELECT id
+                FROM workflow_execution_jobs
+                WHERE status = 'pending'
+                   OR (status = 'leased' AND lease_expires_at < now())
+                ORDER BY created_at ASC
+                LIMIT $1
+                FOR UPDATE SKIP LOCKED
+            ),
+            leased_jobs AS (
+                UPDATE workflow_execution_jobs jobs
+                SET
+                    status = 'leased',
+                    leased_by = $2,
+                    lease_expires_at = now() + make_interval(secs => $3::INT),
+                    updated_at = now(),
+                    last_error = NULL
+                FROM candidate_jobs
+                WHERE jobs.id = candidate_jobs.id
+                RETURNING jobs.id, jobs.tenant_id, jobs.run_id
+            )
+            SELECT
+                leased_jobs.id AS job_id,
+                leased_jobs.tenant_id,
+                leased_jobs.run_id,
+                runs.trigger_payload,
+                workflows.logical_name,
+                workflows.display_name,
+                workflows.description,
+                workflows.trigger_type,
+                workflows.trigger_entity_logical_name,
+                workflows.action_type,
+                workflows.action_entity_logical_name,
+                workflows.action_payload,
+                workflows.action_steps,
+                workflows.max_attempts,
+                workflows.is_enabled
+            FROM leased_jobs
+            INNER JOIN workflow_execution_runs runs
+                ON runs.id = leased_jobs.run_id
+               AND runs.tenant_id = leased_jobs.tenant_id
+            INNER JOIN workflow_definitions workflows
+                ON workflows.tenant_id = runs.tenant_id
+               AND workflows.logical_name = runs.workflow_logical_name
+            ORDER BY runs.started_at ASC
+            "#,
+        )
+        .bind(i64::try_from(limit).map_err(|error| {
+            AppError::Validation(format!("invalid workflow claim limit: {error}"))
+        })?)
+        .bind(worker_id)
+        .bind(i32::try_from(lease_seconds).map_err(|error| {
+            AppError::Validation(format!("invalid workflow lease_seconds: {error}"))
+        })?)
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to claim workflow jobs for worker '{worker_id}': {error}"
+            ))
+        })?;
+
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit workflow job claim transaction: {error}"
+            ))
+        })?;
+
+        claim_rows
+            .into_iter()
+            .map(claimed_workflow_job_from_row)
+            .collect()
+    }
+
+    async fn complete_job(
+        &self,
+        tenant_id: TenantId,
+        job_id: &str,
+        worker_id: &str,
+    ) -> AppResult<()> {
+        let job_uuid = uuid::Uuid::parse_str(job_id).map_err(|error| {
+            AppError::Validation(format!("invalid workflow job id '{job_id}': {error}"))
+        })?;
+
+        let result = sqlx::query(
+            r#"
+            UPDATE workflow_execution_jobs
+            SET
+                status = 'completed',
+                lease_expires_at = NULL,
+                updated_at = now()
+            WHERE tenant_id = $1
+              AND id = $2
+              AND leased_by = $3
+              AND status = 'leased'
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(job_uuid)
+        .bind(worker_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to complete workflow job '{job_id}' for tenant '{tenant_id}' worker '{worker_id}': {error}"
+            ))
+        })?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::Conflict(format!(
+                "workflow job '{job_id}' is not currently leased by worker '{worker_id}'"
+            )));
+        }
+
+        Ok(())
+    }
+
+    async fn fail_job(
+        &self,
+        tenant_id: TenantId,
+        job_id: &str,
+        worker_id: &str,
+        error_message: &str,
+    ) -> AppResult<()> {
+        let job_uuid = uuid::Uuid::parse_str(job_id).map_err(|error| {
+            AppError::Validation(format!("invalid workflow job id '{job_id}': {error}"))
+        })?;
+
+        let result = sqlx::query(
+            r#"
+            UPDATE workflow_execution_jobs
+            SET
+                status = 'failed',
+                lease_expires_at = NULL,
+                updated_at = now(),
+                last_error = $4
+            WHERE tenant_id = $1
+              AND id = $2
+              AND leased_by = $3
+              AND status = 'leased'
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(job_uuid)
+        .bind(worker_id)
+        .bind(error_message)
+        .execute(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to mark workflow job '{job_id}' as failed for tenant '{tenant_id}' worker '{worker_id}': {error}"
+            ))
+        })?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::Conflict(format!(
+                "workflow job '{job_id}' is not currently leased by worker '{worker_id}'"
+            )));
+        }
+
+        Ok(())
+    }
+
+    async fn upsert_worker_heartbeat(
+        &self,
+        worker_id: &str,
+        input: WorkflowWorkerHeartbeatInput,
+    ) -> AppResult<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO workflow_worker_heartbeats (
+                worker_id,
+                last_seen_at,
+                last_claimed_jobs,
+                last_executed_jobs,
+                last_failed_jobs,
+                updated_at
+            )
+            VALUES ($1, now(), $2, $3, $4, now())
+            ON CONFLICT (worker_id)
+            DO UPDATE SET
+                last_seen_at = now(),
+                last_claimed_jobs = EXCLUDED.last_claimed_jobs,
+                last_executed_jobs = EXCLUDED.last_executed_jobs,
+                last_failed_jobs = EXCLUDED.last_failed_jobs,
+                updated_at = now()
+            "#,
+        )
+        .bind(worker_id)
+        .bind(i64::from(input.claimed_jobs))
+        .bind(i64::from(input.executed_jobs))
+        .bind(i64::from(input.failed_jobs))
+        .execute(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to upsert workflow worker heartbeat for '{worker_id}': {error}"
+            ))
+        })?;
+
+        Ok(())
+    }
+
+    async fn queue_stats(&self, active_window_seconds: u32) -> AppResult<WorkflowQueueStats> {
+        let queue_stats = sqlx::query_as::<_, WorkflowQueueStatsRow>(
+            r#"
+            SELECT
+                COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0) AS pending_jobs,
+                COALESCE(SUM(CASE WHEN status = 'leased' THEN 1 ELSE 0 END), 0) AS leased_jobs,
+                COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0) AS completed_jobs,
+                COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) AS failed_jobs,
+                COALESCE(
+                    SUM(
+                        CASE
+                            WHEN status = 'leased' AND lease_expires_at < now() THEN 1
+                            ELSE 0
+                        END
+                    ),
+                    0
+                ) AS expired_leases
+            FROM workflow_execution_jobs
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!("failed to load workflow queue stats: {error}"))
+        })?;
+
+        let active_workers = sqlx::query_scalar::<_, i64>(
+            r#"
+            SELECT COUNT(*)
+            FROM workflow_worker_heartbeats
+            WHERE last_seen_at >= now() - make_interval(secs => $1::INT)
+            "#,
+        )
+        .bind(i32::try_from(active_window_seconds).map_err(|error| {
+            AppError::Validation(format!("invalid active heartbeat window: {error}"))
+        })?)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to load workflow active worker stats: {error}"
+            ))
+        })?;
+
+        Ok(WorkflowQueueStats {
+            pending_jobs: queue_stats.pending_jobs,
+            leased_jobs: queue_stats.leased_jobs,
+            completed_jobs: queue_stats.completed_jobs,
+            failed_jobs: queue_stats.failed_jobs,
+            expired_leases: queue_stats.expired_leases,
+            active_workers,
+        })
     }
 
     async fn append_run_attempt(
@@ -601,6 +933,31 @@ fn workflow_action_from_parts(
             "unknown workflow action_type '{action_type}'"
         ))),
     }
+}
+
+fn claimed_workflow_job_from_row(row: ClaimedWorkflowJobRow) -> AppResult<ClaimedWorkflowJob> {
+    let tenant_uuid = row.tenant_id;
+    let workflow = workflow_definition_from_row(WorkflowDefinitionRow {
+        logical_name: row.logical_name,
+        display_name: row.display_name,
+        description: row.description,
+        trigger_type: row.trigger_type,
+        trigger_entity_logical_name: row.trigger_entity_logical_name,
+        action_type: row.action_type,
+        action_entity_logical_name: row.action_entity_logical_name,
+        action_payload: row.action_payload,
+        action_steps: row.action_steps,
+        max_attempts: row.max_attempts,
+        is_enabled: row.is_enabled,
+    })?;
+
+    Ok(ClaimedWorkflowJob {
+        job_id: row.job_id.to_string(),
+        tenant_id: TenantId::from_uuid(tenant_uuid),
+        run_id: row.run_id.to_string(),
+        workflow,
+        trigger_payload: row.trigger_payload,
+    })
 }
 
 fn workflow_run_from_row(row: WorkflowRunRow) -> AppResult<WorkflowRun> {

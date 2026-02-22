@@ -11,9 +11,10 @@ use serde_json::Value;
 
 use crate::metadata_service::MetadataService;
 use crate::workflow_ports::{
-    CompleteWorkflowRunInput, CreateWorkflowRunInput, SaveWorkflowInput, WorkflowRepository,
-    WorkflowRun, WorkflowRunAttempt, WorkflowRunAttemptStatus, WorkflowRunListQuery,
-    WorkflowRunStatus, WorkflowRuntimeRecordService,
+    ClaimedWorkflowJob, CompleteWorkflowRunInput, CreateWorkflowRunInput, SaveWorkflowInput,
+    WorkflowExecutionMode, WorkflowQueueStats, WorkflowRepository, WorkflowRun, WorkflowRunAttempt,
+    WorkflowRunAttemptStatus, WorkflowRunListQuery, WorkflowRunStatus,
+    WorkflowRuntimeRecordService, WorkflowWorkerHeartbeatInput,
 };
 use crate::{AuditEvent, AuditRepository, AuthorizationService};
 
@@ -37,6 +38,7 @@ pub struct WorkflowService {
     repository: Arc<dyn WorkflowRepository>,
     runtime_record_service: Arc<dyn WorkflowRuntimeRecordService>,
     audit_repository: Arc<dyn AuditRepository>,
+    execution_mode: WorkflowExecutionMode,
 }
 
 impl WorkflowService {
@@ -47,12 +49,14 @@ impl WorkflowService {
         repository: Arc<dyn WorkflowRepository>,
         runtime_record_service: Arc<dyn WorkflowRuntimeRecordService>,
         audit_repository: Arc<dyn AuditRepository>,
+        execution_mode: WorkflowExecutionMode,
     ) -> Self {
         Self {
             authorization_service,
             repository,
             runtime_record_service,
             audit_repository,
+            execution_mode,
         }
     }
 
@@ -133,8 +137,16 @@ impl WorkflowService {
             )));
         }
 
-        self.execute_workflow_definition(actor, &workflow, trigger_payload)
-            .await
+        match self.execution_mode {
+            WorkflowExecutionMode::Inline => {
+                self.execute_workflow_definition(actor, &workflow, trigger_payload)
+                    .await
+            }
+            WorkflowExecutionMode::Queued => {
+                self.enqueue_workflow_definition(actor, &workflow, trigger_payload)
+                    .await
+            }
+        }
     }
 
     /// Dispatches runtime record created trigger across enabled workflows.
@@ -171,16 +183,164 @@ impl WorkflowService {
                 "triggered_by": actor.subject(),
             });
 
-            if self
-                .execute_workflow_definition(&workflow_actor, &workflow, payload)
-                .await
-                .is_ok()
-            {
+            let result = match self.execution_mode {
+                WorkflowExecutionMode::Inline => {
+                    self.execute_workflow_definition(&workflow_actor, &workflow, payload)
+                        .await
+                }
+                WorkflowExecutionMode::Queued => {
+                    self.enqueue_workflow_definition(&workflow_actor, &workflow, payload)
+                        .await
+                }
+            };
+
+            if result.is_ok() {
                 executed += 1;
             }
         }
 
         Ok(executed)
+    }
+
+    /// Claims queued workflow jobs for one worker.
+    pub async fn claim_jobs_for_worker(
+        &self,
+        worker_id: &str,
+        limit: usize,
+        lease_seconds: u32,
+    ) -> AppResult<Vec<ClaimedWorkflowJob>> {
+        if self.execution_mode != WorkflowExecutionMode::Queued {
+            return Err(AppError::Conflict(
+                "queued workflow execution mode is not enabled".to_owned(),
+            ));
+        }
+
+        if worker_id.trim().is_empty() {
+            return Err(AppError::Validation(
+                "worker_id must not be empty".to_owned(),
+            ));
+        }
+
+        if limit == 0 {
+            return Err(AppError::Validation(
+                "limit must be greater than zero".to_owned(),
+            ));
+        }
+
+        if lease_seconds == 0 {
+            return Err(AppError::Validation(
+                "lease_seconds must be greater than zero".to_owned(),
+            ));
+        }
+
+        self.repository
+            .claim_jobs(worker_id, limit, lease_seconds)
+            .await
+    }
+
+    /// Executes one claimed queued job and finalizes queue state.
+    pub async fn execute_claimed_job(
+        &self,
+        worker_id: &str,
+        job: ClaimedWorkflowJob,
+    ) -> AppResult<WorkflowRun> {
+        if self.execution_mode != WorkflowExecutionMode::Queued {
+            return Err(AppError::Conflict(
+                "queued workflow execution mode is not enabled".to_owned(),
+            ));
+        }
+
+        if worker_id.trim().is_empty() {
+            return Err(AppError::Validation(
+                "worker_id must not be empty".to_owned(),
+            ));
+        }
+
+        let job_id = job.job_id.clone();
+        let tenant_id = job.tenant_id;
+        let actor = UserIdentity::new(
+            format!("workflow-worker:{worker_id}"),
+            "Workflow Worker",
+            None,
+            tenant_id,
+        );
+
+        let run_result = self
+            .execute_existing_run(
+                &actor,
+                &job.workflow,
+                job.run_id.as_str(),
+                job.trigger_payload,
+            )
+            .await;
+
+        match run_result {
+            Ok(run) => {
+                self.repository
+                    .complete_job(tenant_id, job_id.as_str(), worker_id)
+                    .await?;
+                Ok(run)
+            }
+            Err(error) => {
+                let error_message = error.to_string();
+                if let Err(mark_error) = self
+                    .repository
+                    .fail_job(
+                        tenant_id,
+                        job_id.as_str(),
+                        worker_id,
+                        error_message.as_str(),
+                    )
+                    .await
+                {
+                    return Err(AppError::Internal(format!(
+                        "failed to execute claimed workflow job '{job_id}': {error}; additionally failed to mark queue job failed: {mark_error}"
+                    )));
+                }
+
+                Err(error)
+            }
+        }
+    }
+
+    /// Stores one worker heartbeat snapshot for queue observability.
+    pub async fn heartbeat_worker(
+        &self,
+        worker_id: &str,
+        input: WorkflowWorkerHeartbeatInput,
+    ) -> AppResult<()> {
+        if self.execution_mode != WorkflowExecutionMode::Queued {
+            return Err(AppError::Conflict(
+                "queued workflow execution mode is not enabled".to_owned(),
+            ));
+        }
+
+        if worker_id.trim().is_empty() {
+            return Err(AppError::Validation(
+                "worker_id must not be empty".to_owned(),
+            ));
+        }
+
+        self.repository
+            .upsert_worker_heartbeat(worker_id, input)
+            .await
+    }
+
+    /// Returns queue and worker heartbeat stats for operations.
+    pub async fn queue_stats(&self, active_window_seconds: u32) -> AppResult<WorkflowQueueStats> {
+        if self.execution_mode != WorkflowExecutionMode::Queued {
+            return Err(AppError::Conflict(
+                "queued workflow execution mode is not enabled".to_owned(),
+            ));
+        }
+
+        if active_window_seconds == 0 {
+            return Err(AppError::Validation(
+                "active_window_seconds must be greater than zero".to_owned(),
+            ));
+        }
+
+        self.repository.queue_stats(active_window_seconds).await
     }
 
     /// Lists workflow runs for operational traceability.
@@ -211,8 +371,32 @@ impl WorkflowService {
         workflow: &WorkflowDefinition,
         trigger_payload: Value,
     ) -> AppResult<WorkflowRun> {
-        let action_plan = self.resolve_action_plan(workflow, &trigger_payload)?;
+        let run = self
+            .repository
+            .create_run(
+                actor.tenant_id(),
+                CreateWorkflowRunInput {
+                    workflow_logical_name: workflow.logical_name().as_str().to_owned(),
+                    trigger_type: workflow.trigger().trigger_type().to_owned(),
+                    trigger_entity_logical_name: workflow
+                        .trigger()
+                        .entity_logical_name()
+                        .map(ToOwned::to_owned),
+                    trigger_payload: trigger_payload.clone(),
+                },
+            )
+            .await?;
 
+        self.execute_existing_run(actor, workflow, run.run_id.as_str(), trigger_payload)
+            .await
+    }
+
+    async fn enqueue_workflow_definition(
+        &self,
+        actor: &UserIdentity,
+        workflow: &WorkflowDefinition,
+        trigger_payload: Value,
+    ) -> AppResult<WorkflowRun> {
         let run = self
             .repository
             .create_run(
@@ -229,7 +413,21 @@ impl WorkflowService {
             )
             .await?;
 
-        let run_id = run.run_id.clone();
+        self.repository
+            .enqueue_run_job(actor.tenant_id(), run.run_id.as_str())
+            .await?;
+
+        Ok(run)
+    }
+
+    async fn execute_existing_run(
+        &self,
+        actor: &UserIdentity,
+        workflow: &WorkflowDefinition,
+        run_id: &str,
+        trigger_payload: Value,
+    ) -> AppResult<WorkflowRun> {
+        let action_plan = self.resolve_action_plan(workflow, &trigger_payload)?;
         let mut last_error: Option<String> = None;
 
         for attempt_number in 1..=i32::from(workflow.max_attempts()) {
@@ -249,7 +447,7 @@ impl WorkflowService {
                 .append_run_attempt(
                     actor.tenant_id(),
                     WorkflowRunAttempt {
-                        run_id: run_id.clone(),
+                        run_id: run_id.to_owned(),
                         attempt_number,
                         status,
                         error_message: error_message.clone(),
@@ -264,7 +462,7 @@ impl WorkflowService {
                     .complete_run(
                         actor.tenant_id(),
                         CompleteWorkflowRunInput {
-                            run_id: run_id.clone(),
+                            run_id: run_id.to_owned(),
                             status: WorkflowRunStatus::Succeeded,
                             attempts: attempt_number,
                             dead_letter_reason: None,
@@ -282,7 +480,7 @@ impl WorkflowService {
             .complete_run(
                 actor.tenant_id(),
                 CompleteWorkflowRunInput {
-                    run_id,
+                    run_id: run_id.to_owned(),
                     status: WorkflowRunStatus::DeadLettered,
                     attempts: i32::from(workflow.max_attempts()),
                     dead_letter_reason: last_error,
