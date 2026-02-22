@@ -14,6 +14,13 @@ pnpm add @qryvanta/ui
 
 ```tsx
 import { Button, Card, CardContent, CardHeader, CardTitle } from "@qryvanta/ui";
+
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@qryvanta/ui/dropdown-menu";
 ```
 
 ## Local Development

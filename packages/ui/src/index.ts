@@ -1,5 +1,3 @@
-"use client";
-
 export { Avatar, AvatarFallback } from "./components/avatar";
 export { Checkbox } from "./components/checkbox";
 export { Button, buttonVariants, type ButtonProps } from "./components/button";
@@ -10,12 +8,6 @@ export {
   CardHeader,
   CardTitle,
 } from "./components/card";
-export {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "./components/dropdown-menu";
 export { Input } from "./components/input";
 export { Label } from "./components/label";
 export { Notice, type NoticeProps } from "./components/notice";

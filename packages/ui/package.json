@@ -10,6 +10,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./dropdown-menu": {
+      "types": "./dist/dropdown-menu.d.ts",
+      "import": "./dist/dropdown-menu.js"
     }
   },
   "files": [
@@ -17,7 +21,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts --clean --tsconfig tsconfig.build.json",
+    "build": "tsup src/index.ts src/dropdown-menu.ts --format esm --dts --clean --tsconfig tsconfig.build.json",
     "check": "tsc --noEmit",
     "prepublishOnly": "pnpm check && pnpm build"
   },
