@@ -24,6 +24,14 @@
     "access": "public",
     "provenance": true
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Neelbiehler/qryvanta"
+  },
+  "homepage": "https://github.com/Neelbiehler/qryvanta/tree/main/packages/ui",
+  "bugs": {
+    "url": "https://github.com/Neelbiehler/qryvanta/issues"
+  },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
