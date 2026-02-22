@@ -1,3 +1,5 @@
+"use client";
+
 export { Avatar, AvatarFallback } from "./components/avatar";
 export { Checkbox } from "./components/checkbox";
 export { Button, buttonVariants, type ButtonProps } from "./components/button";

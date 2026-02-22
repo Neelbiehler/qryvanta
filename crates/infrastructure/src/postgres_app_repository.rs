@@ -590,5 +590,5 @@ impl AppRepository for PostgresAppRepository {
 }
 
 fn app_entity_view_mode_from_str(value: &str) -> AppResult<AppEntityViewMode> {
-    AppEntityViewMode::from_str(value)
+    AppEntityViewMode::parse(value)
 }

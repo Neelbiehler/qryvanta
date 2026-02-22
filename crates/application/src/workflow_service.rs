@@ -5,7 +5,7 @@ use chrono::Utc;
 use qryvanta_core::{AppError, AppResult, UserIdentity};
 use qryvanta_domain::{
     AuditAction, Permission, RuntimeRecord, WorkflowAction, WorkflowConditionOperator,
-    WorkflowDefinition, WorkflowStep, WorkflowTrigger,
+    WorkflowDefinition, WorkflowDefinitionInput, WorkflowStep, WorkflowTrigger,
 };
 use serde_json::Value;
 
@@ -68,16 +68,16 @@ impl WorkflowService {
     ) -> AppResult<WorkflowDefinition> {
         self.require_workflow_manage(actor).await?;
 
-        let workflow = WorkflowDefinition::new(
-            input.logical_name,
-            input.display_name,
-            input.description,
-            input.trigger,
-            input.action,
-            input.steps,
-            input.max_attempts,
-            input.is_enabled,
-        )?;
+        let workflow = WorkflowDefinition::new(WorkflowDefinitionInput {
+            logical_name: input.logical_name,
+            display_name: input.display_name,
+            description: input.description,
+            trigger: input.trigger,
+            action: input.action,
+            steps: input.steps,
+            max_attempts: input.max_attempts,
+            is_enabled: input.is_enabled,
+        })?;
 
         self.repository
             .save_workflow(actor.tenant_id(), workflow.clone())

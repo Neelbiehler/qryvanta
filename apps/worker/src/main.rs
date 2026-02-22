@@ -10,7 +10,9 @@ use qryvanta_application::{
     AuthorizationService, MetadataService, WorkflowExecutionMode, WorkflowService,
 };
 use qryvanta_core::{AppError, AppResult, TenantId};
-use qryvanta_domain::{WorkflowAction, WorkflowDefinition, WorkflowStep, WorkflowTrigger};
+use qryvanta_domain::{
+    WorkflowAction, WorkflowDefinition, WorkflowDefinitionInput, WorkflowStep, WorkflowTrigger,
+};
 use qryvanta_infrastructure::{
     PostgresAuditRepository, PostgresAuthorizationRepository, PostgresMetadataRepository,
     PostgresWorkflowRepository,
@@ -313,16 +315,16 @@ impl ClaimedWorkflowJobResponse {
             ))
         })?;
 
-        let workflow = WorkflowDefinition::new(
-            self.workflow_logical_name,
-            self.workflow_display_name,
-            self.workflow_description,
-            self.workflow_trigger,
-            self.workflow_action,
-            self.workflow_steps,
-            self.workflow_max_attempts,
-            self.workflow_is_enabled,
-        )?;
+        let workflow = WorkflowDefinition::new(WorkflowDefinitionInput {
+            logical_name: self.workflow_logical_name,
+            display_name: self.workflow_display_name,
+            description: self.workflow_description,
+            trigger: self.workflow_trigger,
+            action: self.workflow_action,
+            steps: self.workflow_steps,
+            max_attempts: self.workflow_max_attempts,
+            is_enabled: self.workflow_is_enabled,
+        })?;
 
         Ok(qryvanta_application::ClaimedWorkflowJob {
             job_id: self.job_id,

@@ -5,7 +5,9 @@ use qryvanta_application::{
     WorkflowRunListQuery, WorkflowRunStatus, WorkflowWorkerHeartbeatInput,
 };
 use qryvanta_core::{AppError, AppResult, TenantId};
-use qryvanta_domain::{WorkflowAction, WorkflowDefinition, WorkflowStep, WorkflowTrigger};
+use qryvanta_domain::{
+    WorkflowAction, WorkflowDefinition, WorkflowDefinitionInput, WorkflowStep, WorkflowTrigger,
+};
 use serde_json::Value;
 use sqlx::{FromRow, PgPool};
 
@@ -802,25 +804,25 @@ impl WorkflowRepository for PostgresWorkflowRepository {
 }
 
 fn workflow_definition_from_row(row: WorkflowDefinitionRow) -> AppResult<WorkflowDefinition> {
-    WorkflowDefinition::new(
-        row.logical_name,
-        row.display_name,
-        row.description,
-        workflow_trigger_from_parts(
+    WorkflowDefinition::new(WorkflowDefinitionInput {
+        logical_name: row.logical_name,
+        display_name: row.display_name,
+        description: row.description,
+        trigger: workflow_trigger_from_parts(
             row.trigger_type.as_str(),
             row.trigger_entity_logical_name.as_deref(),
         )?,
-        workflow_action_from_parts(
+        action: workflow_action_from_parts(
             row.action_type.as_str(),
             row.action_entity_logical_name.as_deref(),
             row.action_payload,
         )?,
-        workflow_steps_from_json(row.action_steps)?,
-        u16::try_from(row.max_attempts).map_err(|error| {
+        steps: workflow_steps_from_json(row.action_steps)?,
+        max_attempts: u16::try_from(row.max_attempts).map_err(|error| {
             AppError::Validation(format!("invalid workflow max_attempts value: {error}"))
         })?,
-        row.is_enabled,
-    )
+        is_enabled: row.is_enabled,
+    })
 }
 
 fn workflow_steps_to_json(steps: Option<&[WorkflowStep]>) -> AppResult<Option<Value>> {
