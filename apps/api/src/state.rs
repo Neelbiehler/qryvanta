@@ -3,7 +3,7 @@ use std::sync::Arc;
 use qryvanta_application::{
     AppService, AuthEventService, AuthTokenService, AuthorizationService, ContactBootstrapService,
     MetadataService, MfaService, RateLimitService, SecurityAdminService, TenantRepository,
-    UserService,
+    UserService, WorkflowService,
 };
 use qryvanta_core::TenantId;
 use qryvanta_infrastructure::PostgresPasskeyRepository;
@@ -20,6 +20,7 @@ pub struct AppState {
     pub auth_event_service: AuthEventService,
     pub user_service: UserService,
     pub auth_token_service: AuthTokenService,
+    pub workflow_service: WorkflowService,
     pub mfa_service: MfaService,
     pub rate_limit_service: RateLimitService,
     pub tenant_repository: Arc<dyn TenantRepository>,

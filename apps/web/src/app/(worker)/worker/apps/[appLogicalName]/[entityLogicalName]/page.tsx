@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -16,12 +17,19 @@ import {
 import { WorkspaceEntityPanel } from "@/components/apps/workspace-entity-panel";
 import { AccessDeniedCard } from "@/components/shared/access-denied-card";
 import {
+  type AppEntityBindingResponse,
   apiServerFetch,
   type AppEntityCapabilitiesResponse,
   type PublishedSchemaResponse,
   type RuntimeRecordResponse,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+
+export const metadata: Metadata = {
+  title: "Worker Entity",
+  description:
+    "Operate runtime records with app-scoped capabilities in Worker Apps.",
+};
 
 type WorkerAppEntityPageProps = {
   params: Promise<{
@@ -36,7 +44,7 @@ export default async function WorkerAppEntityPage({
   const { appLogicalName, entityLogicalName } = await params;
   const cookieHeader = (await cookies()).toString();
 
-  const [schemaResponse, capabilitiesResponse, recordsResponse] =
+  const [schemaResponse, capabilitiesResponse, recordsResponse, navigationResponse] =
     await Promise.all([
       apiServerFetch(
         `/api/workspace/apps/${appLogicalName}/entities/${entityLogicalName}/schema`,
@@ -50,6 +58,7 @@ export default async function WorkerAppEntityPage({
         `/api/workspace/apps/${appLogicalName}/entities/${entityLogicalName}/records?limit=50&offset=0`,
         cookieHeader,
       ),
+      apiServerFetch(`/api/workspace/apps/${appLogicalName}/navigation`, cookieHeader),
     ]);
 
   if (schemaResponse.status === 401) {
@@ -66,7 +75,12 @@ export default async function WorkerAppEntityPage({
     );
   }
 
-  if (!schemaResponse.ok || !capabilitiesResponse.ok || !recordsResponse.ok) {
+  if (
+    !schemaResponse.ok ||
+    !capabilitiesResponse.ok ||
+    !recordsResponse.ok ||
+    !navigationResponse.ok
+  ) {
     throw new Error("Failed to load app entity workspace");
   }
 
@@ -74,6 +88,10 @@ export default async function WorkerAppEntityPage({
   const capabilities =
     (await capabilitiesResponse.json()) as AppEntityCapabilitiesResponse;
   const records = (await recordsResponse.json()) as RuntimeRecordResponse[];
+  const navigation = (await navigationResponse.json()) as AppEntityBindingResponse[];
+  const binding =
+    navigation.find((item) => item.entity_logical_name === entityLogicalName) ??
+    null;
 
   return (
     <div className="space-y-4">
@@ -123,6 +141,7 @@ export default async function WorkerAppEntityPage({
             <WorkspaceEntityPanel
               appLogicalName={appLogicalName}
               entityLogicalName={entityLogicalName}
+              binding={binding}
               schema={schema}
               capabilities={capabilities}
               records={records}

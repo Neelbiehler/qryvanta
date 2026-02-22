@@ -1,6 +1,8 @@
 use qryvanta_core::{AppError, AppResult, NonEmptyString};
 use serde::{Deserialize, Serialize};
 
+use std::collections::HashSet;
+
 /// Metadata-driven application definition used to group worker experiences.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppDefinition {
@@ -54,6 +56,41 @@ pub struct AppEntityBinding {
     entity_logical_name: NonEmptyString,
     navigation_label: Option<String>,
     navigation_order: i32,
+    form_field_logical_names: Vec<String>,
+    list_field_logical_names: Vec<String>,
+    default_view_mode: AppEntityViewMode,
+}
+
+/// Default worker view mode for an app entity binding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AppEntityViewMode {
+    /// Default grid/table view.
+    Grid,
+    /// Default JSON payload view.
+    Json,
+}
+
+impl AppEntityViewMode {
+    /// Returns stable storage value.
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Grid => "grid",
+            Self::Json => "json",
+        }
+    }
+
+    /// Parses storage value into a view mode.
+    pub fn from_str(value: &str) -> AppResult<Self> {
+        match value {
+            "grid" => Ok(Self::Grid),
+            "json" => Ok(Self::Json),
+            _ => Err(AppError::Validation(format!(
+                "unknown app entity view mode '{value}'"
+            ))),
+        }
+    }
 }
 
 impl AppEntityBinding {
@@ -63,6 +100,9 @@ impl AppEntityBinding {
         entity_logical_name: impl Into<String>,
         navigation_label: Option<String>,
         navigation_order: i32,
+        form_field_logical_names: Vec<String>,
+        list_field_logical_names: Vec<String>,
+        default_view_mode: AppEntityViewMode,
     ) -> AppResult<Self> {
         if navigation_order < 0 {
             return Err(AppError::Validation(
@@ -75,11 +115,19 @@ impl AppEntityBinding {
             (!trimmed.is_empty()).then_some(trimmed)
         });
 
+        let form_field_logical_names =
+            normalize_field_logical_names(form_field_logical_names, "form_field_logical_names")?;
+        let list_field_logical_names =
+            normalize_field_logical_names(list_field_logical_names, "list_field_logical_names")?;
+
         Ok(Self {
             app_logical_name: NonEmptyString::new(app_logical_name)?,
             entity_logical_name: NonEmptyString::new(entity_logical_name)?,
             navigation_label,
             navigation_order,
+            form_field_logical_names,
+            list_field_logical_names,
+            default_view_mode,
         })
     }
 
@@ -106,6 +154,48 @@ impl AppEntityBinding {
     pub fn navigation_order(&self) -> i32 {
         self.navigation_order
     }
+
+    /// Returns app-scoped form field order overrides.
+    #[must_use]
+    pub fn form_field_logical_names(&self) -> &[String] {
+        &self.form_field_logical_names
+    }
+
+    /// Returns app-scoped list/grid field order overrides.
+    #[must_use]
+    pub fn list_field_logical_names(&self) -> &[String] {
+        &self.list_field_logical_names
+    }
+
+    /// Returns default worker view mode for this entity binding.
+    #[must_use]
+    pub fn default_view_mode(&self) -> AppEntityViewMode {
+        self.default_view_mode
+    }
+}
+
+fn normalize_field_logical_names(values: Vec<String>, field_name: &str) -> AppResult<Vec<String>> {
+    let mut normalized = Vec::with_capacity(values.len());
+    let mut seen = HashSet::with_capacity(values.len());
+
+    for value in values {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            return Err(AppError::Validation(format!(
+                "{field_name} contains an empty logical name"
+            )));
+        }
+
+        if !seen.insert(trimmed.to_owned()) {
+            return Err(AppError::Validation(format!(
+                "{field_name} contains duplicate logical name '{trimmed}'"
+            )));
+        }
+
+        normalized.push(trimmed.to_owned());
+    }
+
+    Ok(normalized)
 }
 
 /// App-scoped entity action permissions assigned to a role.
@@ -213,7 +303,7 @@ impl AppEntityAction {
 
 #[cfg(test)]
 mod tests {
-    use super::{AppDefinition, AppEntityBinding};
+    use super::{AppDefinition, AppEntityBinding, AppEntityViewMode};
 
     #[test]
     fn app_definition_requires_non_empty_values() {
@@ -223,7 +313,29 @@ mod tests {
 
     #[test]
     fn app_entity_binding_rejects_negative_navigation_order() {
-        let binding = AppEntityBinding::new("sales", "account", None, -1);
+        let binding = AppEntityBinding::new(
+            "sales",
+            "account",
+            None,
+            -1,
+            Vec::new(),
+            Vec::new(),
+            AppEntityViewMode::Grid,
+        );
+        assert!(binding.is_err());
+    }
+
+    #[test]
+    fn app_entity_binding_rejects_duplicate_form_fields() {
+        let binding = AppEntityBinding::new(
+            "sales",
+            "account",
+            None,
+            0,
+            vec!["name".to_owned(), "name".to_owned()],
+            Vec::new(),
+            AppEntityViewMode::Grid,
+        );
         assert!(binding.is_err());
     }
 }

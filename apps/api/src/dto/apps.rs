@@ -1,6 +1,20 @@
-use qryvanta_domain::{AppDefinition, AppEntityBinding, AppEntityRolePermission};
+use qryvanta_domain::{
+    AppDefinition, AppEntityBinding, AppEntityRolePermission, AppEntityViewMode,
+};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
+
+/// App-scoped default worker view mode.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(
+    export,
+    export_to = "../../../../packages/api-types/src/generated/app-entity-view-mode.ts"
+)]
+pub enum AppEntityViewModeDto {
+    Grid,
+    Json,
+}
 
 /// Incoming payload for app creation.
 #[derive(Debug, Deserialize, TS)]
@@ -36,6 +50,12 @@ pub struct BindAppEntityRequest {
     pub entity_logical_name: String,
     pub navigation_label: Option<String>,
     pub navigation_order: i32,
+    #[serde(default)]
+    pub form_field_logical_names: Option<Vec<String>>,
+    #[serde(default)]
+    pub list_field_logical_names: Option<Vec<String>>,
+    #[serde(default)]
+    pub default_view_mode: Option<AppEntityViewModeDto>,
 }
 
 /// API representation of an app entity navigation binding.
@@ -49,6 +69,9 @@ pub struct AppEntityBindingResponse {
     pub entity_logical_name: String,
     pub navigation_label: Option<String>,
     pub navigation_order: i32,
+    pub form_field_logical_names: Vec<String>,
+    pub list_field_logical_names: Vec<String>,
+    pub default_view_mode: AppEntityViewModeDto,
 }
 
 /// Incoming payload for app role entity permission updates.
@@ -113,6 +136,27 @@ impl From<AppEntityBinding> for AppEntityBindingResponse {
             entity_logical_name: value.entity_logical_name().as_str().to_owned(),
             navigation_label: value.navigation_label().map(ToOwned::to_owned),
             navigation_order: value.navigation_order(),
+            form_field_logical_names: value.form_field_logical_names().to_vec(),
+            list_field_logical_names: value.list_field_logical_names().to_vec(),
+            default_view_mode: value.default_view_mode().into(),
+        }
+    }
+}
+
+impl From<AppEntityViewMode> for AppEntityViewModeDto {
+    fn from(value: AppEntityViewMode) -> Self {
+        match value {
+            AppEntityViewMode::Grid => Self::Grid,
+            AppEntityViewMode::Json => Self::Json,
+        }
+    }
+}
+
+impl From<AppEntityViewModeDto> for AppEntityViewMode {
+    fn from(value: AppEntityViewModeDto) -> Self {
+        match value {
+            AppEntityViewModeDto::Grid => Self::Grid,
+            AppEntityViewModeDto::Json => Self::Json,
         }
     }
 }

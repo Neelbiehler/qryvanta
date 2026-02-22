@@ -12,12 +12,17 @@ Allow product admins to configure working applications without code changes.
 - Multi-app model per tenant via `app_definitions`.
 - App navigation bound to metadata entities.
 - App access granted by assigned roles.
+- App-scoped presentation metadata on entity bindings:
+  - `form_field_logical_names` for worker create-form field ordering
+  - `list_field_logical_names` for worker grid column ordering
+  - `default_view_mode` (`grid` | `json`) for initial workspace rendering
 - App-scoped role permissions per entity action:
   - `read`
   - `create`
   - `update`
   - `delete`
 - Worker runtime pages resolve forms from published metadata schemas.
+- Worker runtime resolves per-app entity presentation overrides before rendering forms and list views.
 - Entity workbench runtime query supports typed condition arrays (logical mode, operators, sort) with local saved presets (browser-local storage), including JSON import/export for sharing.
 - Maker and admin workbenches use sectioned command views (schema/runtime, app/navigation/permissions, roles/registration/temporary access) to reduce control-plane overload.
 - Worker entity workspaces provide command-bar style controls (create toggle, refresh, grid/json view mode, quick search) to support high-throughput record handling.

@@ -4,8 +4,8 @@ use async_trait::async_trait;
 
 use qryvanta_core::{AppError, AppResult, TenantId, UserIdentity};
 use qryvanta_domain::{
-    AppDefinition, AppEntityAction, AppEntityBinding, AppEntityRolePermission, AuditAction,
-    Permission, PublishedEntitySchema, RuntimeRecord,
+    AppDefinition, AppEntityAction, AppEntityBinding, AppEntityRolePermission, AppEntityViewMode,
+    AuditAction, Permission, PublishedEntitySchema, RuntimeRecord,
 };
 use serde_json::Value;
 
@@ -165,6 +165,9 @@ impl AppService {
             input.entity_logical_name,
             input.navigation_label,
             input.navigation_order,
+            input.form_field_logical_names.unwrap_or_default(),
+            input.list_field_logical_names.unwrap_or_default(),
+            input.default_view_mode.unwrap_or(AppEntityViewMode::Grid),
         )?;
 
         self.repository

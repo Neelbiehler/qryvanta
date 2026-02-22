@@ -21,6 +21,7 @@ Our goal is to build a practical alternative to traditional enterprise business 
 
 - `apps/api`: Rust HTTP API binary (Axum)
 - `apps/web`: Next.js frontend
+- `apps/landing`: Next.js landing app
 - `apps/docs`: Fumadocs documentation website
 - `crates/core`: shared primitives and error model
 - `crates/domain`: business domain types and validation
@@ -43,6 +44,7 @@ Default local ports:
 
 - API: `http://localhost:3001`
 - Web: `http://localhost:3000`
+- Landing: `http://localhost:3003`
 - Docs: `http://127.0.0.1:3002`
 
 Keep auth-related URLs on `localhost` during local development to avoid passkey and session-cookie origin mismatches.
@@ -61,7 +63,8 @@ Keep auth-related URLs on `localhost` during local development to avoid passkey 
 
 ## Useful Commands
 
-- `pnpm dev` - run API, web, and docs
+- `pnpm dev` - run API, web, landing, and docs
+- `pnpm dev:landing` - run landing app only
 - `pnpm build` - build all workspaces
 - `pnpm lint` - run lint checks
 - `pnpm format:web` - format frontend files with Prettier

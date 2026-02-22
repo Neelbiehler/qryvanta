@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use qryvanta_application::{
     AppService, AuthEventService, AuthTokenService, AuthorizationService, ContactBootstrapService,
-    EmailService, MetadataService, MfaService, TenantRepository, UserService,
+    EmailService, MetadataService, MfaService, TenantRepository, UserService, WorkflowService,
 };
 use qryvanta_core::AppError;
 use qryvanta_infrastructure::{
@@ -10,8 +10,8 @@ use qryvanta_infrastructure::{
     PostgresAuditLogRepository, PostgresAuditRepository, PostgresAuthEventRepository,
     PostgresAuthTokenRepository, PostgresAuthorizationRepository, PostgresMetadataRepository,
     PostgresPasskeyRepository, PostgresRateLimitRepository, PostgresSecurityAdminRepository,
-    PostgresTenantRepository, PostgresUserRepository, SmtpEmailConfig, SmtpEmailService,
-    TotpRsProvider,
+    PostgresTenantRepository, PostgresUserRepository, PostgresWorkflowRepository, SmtpEmailConfig,
+    SmtpEmailService, TotpRsProvider,
 };
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
@@ -64,6 +64,7 @@ pub async fn build_session_layer(
 pub fn build_app_state(pool: PgPool, config: &ApiConfig) -> Result<AppState, AppError> {
     let metadata_repository = Arc::new(PostgresMetadataRepository::new(pool.clone()));
     let app_repository = Arc::new(PostgresAppRepository::new(pool.clone()));
+    let workflow_repository = Arc::new(PostgresWorkflowRepository::new(pool.clone()));
     let authorization_repository = Arc::new(PostgresAuthorizationRepository::new(pool.clone()));
     let audit_repository = Arc::new(PostgresAuditRepository::new(pool.clone()));
     let authorization_service =
@@ -151,10 +152,20 @@ pub fn build_app_state(pool: PgPool, config: &ApiConfig) -> Result<AppState, App
             tenant_repository.clone(),
         ),
         security_admin_service,
-        authorization_service,
+        authorization_service: authorization_service.clone(),
         auth_event_service,
         user_service,
         auth_token_service,
+        workflow_service: WorkflowService::new(
+            authorization_service.clone(),
+            workflow_repository,
+            Arc::new(MetadataService::new(
+                metadata_repository.clone(),
+                authorization_service.clone(),
+                audit_repository.clone(),
+            )),
+            audit_repository.clone(),
+        ),
         mfa_service,
         rate_limit_service,
         tenant_repository,

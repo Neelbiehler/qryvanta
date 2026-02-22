@@ -44,6 +44,7 @@ const navigationIcons: Record<string, LucideIcon> = {
   "Security Settings": Lock,
   Entities: Box,
   "App Studio": AppWindow,
+  Automation: AppWindow,
   "My Apps": AppWindow,
 };
 

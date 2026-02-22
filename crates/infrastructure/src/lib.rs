@@ -18,6 +18,7 @@ mod postgres_rate_limit_repository;
 mod postgres_security_admin_repository;
 mod postgres_tenant_repository;
 mod postgres_user_repository;
+mod postgres_workflow_repository;
 mod smtp_email_service;
 mod totp_provider;
 
@@ -37,5 +38,6 @@ pub use postgres_rate_limit_repository::PostgresRateLimitRepository;
 pub use postgres_security_admin_repository::PostgresSecurityAdminRepository;
 pub use postgres_tenant_repository::PostgresTenantRepository;
 pub use postgres_user_repository::PostgresUserRepository;
+pub use postgres_workflow_repository::PostgresWorkflowRepository;
 pub use smtp_email_service::{SmtpEmailConfig, SmtpEmailService};
 pub use totp_provider::TotpRsProvider;

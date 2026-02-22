@@ -16,6 +16,7 @@ export {
 } from "./components/dropdown-menu";
 export { Input } from "./components/input";
 export { Label } from "./components/label";
+export { Notice, type NoticeProps } from "./components/notice";
 export { PageHeader } from "./components/page-header";
 export { Select } from "./components/select";
 export { Separator } from "./components/separator";

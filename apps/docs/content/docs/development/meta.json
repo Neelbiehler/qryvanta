@@ -3,6 +3,7 @@
   "pages": [
     "engineering-standards",
     "backend-modularization",
+    "frontend-modularization",
     "documentation-policy",
     "open-source-contributing",
     "ui-library",

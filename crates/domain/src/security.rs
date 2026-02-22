@@ -186,6 +186,10 @@ pub enum AuditAction {
     AppEntityBound,
     /// Emitted when role permissions are updated for an app entity.
     AppRoleEntityPermissionSaved,
+    /// Emitted when a workflow definition is created or updated.
+    WorkflowSaved,
+    /// Emitted when a workflow run reaches a terminal state.
+    WorkflowRunCompleted,
     /// Emitted when an entity definition is created.
     MetadataEntityCreated,
     /// Emitted when a metadata field is created or updated.
@@ -228,6 +232,8 @@ impl AuditAction {
             Self::AppCreated => "app.created",
             Self::AppEntityBound => "app.entity.bound",
             Self::AppRoleEntityPermissionSaved => "app.role_entity_permission.saved",
+            Self::WorkflowSaved => "workflow.saved",
+            Self::WorkflowRunCompleted => "workflow.run.completed",
             Self::MetadataEntityCreated => "metadata.entity.created",
             Self::MetadataFieldSaved => "metadata.field.saved",
             Self::MetadataEntityPublished => "metadata.entity.published",

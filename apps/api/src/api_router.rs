@@ -33,6 +33,23 @@ pub fn build_router(
                 .put(handlers::apps::save_app_role_permission_handler),
         )
         .route(
+            "/api/workflows",
+            get(handlers::workflows::list_workflows_handler)
+                .post(handlers::workflows::save_workflow_handler),
+        )
+        .route(
+            "/api/workflows/runs",
+            get(handlers::workflows::list_workflow_runs_handler),
+        )
+        .route(
+            "/api/workflows/runs/{run_id}/attempts",
+            get(handlers::workflows::list_workflow_run_attempts_handler),
+        )
+        .route(
+            "/api/workflows/{workflow_logical_name}/execute",
+            post(handlers::workflows::execute_workflow_handler),
+        )
+        .route(
             "/api/workspace/apps",
             get(handlers::apps::list_workspace_apps_handler),
         )

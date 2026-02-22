@@ -5,16 +5,44 @@ description: Trigger and action model for background business workflows.
 
 ## Workflow Model
 
-- Trigger: event-based (record created/updated/deleted) or schedule-based
-- Conditions: boolean filters before actions execute
-- Actions: create/update record, call HTTP endpoint, notify channel
+- Trigger: `manual` or internal `runtime_record_created` per entity
+- Canvas steps:
+  - `log_message`
+  - `create_runtime_record`
+  - `condition` with `equals` / `not_equals` / `exists`
+- Retry policy: per-workflow `max_attempts` (1-10)
 
 ## Execution Semantics
 
-1. Trigger event enters queue.
-2. Workflow worker resolves metadata and permission context.
-3. Actions run with retries and timeout policy.
-4. Result is persisted to execution history.
+1. A workflow definition is saved in tenant scope (`/api/workflows`).
+2. A run starts either by manual execute or runtime-record-created dispatch.
+3. Actions execute with bounded retry attempts.
+4. Condition steps evaluate payload paths and execute one branch.
+5. Failed terminal runs are marked `dead_lettered` with captured reason.
+6. Run + attempt history is persisted for tenant observability.
+
+## API Endpoints (v1)
+
+- `GET /api/workflows`
+- `POST /api/workflows`
+- `POST /api/workflows/:workflow_logical_name/execute`
+- `GET /api/workflows/runs?workflow_logical_name=&limit=50&offset=0`
+- `GET /api/workflows/runs/:run_id/attempts`
+
+## Maker Automation Canvas
+
+- Maker Center automation now uses a click-first visual canvas with trigger, action, and condition branch nodes.
+- Conditions let makers build Yes/No branch paths from trigger payload fields.
+- Canvas nodes support drag-to-position layout with connector wires that update in real-time.
+- Makers can drag from a step wire port to reconnect flow order, then drop on target handles (`before`, `after`, `to yes`, `to no`, `insert first`).
+- The canvas includes snap-to-grid alignment, stage lane guides, and one-click auto-arrange for larger flow readability.
+- Canvas editing supports box selection, multi-node drag, and undo/redo (`Cmd/Ctrl+Z`, `Cmd/Ctrl+Shift+Z`).
+- Builder, inspector, and run history are now in-canvas overlays in a full-workspace automation designer.
+- Condition connectors support custom branch labels instead of fixed Yes/No text.
+- The in-canvas builder includes a searchable, category-based function catalog (trigger/logic/integration/data/operations) with one-click insert modes.
+- A n8n-style node picker is available from keyboard (`A`) with fuzzy search and Enter-to-insert at current canvas cursor.
+- Function templates now include trigger/integration patterns such as `Webhook Event Trigger`, `HTTP Request`, `Transform Payload`, and `Delay`.
+- Existing workflows can be loaded back into the canvas, edited, and saved without leaving the designer.
 
 ## Reliability Requirements
 

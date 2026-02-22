@@ -4,6 +4,7 @@ mod common;
 mod entities;
 pub(crate) mod runtime;
 mod security;
+mod workflows;
 
 pub use apps::{
     AppEntityBindingResponse, AppEntityCapabilitiesResponse, AppResponse,
@@ -31,6 +32,10 @@ pub use security::{
     TemporaryAccessGrantResponse, TenantRegistrationModeResponse,
     UpdateAuditRetentionPolicyRequest, UpdateTenantRegistrationModeRequest,
 };
+pub use workflows::{
+    ExecuteWorkflowRequest, SaveWorkflowRequest, WorkflowResponse, WorkflowRunAttemptResponse,
+    WorkflowRunResponse,
+};
 
 #[cfg(test)]
 mod tests {
@@ -41,13 +46,15 @@ mod tests {
         AuthLoginResponse, AuthMfaVerifyRequest, AuthRegisterRequest, BindAppEntityRequest,
         CreateAppRequest, CreateEntityRequest, CreateFieldRequest, CreateRoleRequest,
         CreateRuntimeRecordRequest, CreateTemporaryAccessGrantRequest, EntityResponse,
-        FieldResponse, GenericMessageResponse, HealthResponse, InviteRequest,
-        PublishedSchemaResponse, QueryRuntimeRecordsRequest, RemoveRoleAssignmentRequest,
-        RevokeTemporaryAccessGrantRequest, RoleAssignmentResponse, RoleResponse,
-        RuntimeFieldPermissionResponse, RuntimeRecordResponse, SaveAppRoleEntityPermissionRequest,
-        SaveRuntimeFieldPermissionsRequest, TemporaryAccessGrantResponse,
-        TenantRegistrationModeResponse, UpdateAuditRetentionPolicyRequest,
-        UpdateRuntimeRecordRequest, UpdateTenantRegistrationModeRequest, UserIdentityResponse,
+        ExecuteWorkflowRequest, FieldResponse, GenericMessageResponse, HealthResponse,
+        InviteRequest, PublishedSchemaResponse, QueryRuntimeRecordsRequest,
+        RemoveRoleAssignmentRequest, RevokeTemporaryAccessGrantRequest, RoleAssignmentResponse,
+        RoleResponse, RuntimeFieldPermissionResponse, RuntimeRecordResponse,
+        SaveAppRoleEntityPermissionRequest, SaveRuntimeFieldPermissionsRequest,
+        SaveWorkflowRequest, TemporaryAccessGrantResponse, TenantRegistrationModeResponse,
+        UpdateAuditRetentionPolicyRequest, UpdateRuntimeRecordRequest,
+        UpdateTenantRegistrationModeRequest, UserIdentityResponse, WorkflowResponse,
+        WorkflowRunAttemptResponse, WorkflowRunResponse,
     };
 
     use crate::error::ErrorResponse;
@@ -62,6 +69,10 @@ mod tests {
         CreateAppRequest::export(&config)?;
         BindAppEntityRequest::export(&config)?;
         SaveAppRoleEntityPermissionRequest::export(&config)?;
+        SaveWorkflowRequest::export(&config)?;
+        super::workflows::WorkflowConditionOperatorDto::export(&config)?;
+        super::workflows::WorkflowStepDto::export(&config)?;
+        ExecuteWorkflowRequest::export(&config)?;
         CreateFieldRequest::export(&config)?;
         CreateRoleRequest::export(&config)?;
         CreateRuntimeRecordRequest::export(&config)?;
@@ -83,10 +94,14 @@ mod tests {
         AppResponse::export(&config)?;
         AppEntityBindingResponse::export(&config)?;
         AppEntityCapabilitiesResponse::export(&config)?;
+        super::apps::AppEntityViewModeDto::export(&config)?;
         AppRoleEntityPermissionResponse::export(&config)?;
         FieldResponse::export(&config)?;
         PublishedSchemaResponse::export(&config)?;
         RuntimeRecordResponse::export(&config)?;
+        WorkflowResponse::export(&config)?;
+        WorkflowRunResponse::export(&config)?;
+        WorkflowRunAttemptResponse::export(&config)?;
         RoleResponse::export(&config)?;
         RoleAssignmentResponse::export(&config)?;
         TenantRegistrationModeResponse::export(&config)?;

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use qryvanta_core::{AppResult, TenantId, UserIdentity};
 use qryvanta_domain::{
-    AppDefinition, AppEntityAction, AppEntityBinding, AppEntityRolePermission,
+    AppDefinition, AppEntityAction, AppEntityBinding, AppEntityRolePermission, AppEntityViewMode,
     PublishedEntitySchema, RuntimeRecord,
 };
 use serde_json::Value;
@@ -30,6 +30,12 @@ pub struct BindAppEntityInput {
     pub navigation_label: Option<String>,
     /// Display ordering value.
     pub navigation_order: i32,
+    /// Optional app-specific form field order override.
+    pub form_field_logical_names: Option<Vec<String>>,
+    /// Optional app-specific list field order override.
+    pub list_field_logical_names: Option<Vec<String>>,
+    /// Optional default worker view mode override.
+    pub default_view_mode: Option<AppEntityViewMode>,
 }
 
 /// Input payload for app role entity permissions.

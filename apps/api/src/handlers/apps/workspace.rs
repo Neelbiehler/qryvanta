@@ -2,6 +2,7 @@ use axum::Json;
 use axum::extract::{Extension, Path, Query, State};
 use axum::http::StatusCode;
 use qryvanta_core::UserIdentity;
+use tracing::warn;
 
 use crate::dto::{
     AppEntityBindingResponse, AppEntityCapabilitiesResponse, AppResponse,
@@ -124,6 +125,25 @@ pub async fn workspace_create_record_handler(
             payload.data,
         )
         .await?;
+
+    if let Err(error) = state
+        .workflow_service
+        .dispatch_runtime_record_created(
+            &user,
+            entity_logical_name.as_str(),
+            record.record_id().as_str(),
+        )
+        .await
+    {
+        warn!(
+            error = %error,
+            tenant_id = %user.tenant_id(),
+            app_logical_name = %app_logical_name,
+            entity_logical_name = %entity_logical_name,
+            record_id = %record.record_id().as_str(),
+            "workflow dispatch failed after workspace record creation"
+        );
+    }
 
     Ok((
         StatusCode::CREATED,
