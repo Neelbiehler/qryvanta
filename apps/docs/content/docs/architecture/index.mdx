@@ -1,0 +1,29 @@
+---
+title: Architecture
+description: System model, layer boundaries, and runtime topology for Qryvanta.
+---
+
+Use this section before changing behavior in API, domain logic, or persistence.
+
+## Read Order
+
+1. `Overview`
+2. `Rust Layers`
+3. `Database`
+4. `Auth and Sessions`
+5. `Runtime Components`
+6. `Remote Worker Security Model`
+
+## Current Baseline
+
+- Rust-first monorepo with domain/application/infrastructure layering.
+- Axum API as composition root and transport adapter.
+- Next.js web client consuming API contracts.
+- PostgreSQL persistence for metadata, auth/session state, and runtime records.
+- Optional queued worker runtime for asynchronous automation runs.
+
+## Scope Boundary
+
+- Keep business invariants in `crates/domain`.
+- Keep use-case orchestration in `crates/application`.
+- Keep framework code in `apps/api` and adapters in `crates/infrastructure`.

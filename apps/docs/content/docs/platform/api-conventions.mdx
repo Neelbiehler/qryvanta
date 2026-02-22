@@ -3,7 +3,9 @@ title: API Conventions
 description: Consistent transport patterns for predictable integration behavior.
 ---
 
-## Handler Responsibilities
+This page is the source of truth for externally callable API routes documented in this site.
+
+## Handler Contract
 
 Keep handlers focused on:
 
@@ -20,14 +22,14 @@ Keep handlers focused on:
 - `AppError::Forbidden` -> `403 Forbidden`
 - `AppError::Internal` -> `500 Internal Server Error`
 
-## Resource Design
+## Route Design Rules
 
 - Prefer stable logical identifiers.
 - Keep request/response DTOs explicit.
 - Use predictable collection endpoints for list and create paths.
-- Ensure API contracts remain versionable as metadata runtime expands.
+- Keep compatibility in mind as metadata runtime grows.
 
-## Metadata Runtime Endpoints
+## Metadata Runtime
 
 - `GET /api/entities` lists metadata entities.
 - `POST /api/entities` creates metadata entities.
@@ -42,7 +44,7 @@ Keep handlers focused on:
 - `PUT /api/runtime/:entity_logical_name/records/:record_id` updates runtime record.
 - `DELETE /api/runtime/:entity_logical_name/records/:record_id` deletes runtime record when no relation fields reference it.
 
-## App Builder and Workspace Endpoints
+## App Builder (Admin APIs)
 
 - `GET /api/apps` lists tenant apps for administrators.
 - `POST /api/apps` creates an app.
@@ -50,6 +52,9 @@ Keep handlers focused on:
 - `POST /api/apps/:app_logical_name/entities` saves app navigation binding and optional app-scoped presentation overrides (`form_field_logical_names`, `list_field_logical_names`, `default_view_mode`).
 - `GET /api/apps/:app_logical_name/permissions` lists app role entity permissions.
 - `PUT /api/apps/:app_logical_name/permissions` saves app role entity permissions.
+
+## Workspace Runtime
+
 - `GET /api/workspace/apps` lists apps accessible to the current subject.
 - `GET /api/workspace/apps/:app_logical_name/navigation` lists worker-visible app entities.
 - `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/capabilities` returns effective worker capabilities.
@@ -58,7 +63,7 @@ Keep handlers focused on:
 - `POST /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/records/query` queries records with app-scoped permissions using alias-aware runtime query grammar.
 - `GET|PUT|DELETE /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/records/:record_id` reads/writes/deletes records with app-scoped permissions.
 
-## Automation Endpoints
+## Automation
 
 - `GET /api/workflows` lists workflow definitions.
 - `POST /api/workflows` creates or updates a workflow definition.
@@ -72,7 +77,7 @@ Internal worker APIs:
 - `POST /api/internal/worker/heartbeat` updates worker heartbeat and cycle counters.
 - `GET /api/internal/worker/jobs/stats` returns aggregate queue and active worker metrics.
 
-## Security Admin Endpoints
+## Security Administration
 
 - `GET /api/security/roles` lists tenant roles and grants.
 - `POST /api/security/roles` creates custom roles.

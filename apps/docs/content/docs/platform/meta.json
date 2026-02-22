@@ -1,6 +1,7 @@
 {
   "title": "Platform",
   "pages": [
+    "index",
     "metadata-runtime",
     "app-builder",
     "ux-surfaces",

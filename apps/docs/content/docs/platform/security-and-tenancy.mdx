@@ -3,6 +3,8 @@ title: Security and Tenancy
 description: Authentication, authorization, and strict tenant boundary model.
 ---
 
+Phase status: implemented baseline with ongoing hardening.
+
 ## Security Baseline
 
 - Email + password login (`/auth/login`) with Argon2id password hashing
@@ -19,8 +21,8 @@ description: Authentication, authorization, and strict tenant boundary model.
 
 ## Tenancy Model
 
-Every persisted record must include tenant ownership context.
-Repository methods should require tenant scope in query paths to prevent leakage.
+Every persisted record includes tenant ownership context.
+Repository methods require tenant scope in query paths to prevent leakage.
 
 Phase 1 metadata operations require `TenantId` and query with `WHERE tenant_id = $1`.
 
@@ -30,13 +32,13 @@ Tenant-boundary regression guardrails:
 - Critical runtime paths (list/query/find/delete/relation reference checks) validate tenant scoping.
 - Cross-tenant leakage scenarios are CI-gated so regressions fail deterministically.
 
-## Authorization Layers
+## Authorization Pipeline
 
 1. Route-level authentication
 2. Application-level policy checks
 3. Repository-level tenant scoping enforcement
 
-Current RBAC baseline:
+## RBAC Baseline
 
 - Permissions are evaluated in `MetadataService` via `AuthorizationService`.
 - Effective grants are resolved from `rbac_subject_roles` + `rbac_role_grants`.
@@ -50,7 +52,7 @@ Current RBAC baseline:
 - Security administration now supports runtime field-level read/write grants per subject and entity.
 - Temporary privileged access grants can be created/revoked with explicit reason and expiration windows.
 
-## Audit Requirements
+## Audit Contract
 
 Track:
 
@@ -61,7 +63,7 @@ Track:
 - Timestamp
 - Before/after snapshots (where applicable)
 
-Current audit baseline:
+Current baseline:
 
 - Metadata entity creation emits an append-only event in `audit_log_entries`.
 - Event fields include tenant, subject, action, resource type/id, and detail.
@@ -73,6 +75,8 @@ Current audit baseline:
 - Audit log reads and exports support action/subject filters with offset pagination for admin review workflows.
 
 ## Security Administration APIs
+
+Canonical route list is maintained in `API Conventions`. Current security routes:
 
 - Role and assignment administration:
   - `GET|POST /api/security/roles`

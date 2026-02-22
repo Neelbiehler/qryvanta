@@ -3,7 +3,11 @@ title: Self Hosting
 description: Deployment expectations for running Qryvanta on your own infrastructure.
 ---
 
-## Expected Runtime Stack
+Qryvanta is in active development and is not ready for production use yet.
+
+Use this guidance for local, staging, and controlled internal environments.
+
+## Runtime Stack
 
 - API service
 - Web app
@@ -12,19 +16,21 @@ description: Deployment expectations for running Qryvanta on your own infrastruc
 - Background worker process (`qryvanta-worker`) when workflow execution is queued
 - Optional cache/queue service
 
-## Packaging Direction
+## Deployment Direction
 
-1. Docker Compose baseline for local and small deployments
-2. Environment-based configuration
-3. Upgrade-safe migrations
-4. Backup and restore procedures
+1. Docker Compose baseline for local and small deployments.
+2. Environment-variable configuration for all services.
+3. Database migrations executed during API startup.
+4. Explicit backup and restore runbooks before broad rollout.
 
-## Minimum Production Checklist
+## Baseline Checklist
 
 - TLS termination configured
 - Secrets managed outside source control
 - Database backups scheduled and tested
 - Health endpoints monitored
+- Log and metric collection enabled
+- Worker runtime enabled when `WORKFLOW_EXECUTION_MODE=queued`
 
 ## Worker Runtime Startup
 
@@ -35,3 +41,5 @@ cargo run -p qryvanta-worker
 ```
 
 Scale horizontally by increasing worker replicas; each worker claims leased jobs with `x-qryvanta-worker-id` identity.
+
+For environment variables and health guidance, see `Configuration`, `Email Delivery`, and `Observability` in this section.

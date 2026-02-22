@@ -1,4 +1,4 @@
 {
   "title": "Operations",
-  "pages": ["self-hosting", "configuration", "email-delivery", "observability"]
+  "pages": ["index", "self-hosting", "configuration", "email-delivery", "observability"]
 }

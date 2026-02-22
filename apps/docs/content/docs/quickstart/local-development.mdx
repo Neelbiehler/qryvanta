@@ -3,17 +3,17 @@ title: Local Development
 description: Day-to-day loop for running API, web, docs, and Postgres.
 ---
 
-## Infrastructure First
+## Daily Startup
 
 ```bash
 docker compose up -d
 cp .env.example .env
+pnpm dev
 ```
 
-## Core Commands
+## Workspace Commands
 
 ```bash
-pnpm dev        # run all JS workspaces in turbo
 pnpm build      # build all JS workspaces
 pnpm check      # static checks
 pnpm lint       # lint checks
@@ -58,9 +58,15 @@ Use one hostname (`localhost`) for the web app and API while testing auth.
 6. Click **Enroll Passkey** and complete the browser/device prompt.
 7. Click **Sign in with Passkey**.
 
-## Notes
+## Guardrails
 
 - Keep domain and application crates framework-agnostic.
 - Keep HTTP behavior in `apps/api`.
 - Keep WebAuthn/session behavior in API (BFF) and use cookie auth from web.
 - Update docs whenever architecture or behavior changes.
+
+## Daily Shutdown
+
+```bash
+docker compose down
+```

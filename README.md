@@ -1,109 +1,133 @@
 # Qryvanta
 
-> **⚠️ Active Development**
+> **Active development**
 >
-> Qryvanta is currently in active development and is **not yet ready for production use**.
+> Qryvanta is not ready for production use yet.
 >
-> Interested in the project? Contact us at [contact@qryvanta.org](mailto:contact@qryvanta.org).
+> Contact: [contact@qryvanta.org](mailto:contact@qryvanta.org)
 
 Qryvanta is an open-source, self-hostable, metadata-driven business platform.
 
-Our goal is to build a practical alternative to traditional enterprise business suites with a transparent architecture and portable deployments.
+The project is built as a Rust-first monorepo with a Next.js frontend and docs site.
 
-## Why Qryvanta
+## Project Boundary
 
-- Rust-first backend architecture with clear layering and testable boundaries.
-- Metadata-defined entities and runtime behavior as the long-term platform model.
-- Self-hosting first: local development and deployment paths stay explicit.
-- Monorepo workflow with API, web, and docs developed together.
+- `qryvanta.org` is the OSS product surface.
+- `qryvanta.com` is reserved for a future managed-cloud surface.
+- This repository focuses on self-hosting-first architecture and explicit runtime behavior.
 
-## Monorepo Layout
+## Current Baseline
 
-- `apps/api`: Rust HTTP API binary (Axum)
-- `apps/worker`: Rust workflow worker runtime (queued execution mode)
-- `apps/web`: Next.js frontend
-- `apps/landing`: Next.js landing app
-- `apps/docs`: Fumadocs documentation website
-- `crates/core`: shared primitives and error model
-- `crates/domain`: business domain types and validation
-- `crates/application`: use-cases and ports
-- `crates/infrastructure`: adapter implementations for ports
-- `packages/ui`: shared UI component library based on shadcn patterns
-- `packages/api-types`: generated TypeScript API contracts from Rust DTOs
-- `packages/typescript-config`: shared TypeScript base config
+- Metadata entities and fields with versioned publish lifecycle.
+- Runtime CRUD/query APIs generated from published metadata definitions.
+- App and workspace model for Admin, Maker, and Worker usage paths.
+- Authentication with email/password, passkeys, MFA, and server-side sessions.
+- Tenant-scoped RBAC checks and audit/event persistence.
+- Optional queued workflow execution via `qryvanta-worker`.
 
-## Quickstart
+## Repository Layout
 
-1. Install prerequisites: Rust stable, Node.js 22+, Docker + Docker Compose, pnpm 10+.
-2. Install dependencies: `pnpm install`.
-3. Start infrastructure: `docker compose up -d`.
-4. Create local env: `cp .env.example .env`.
-5. Run checks: `cargo xcheck`.
-6. Start development: `pnpm dev`.
+- `apps/api`: Rust HTTP API (`axum`) and composition root.
+- `apps/worker`: Rust workflow worker runtime for queued execution.
+- `apps/web`: Next.js authenticated product app.
+- `apps/landing`: Next.js public site for `qryvanta.org` messaging.
+- `apps/docs`: Fumadocs documentation site.
+- `crates/core`: shared primitives and error model.
+- `crates/domain`: domain types and invariants.
+- `crates/application`: use-cases and ports.
+- `crates/infrastructure`: adapter implementations for ports.
+- `packages/ui`: shared UI package.
+- `packages/api-types`: generated TypeScript API contract types from Rust DTOs.
+- `packages/typescript-config`: shared TypeScript config presets.
 
-Default local ports:
+## Quickstart (First Run)
+
+Prerequisites: Rust stable, Node.js 22+, Docker + Docker Compose, pnpm 10+.
+
+```bash
+pnpm install
+docker compose up -d
+cp .env.example .env
+cargo xcheck
+pnpm dev
+```
+
+Verify API health:
+
+```bash
+curl http://127.0.0.1:3001/health
+```
+
+Expected response:
+
+```json
+{"status":"ok"}
+```
+
+Local URLs:
 
 - API: `http://localhost:3001`
-- Worker: runs as a separate process when `WORKFLOW_EXECUTION_MODE=queued`
 - Web: `http://localhost:3000`
 - Landing: `http://localhost:3003`
 - Docs: `http://127.0.0.1:3002`
 
-Keep auth-related URLs on `localhost` during local development to avoid passkey and session-cookie origin mismatches.
+## Auth and Local Hostnames
+
+For passkeys and session cookies in local development, keep auth URLs on `localhost`:
+
+- `FRONTEND_URL=http://localhost:3000`
+- `NEXT_PUBLIC_API_BASE_URL=http://localhost:3001`
+- `WEBAUTHN_RP_ORIGIN=http://localhost:3000`
+
+## Worker Runtime
+
+`WORKFLOW_EXECUTION_MODE=inline` is the default local mode.
+
+When using queued execution, run at least one worker process:
+
+```bash
+cargo run -p qryvanta-worker
+```
 
 ## Transactional Email
 
-- Local development uses `EMAIL_PROVIDER=console` (logs auth/invite emails to API output).
-- Production should use `EMAIL_PROVIDER=smtp` with non-empty `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, and `SMTP_FROM_ADDRESS`.
-- Qryvanta mail flows are transactional-only (verification, reset, invite) and do not include marketing tracking.
+- Local default: `EMAIL_PROVIDER=console` (email content goes to API logs).
+- SMTP mode: set `EMAIL_PROVIDER=smtp` and provide `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_ADDRESS`.
+- Qryvanta email scope is transactional only: verification, reset, and invite flows.
 
-## Security Administration
+## Daily Commands
 
-- Tenant role admins can manage custom RBAC roles and assignments from the web UI.
-- Tenant role admins can switch workspace registration mode between `invite_only` and `open`.
-- Authentication bootstrap flows automatically ensure each subject is represented by a tenant-scoped runtime `contact` record.
+- `pnpm dev`: run API, web, landing, and docs.
+- `pnpm dev:docs`: run docs app only.
+- `pnpm dev:landing`: run landing app only.
+- `pnpm build`: build JS workspaces.
+- `pnpm check`: static checks and contract checks.
+- `pnpm lint`: lint checks.
+- `pnpm test`: workspace tests.
+- `cargo xcheck`: Rust checks.
+- `cargo xclippy`: Rust lints.
+- `cargo xtest`: Rust tests.
 
-## Useful Commands
+## Documentation and Standards
 
-- `pnpm dev` - run API, web, landing, and docs
-- `pnpm dev:landing` - run landing app only
-- `pnpm build` - build all workspaces
-- `pnpm lint` - run lint checks
-- `pnpm format:web` - format frontend files with Prettier
-- `pnpm format:web:check` - verify frontend formatting
-- `pnpm test` - run all tests
-- `pnpm check` - run static checks + API contract checks
-- `cargo xcheck` - Rust checks
-- `cargo xclippy` - Rust lints
-- `cargo xtest` - Rust tests
-- `cargo run -p qryvanta-worker` - run workflow worker runtime
+- Docs site content: `apps/docs/content/docs`
+- Architecture and workflow guardrails: `AGENTS.md`
+- Contributor workflow: `CONTRIBUTING.md`
+- Engineering standards: `apps/docs/content/docs/development/engineering-standards.mdx`
 
-## Contributing
-
-Start with:
-
-- `CONTRIBUTING.md` for contributor workflow
-- `AGENTS.md` for architecture boundaries and coding guardrails
-- `apps/docs/content/docs/development/engineering-standards.mdx` for development standards
-
-If you use local coding-agent presets, bootstrap them with:
+If you use local coding-agent presets:
 
 ```bash
 cp -R .agent.example .agent
 ```
 
-`.agent/` is intentionally ignored and machine-specific.
+`.agent/` is machine-local and git-ignored.
 
 ## Roadmap
 
-- Product roadmap: `docs/ROADMAP.md`
-- Documentation roadmap page: `apps/docs/content/docs/development/roadmap.mdx`
-
-## Domains
-
-- Main open-source project site: `qryvanta.org`
-- Reserved for future cloud offering: `qryvanta.com`
+- Product roadmap document: `docs/ROADMAP.md`
+- Docs roadmap page: `apps/docs/content/docs/development/roadmap.mdx`
 
 ## License
 
-Licensed under Apache 2.0. See `LICENSE`.
+Apache 2.0. See `LICENSE`.

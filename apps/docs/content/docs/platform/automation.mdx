@@ -3,6 +3,8 @@ title: Automation
 description: Trigger and action model for background business workflows.
 ---
 
+Phase status: in progress.
+
 ## Workflow Model
 
 - Trigger: `manual` or internal `runtime_record_created` per entity
@@ -12,7 +14,7 @@ description: Trigger and action model for background business workflows.
   - `condition` with `equals` / `not_equals` / `exists`
 - Retry policy: per-workflow `max_attempts` (1-10)
 
-## Execution Semantics
+## Execution Lifecycle
 
 1. A workflow definition is saved in tenant scope (`/api/workflows`).
 2. A run starts either by manual execute or runtime-record-created dispatch.
@@ -23,34 +25,35 @@ description: Trigger and action model for background business workflows.
 7. Failed terminal runs are marked `dead_lettered` with captured reason.
 8. Run + attempt history is persisted for tenant observability.
 
-## API Endpoints (v1)
+## Execution Modes
+
+- `inline`: simplest local setup, run executes inside API request handling.
+- `queued`: API enqueues jobs and `qryvanta-worker` claims them through authenticated internal routes.
+
+Use queued mode for isolation and independent worker scaling.
+
+## Maker Automation Canvas
+
+- Canvas editing supports trigger, action, and condition nodes.
+- Step wiring supports drag/reconnect behavior with explicit drop targets (`before`, `after`, `to yes`, `to no`, `insert first`).
+- Layout helpers include snap-to-grid and auto-arrange.
+- Interaction model supports box selection, multi-node drag, and undo/redo (`Cmd/Ctrl+Z`, `Cmd/Ctrl+Shift+Z`).
+- Builder and inspector are in-canvas overlays.
+- Node picker supports keyboard insert (`A`) with fuzzy search.
+- Function catalog supports category browsing and template insertion for trigger/logic/integration/data/operations paths.
+
+## Endpoint Reference
+
+Automation routes are defined in `API Conventions`:
 
 - `GET /api/workflows`
 - `POST /api/workflows`
 - `POST /api/workflows/:workflow_logical_name/execute`
 - `GET /api/workflows/runs?workflow_logical_name=&limit=50&offset=0`
 - `GET /api/workflows/runs/:run_id/attempts`
-
-Internal worker endpoint:
-
-- `POST /api/internal/worker/jobs/claim` (requires `Authorization: Bearer <WORKER_SHARED_SECRET>` and `x-qryvanta-worker-id`)
-- `POST /api/internal/worker/heartbeat` records worker liveness and claimed/executed/failed cycle counts.
-- `GET /api/internal/worker/jobs/stats?active_window_seconds=120` returns queue depth, expired leases, and active worker count.
-
-## Maker Automation Canvas
-
-- Maker Center automation now uses a click-first visual canvas with trigger, action, and condition branch nodes.
-- Conditions let makers build Yes/No branch paths from trigger payload fields.
-- Canvas nodes support drag-to-position layout with connector wires that update in real-time.
-- Makers can drag from a step wire port to reconnect flow order, then drop on target handles (`before`, `after`, `to yes`, `to no`, `insert first`).
-- The canvas includes snap-to-grid alignment, stage lane guides, and one-click auto-arrange for larger flow readability.
-- Canvas editing supports box selection, multi-node drag, and undo/redo (`Cmd/Ctrl+Z`, `Cmd/Ctrl+Shift+Z`).
-- Builder, inspector, and run history are now in-canvas overlays in a full-workspace automation designer.
-- Condition connectors support custom branch labels instead of fixed Yes/No text.
-- The in-canvas builder includes a searchable, category-based function catalog (trigger/logic/integration/data/operations) with one-click insert modes.
-- A n8n-style node picker is available from keyboard (`A`) with fuzzy search and Enter-to-insert at current canvas cursor.
-- Function templates now include trigger/integration patterns such as `Webhook Event Trigger`, `HTTP Request`, `Transform Payload`, and `Delay`.
-- Existing workflows can be loaded back into the canvas, edited, and saved without leaving the designer.
+- `POST /api/internal/worker/jobs/claim`
+- `POST /api/internal/worker/heartbeat`
+- `GET /api/internal/worker/jobs/stats`
 
 ## Reliability Requirements
 
