@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import {
@@ -11,9 +12,14 @@ import {
 
 import { cn } from "@/lib/utils";
 
+export const metadata: Metadata = {
+  title: "Maker Center",
+  description: "Configure entities, app bindings, and workflow automation.",
+};
+
 export default function MakerHomePage() {
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid gap-4 lg:grid-cols-3">
       <Card>
         <CardHeader>
           <CardTitle>Entity Modeling</CardTitle>
@@ -41,6 +47,23 @@ export default function MakerHomePage() {
             className={cn(buttonVariants({ variant: "outline" }))}
           >
             Open App Studio
+          </Link>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Automation</CardTitle>
+          <CardDescription>
+            Configure internal triggers/actions and inspect execution history.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Link
+            href="/maker/automation"
+            className={cn(buttonVariants({ variant: "outline" }))}
+          >
+            Open Automation
           </Link>
         </CardContent>
       </Card>

@@ -31,11 +31,18 @@ import type {
   RuntimeRecordResponse,
   SaveAppRoleEntityPermissionRequest,
   SaveRuntimeFieldPermissionsRequest,
+  SaveWorkflowRequest,
   TemporaryAccessGrantResponse,
   TenantRegistrationModeResponse,
+  ExecuteWorkflowRequest,
   UpdateAuditRetentionPolicyRequest,
   UpdateTenantRegistrationModeRequest,
   UserIdentityResponse,
+  WorkflowResponse,
+  WorkflowStepDto,
+  WorkflowConditionOperatorDto,
+  WorkflowRunAttemptResponse,
+  WorkflowRunResponse,
 } from "@qryvanta/api-types";
 
 export const API_BASE_URL =
@@ -85,11 +92,18 @@ export type {
   RuntimeRecordResponse,
   SaveAppRoleEntityPermissionRequest,
   SaveRuntimeFieldPermissionsRequest,
+  SaveWorkflowRequest,
   TemporaryAccessGrantResponse,
   TenantRegistrationModeResponse,
+  ExecuteWorkflowRequest,
   UpdateAuditRetentionPolicyRequest,
   UpdateTenantRegistrationModeRequest,
   UserIdentityResponse,
+  WorkflowResponse,
+  WorkflowStepDto,
+  WorkflowConditionOperatorDto,
+  WorkflowRunAttemptResponse,
+  WorkflowRunResponse,
 };
 
 function shouldSetJsonContentType(body: BodyInit | null | undefined): boolean {

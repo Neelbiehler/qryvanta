@@ -76,6 +76,9 @@ pub async fn bind_app_entity_handler(
                 entity_logical_name: payload.entity_logical_name,
                 navigation_label: payload.navigation_label,
                 navigation_order: payload.navigation_order,
+                form_field_logical_names: payload.form_field_logical_names,
+                list_field_logical_names: payload.list_field_logical_names,
+                default_view_mode: payload.default_view_mode.map(Into::into),
             },
         )
         .await?;

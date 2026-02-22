@@ -49,6 +49,7 @@ export const SURFACES: Record<SurfaceId, SurfaceDefinition> = {
       { label: "Overview", href: "/maker" },
       { label: "Entities", href: "/maker/entities" },
       { label: "App Studio", href: "/maker/apps" },
+      { label: "Automation", href: "/maker/automation" },
     ],
   },
   worker: {

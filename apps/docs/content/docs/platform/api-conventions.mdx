@@ -47,7 +47,7 @@ Keep handlers focused on:
 - `GET /api/apps` lists tenant apps for administrators.
 - `POST /api/apps` creates an app.
 - `GET /api/apps/:app_logical_name/entities` lists app navigation bindings.
-- `POST /api/apps/:app_logical_name/entities` saves app navigation binding.
+- `POST /api/apps/:app_logical_name/entities` saves app navigation binding and optional app-scoped presentation overrides (`form_field_logical_names`, `list_field_logical_names`, `default_view_mode`).
 - `GET /api/apps/:app_logical_name/permissions` lists app role entity permissions.
 - `PUT /api/apps/:app_logical_name/permissions` saves app role entity permissions.
 - `GET /api/workspace/apps` lists apps accessible to the current subject.
@@ -57,6 +57,14 @@ Keep handlers focused on:
 - `GET|POST /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/records` lists/creates records with app-scoped permissions.
 - `POST /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/records/query` queries records with app-scoped permissions using alias-aware runtime query grammar.
 - `GET|PUT|DELETE /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/records/:record_id` reads/writes/deletes records with app-scoped permissions.
+
+## Automation Endpoints
+
+- `GET /api/workflows` lists workflow definitions.
+- `POST /api/workflows` creates or updates a workflow definition.
+- `POST /api/workflows/:workflow_logical_name/execute` executes a workflow manually with trigger payload.
+- `GET /api/workflows/runs?workflow_logical_name=&limit=50&offset=0` lists workflow execution runs.
+- `GET /api/workflows/runs/:run_id/attempts` lists attempt history for one workflow run.
 
 ## Security Admin Endpoints
 

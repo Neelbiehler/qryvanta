@@ -3,6 +3,7 @@ use axum::extract::{Extension, Path, Query, State};
 use axum::http::StatusCode;
 use qryvanta_core::AppError;
 use qryvanta_core::UserIdentity;
+use tracing::warn;
 
 use crate::dto::{
     CreateRuntimeRecordRequest, QueryRuntimeRecordsRequest, RuntimeRecordResponse,
@@ -52,6 +53,24 @@ pub async fn create_runtime_record_handler(
         .metadata_service
         .create_runtime_record(&user, entity_logical_name.as_str(), payload.data)
         .await?;
+
+    if let Err(error) = state
+        .workflow_service
+        .dispatch_runtime_record_created(
+            &user,
+            entity_logical_name.as_str(),
+            record.record_id().as_str(),
+        )
+        .await
+    {
+        warn!(
+            error = %error,
+            tenant_id = %user.tenant_id(),
+            entity_logical_name = %entity_logical_name,
+            record_id = %record.record_id().as_str(),
+            "workflow dispatch failed after runtime record creation"
+        );
+    }
 
     Ok((
         StatusCode::CREATED,

@@ -1,0 +1,61 @@
+---
+title: Frontend Modularization
+description: Patterns for splitting large web and landing components into maintainable feature modules.
+---
+
+Qryvanta frontends (`apps/web` and `apps/landing`) prioritize feature modules over monolithic page components.
+
+## Goals
+
+- Keep files focused on one responsibility (layout, state orchestration, pure model logic, or rendering).
+- Reuse primitives through `@qryvanta/ui` for cross-app consistency.
+- Keep behavior stable during structural refactors.
+- Run quality gates (including React Doctor) for every significant UI refactor.
+
+## Module Pattern
+
+For large feature areas, split into:
+
+1. `model.ts` or `helpers.ts` for pure logic and shared types.
+2. `*-panel.tsx` orchestrator component for state + API calls.
+3. Section components for focused render concerns.
+4. Shared primitives in `packages/ui` when used by multiple apps.
+
+## Current Examples
+
+- `apps/web/src/components/automation/workflow-studio/model.ts` holds canvas graph utilities, step/template factories, and reusable workflow types.
+- `apps/web/src/components/apps/workspace-entity/helpers.ts` holds payload/value helpers reused by the Worker entity panel.
+- `apps/landing/src/components/landing/*` splits the landing page into composable sections.
+- `apps/landing/src/components/platform-showcase-data.ts` and `apps/landing/src/components/platform-showcase-utils.ts` separate scene data from rendering.
+
+## Shared UI Extraction Rule
+
+Move components to `@qryvanta/ui` when they are:
+
+- Generic (not tied to a specific business domain).
+- Used by at least two frontend surfaces.
+- Stable enough to maintain as a package API.
+
+Example: `Notice` in `packages/ui/src/components/notice.tsx` centralizes inline success/error/warning messaging styles.
+
+## Quality Gate
+
+Run these before merge:
+
+```bash
+pnpm --filter @qryvanta/web check
+pnpm --filter @qryvanta/web lint
+pnpm --filter @qryvanta/web build
+
+pnpm --filter @qryvanta/landing check
+pnpm --filter @qryvanta/landing lint
+pnpm --filter @qryvanta/landing build
+
+pnpm --filter @qryvanta/ui check
+
+npx -y react-doctor@latest . --verbose --project @qryvanta/web
+npx -y react-doctor@latest . --verbose --project @qryvanta/landing
+npx -y react-doctor@latest ./packages/ui --verbose
+```
+
+Address high-signal findings in the same change set.

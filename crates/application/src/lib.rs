@@ -14,6 +14,8 @@ mod mfa_service;
 mod rate_limit_service;
 mod security_admin_service;
 mod user_service;
+mod workflow_ports;
+mod workflow_service;
 
 pub use app_ports::{
     AppRepository, BindAppEntityInput, CreateAppInput, RuntimeRecordService,
@@ -47,3 +49,9 @@ pub use security_admin_service::{
 pub use user_service::{
     AuthOutcome, PasswordHasher, RegisterParams, UserRecord, UserRepository, UserService,
 };
+pub use workflow_ports::{
+    CompleteWorkflowRunInput, CreateWorkflowRunInput, SaveWorkflowInput, WorkflowRepository,
+    WorkflowRun, WorkflowRunAttempt, WorkflowRunAttemptStatus, WorkflowRunListQuery,
+    WorkflowRunStatus, WorkflowRuntimeRecordService,
+};
+pub use workflow_service::WorkflowService;

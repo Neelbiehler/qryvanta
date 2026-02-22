@@ -1,4 +1,4 @@
 {
   "title": "Quickstart",
-  "pages": ["index", "docker-setup", "local-development"]
+  "pages": ["index", "docker-setup", "local-development", "landing-app"]
 }

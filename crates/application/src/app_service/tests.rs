@@ -7,7 +7,8 @@ use tokio::sync::Mutex;
 
 use qryvanta_core::{AppError, AppResult, TenantId, UserIdentity};
 use qryvanta_domain::{
-    AppDefinition, AppEntityBinding, AppEntityRolePermission, Permission, RuntimeRecord,
+    AppDefinition, AppEntityBinding, AppEntityRolePermission, AppEntityViewMode, Permission,
+    RuntimeRecord,
 };
 
 use crate::{
@@ -337,8 +338,26 @@ async fn app_navigation_only_includes_readable_entities() {
     app_repository.bindings.lock().await.insert(
         (tenant_id, "sales".to_owned()),
         vec![
-            AppEntityBinding::new("sales", "account", None, 0).unwrap_or_else(|_| unreachable!()),
-            AppEntityBinding::new("sales", "invoice", None, 1).unwrap_or_else(|_| unreachable!()),
+            AppEntityBinding::new(
+                "sales",
+                "account",
+                None,
+                0,
+                Vec::new(),
+                Vec::new(),
+                AppEntityViewMode::Grid,
+            )
+            .unwrap_or_else(|_| unreachable!()),
+            AppEntityBinding::new(
+                "sales",
+                "invoice",
+                None,
+                1,
+                Vec::new(),
+                Vec::new(),
+                AppEntityViewMode::Grid,
+            )
+            .unwrap_or_else(|_| unreachable!()),
         ],
     );
 

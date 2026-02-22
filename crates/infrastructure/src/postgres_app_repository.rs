@@ -2,7 +2,9 @@ use async_trait::async_trait;
 
 use qryvanta_application::{AppRepository, SubjectEntityPermission};
 use qryvanta_core::{AppError, AppResult, TenantId};
-use qryvanta_domain::{AppDefinition, AppEntityBinding, AppEntityRolePermission};
+use qryvanta_domain::{
+    AppDefinition, AppEntityBinding, AppEntityRolePermission, AppEntityViewMode,
+};
 use sqlx::{FromRow, PgPool};
 
 /// PostgreSQL-backed repository for app definitions and app-scoped permissions.
@@ -32,6 +34,9 @@ struct AppEntityBindingRow {
     entity_logical_name: String,
     navigation_label: Option<String>,
     navigation_order: i32,
+    form_field_logical_names: Vec<String>,
+    list_field_logical_names: Vec<String>,
+    default_view_mode: String,
 }
 
 #[derive(Debug, FromRow)]
@@ -159,6 +164,10 @@ impl AppRepository for PostgresAppRepository {
         tenant_id: TenantId,
         binding: AppEntityBinding,
     ) -> AppResult<()> {
+        let form_field_logical_names = binding.form_field_logical_names().to_vec();
+        let list_field_logical_names = binding.list_field_logical_names().to_vec();
+        let default_view_mode = binding.default_view_mode().as_str();
+
         sqlx::query(
             r#"
             INSERT INTO app_entity_bindings (
@@ -167,13 +176,19 @@ impl AppRepository for PostgresAppRepository {
                 entity_logical_name,
                 navigation_label,
                 navigation_order,
+                form_field_logical_names,
+                list_field_logical_names,
+                default_view_mode,
                 updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, now())
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
             ON CONFLICT (tenant_id, app_logical_name, entity_logical_name)
             DO UPDATE SET
                 navigation_label = EXCLUDED.navigation_label,
                 navigation_order = EXCLUDED.navigation_order,
+                form_field_logical_names = EXCLUDED.form_field_logical_names,
+                list_field_logical_names = EXCLUDED.list_field_logical_names,
+                default_view_mode = EXCLUDED.default_view_mode,
                 updated_at = now()
             "#,
         )
@@ -182,6 +197,9 @@ impl AppRepository for PostgresAppRepository {
         .bind(binding.entity_logical_name().as_str())
         .bind(binding.navigation_label())
         .bind(binding.navigation_order())
+        .bind(form_field_logical_names)
+        .bind(list_field_logical_names)
+        .bind(default_view_mode)
         .execute(&self.pool)
         .await
         .map_err(|error| {
@@ -203,7 +221,14 @@ impl AppRepository for PostgresAppRepository {
     ) -> AppResult<Vec<AppEntityBinding>> {
         let rows = sqlx::query_as::<_, AppEntityBindingRow>(
             r#"
-            SELECT app_logical_name, entity_logical_name, navigation_label, navigation_order
+            SELECT
+                app_logical_name,
+                entity_logical_name,
+                navigation_label,
+                navigation_order,
+                form_field_logical_names,
+                list_field_logical_names,
+                default_view_mode
             FROM app_entity_bindings
             WHERE tenant_id = $1 AND app_logical_name = $2
             ORDER BY navigation_order, entity_logical_name
@@ -227,6 +252,9 @@ impl AppRepository for PostgresAppRepository {
                     row.entity_logical_name,
                     row.navigation_label,
                     row.navigation_order,
+                    row.form_field_logical_names,
+                    row.list_field_logical_names,
+                    app_entity_view_mode_from_str(row.default_view_mode.as_str())?,
                 )
             })
             .collect()
@@ -559,4 +587,8 @@ impl AppRepository for PostgresAppRepository {
             })
             .collect())
     }
+}
+
+fn app_entity_view_mode_from_str(value: &str) -> AppResult<AppEntityViewMode> {
+    AppEntityViewMode::from_str(value)
 }

@@ -8,6 +8,9 @@ Build a metadata-driven platform where teams can define business data models, ge
 
 ## Enterprise Foundation Track
 
+Status:
+- Complete
+
 Target outcome:
 - Production-safe security controls established early in the platform lifecycle.
 
@@ -43,6 +46,9 @@ Exit criteria:
 
 ## Phase 2: Metadata Runtime
 
+Status:
+- Complete
+
 Target outcome:
 - Rich schema model and runtime APIs generated from published metadata.
 
@@ -58,6 +64,9 @@ Exit criteria:
 
 ## Phase 3: App Builder
 
+Status:
+- In progress
+
 Target outcome:
 - UI composition from metadata.
 
@@ -70,6 +79,9 @@ Exit criteria:
 - A user can define an entity in UI and use generated CRUD screens.
 
 ## Phase 4: Automation Runtime
+
+Status:
+- Backlog
 
 Target outcome:
 - Event and schedule-driven workflows.
@@ -85,6 +97,9 @@ Exit criteria:
 
 ## Phase 5: Security and Multi-Tenancy
 
+Status:
+- Backlog
+
 Target outcome:
 - Production-safe isolation and governance controls.
 
@@ -99,6 +114,9 @@ Exit criteria:
 
 ## Phase 6: Self-Hosting and Operations
 
+Status:
+- Backlog
+
 Target outcome:
 - Repeatable, documented deployments.
 
@@ -112,8 +130,8 @@ Exit criteria:
 
 ## Immediate Backlog (Start Here)
 
-1. Add field-level and record-level permission model on top of RBAC.
-2. Add role management APIs and admin UI surfaces.
-3. Expand audit coverage to metadata publish and workflow operations.
-4. Add audit retention/export controls for self-hosted operators.
-5. Add tenant boundary integration tests for every persistence adapter.
+1. ST-07: Optional remote workflow workers with secure execution boundaries (active).
+2. ST-11: Connected environment promotion (Dev/Staging/Prod instances).
+3. ST-12: Solutions packaging (git-backed import/export + deployment pipeline).
+4. ST-13: Internal scaling layers for queue/cache/partition-ready runtime.
+5. ST-16: Security adversarial test pack (Claude Sec when available).
