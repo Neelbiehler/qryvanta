@@ -20,5 +20,6 @@ pub use user::{
     PASSWORD_MIN_LENGTH_WITHOUT_MFA, RegistrationMode, UserId, validate_password,
 };
 pub use workflow::{
-    WorkflowAction, WorkflowConditionOperator, WorkflowDefinition, WorkflowStep, WorkflowTrigger,
+    WorkflowAction, WorkflowConditionOperator, WorkflowDefinition, WorkflowDefinitionInput,
+    WorkflowStep, WorkflowTrigger,
 };

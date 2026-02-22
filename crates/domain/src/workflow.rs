@@ -163,18 +163,41 @@ pub struct WorkflowDefinition {
     is_enabled: bool,
 }
 
+/// Input payload used to construct a validated workflow definition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkflowDefinitionInput {
+    /// Stable workflow logical name.
+    pub logical_name: String,
+    /// User-facing workflow display name.
+    pub display_name: String,
+    /// Optional workflow description.
+    pub description: Option<String>,
+    /// Trigger configuration.
+    pub trigger: WorkflowTrigger,
+    /// Legacy primary action configuration.
+    pub action: WorkflowAction,
+    /// Optional workflow canvas steps.
+    pub steps: Option<Vec<WorkflowStep>>,
+    /// Maximum execution attempts.
+    pub max_attempts: u16,
+    /// Enabled/disabled flag.
+    pub is_enabled: bool,
+}
+
 impl WorkflowDefinition {
     /// Creates a validated workflow definition.
-    pub fn new(
-        logical_name: impl Into<String>,
-        display_name: impl Into<String>,
-        description: Option<String>,
-        trigger: WorkflowTrigger,
-        action: WorkflowAction,
-        steps: Option<Vec<WorkflowStep>>,
-        max_attempts: u16,
-        is_enabled: bool,
-    ) -> AppResult<Self> {
+    pub fn new(input: WorkflowDefinitionInput) -> AppResult<Self> {
+        let WorkflowDefinitionInput {
+            logical_name,
+            display_name,
+            description,
+            trigger,
+            action,
+            steps,
+            max_attempts,
+            is_enabled,
+        } = input;
+
         if max_attempts == 0 {
             return Err(AppError::Validation(
                 "max_attempts must be greater than zero".to_owned(),
@@ -382,20 +405,20 @@ fn validate_step(step: &WorkflowStep) -> AppResult<()> {
                 ));
             }
 
-            if let Some(label) = then_label {
-                if label.trim().is_empty() {
-                    return Err(AppError::Validation(
-                        "condition step then_label must not be empty when provided".to_owned(),
-                    ));
-                }
+            if let Some(label) = then_label
+                && label.trim().is_empty()
+            {
+                return Err(AppError::Validation(
+                    "condition step then_label must not be empty when provided".to_owned(),
+                ));
             }
 
-            if let Some(label) = else_label {
-                if label.trim().is_empty() {
-                    return Err(AppError::Validation(
-                        "condition step else_label must not be empty when provided".to_owned(),
-                    ));
-                }
+            if let Some(label) = else_label
+                && label.trim().is_empty()
+            {
+                return Err(AppError::Validation(
+                    "condition step else_label must not be empty when provided".to_owned(),
+                ));
             }
 
             for child_step in then_steps {
@@ -414,58 +437,58 @@ fn validate_step(step: &WorkflowStep) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        WorkflowAction, WorkflowConditionOperator, WorkflowDefinition, WorkflowStep,
-        WorkflowTrigger,
+        WorkflowAction, WorkflowConditionOperator, WorkflowDefinition, WorkflowDefinitionInput,
+        WorkflowStep, WorkflowTrigger,
     };
 
     #[test]
     fn workflow_requires_positive_attempts() {
-        let workflow = WorkflowDefinition::new(
-            "notify",
-            "Notify",
-            None,
-            WorkflowTrigger::Manual,
-            WorkflowAction::LogMessage {
+        let workflow = WorkflowDefinition::new(WorkflowDefinitionInput {
+            logical_name: "notify".to_owned(),
+            display_name: "Notify".to_owned(),
+            description: None,
+            trigger: WorkflowTrigger::Manual,
+            action: WorkflowAction::LogMessage {
                 message: "hello".to_owned(),
             },
-            None,
-            0,
-            true,
-        );
+            steps: None,
+            max_attempts: 0,
+            is_enabled: true,
+        });
 
         assert!(workflow.is_err());
     }
 
     #[test]
     fn create_runtime_record_action_requires_object_payload() {
-        let workflow = WorkflowDefinition::new(
-            "create_contact",
-            "Create Contact",
-            None,
-            WorkflowTrigger::Manual,
-            WorkflowAction::CreateRuntimeRecord {
+        let workflow = WorkflowDefinition::new(WorkflowDefinitionInput {
+            logical_name: "create_contact".to_owned(),
+            display_name: "Create Contact".to_owned(),
+            description: None,
+            trigger: WorkflowTrigger::Manual,
+            action: WorkflowAction::CreateRuntimeRecord {
                 entity_logical_name: "contact".to_owned(),
                 data: serde_json::json!("invalid"),
             },
-            None,
-            3,
-            true,
-        );
+            steps: None,
+            max_attempts: 3,
+            is_enabled: true,
+        });
 
         assert!(workflow.is_err());
     }
 
     #[test]
     fn condition_step_requires_at_least_one_branch_step() {
-        let workflow = WorkflowDefinition::new(
-            "branching",
-            "Branching",
-            None,
-            WorkflowTrigger::Manual,
-            WorkflowAction::LogMessage {
+        let workflow = WorkflowDefinition::new(WorkflowDefinitionInput {
+            logical_name: "branching".to_owned(),
+            display_name: "Branching".to_owned(),
+            description: None,
+            trigger: WorkflowTrigger::Manual,
+            action: WorkflowAction::LogMessage {
                 message: "legacy".to_owned(),
             },
-            Some(vec![WorkflowStep::Condition {
+            steps: Some(vec![WorkflowStep::Condition {
                 field_path: "status".to_owned(),
                 operator: WorkflowConditionOperator::Equals,
                 value: Some(serde_json::json!("open")),
@@ -474,24 +497,24 @@ mod tests {
                 then_steps: Vec::new(),
                 else_steps: Vec::new(),
             }]),
-            3,
-            true,
-        );
+            max_attempts: 3,
+            is_enabled: true,
+        });
 
         assert!(workflow.is_err());
     }
 
     #[test]
     fn workflow_accepts_canvas_steps() {
-        let workflow = WorkflowDefinition::new(
-            "branching",
-            "Branching",
-            None,
-            WorkflowTrigger::Manual,
-            WorkflowAction::LogMessage {
+        let workflow = WorkflowDefinition::new(WorkflowDefinitionInput {
+            logical_name: "branching".to_owned(),
+            display_name: "Branching".to_owned(),
+            description: None,
+            trigger: WorkflowTrigger::Manual,
+            action: WorkflowAction::LogMessage {
                 message: "legacy".to_owned(),
             },
-            Some(vec![WorkflowStep::Condition {
+            steps: Some(vec![WorkflowStep::Condition {
                 field_path: "status".to_owned(),
                 operator: WorkflowConditionOperator::Equals,
                 value: Some(serde_json::json!("open")),
@@ -505,9 +528,9 @@ mod tests {
                     data: serde_json::json!({"title": "follow-up"}),
                 }],
             }]),
-            3,
-            true,
-        );
+            max_attempts: 3,
+            is_enabled: true,
+        });
 
         assert!(workflow.is_ok());
     }

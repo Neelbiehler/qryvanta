@@ -2,6 +2,7 @@ use qryvanta_core::{AppError, AppResult, NonEmptyString};
 use serde::{Deserialize, Serialize};
 
 use std::collections::HashSet;
+use std::str::FromStr;
 
 /// Metadata-driven application definition used to group worker experiences.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -82,7 +83,7 @@ impl AppEntityViewMode {
     }
 
     /// Parses storage value into a view mode.
-    pub fn from_str(value: &str) -> AppResult<Self> {
+    pub fn parse(value: &str) -> AppResult<Self> {
         match value {
             "grid" => Ok(Self::Grid),
             "json" => Ok(Self::Json),
@@ -90,6 +91,14 @@ impl AppEntityViewMode {
                 "unknown app entity view mode '{value}'"
             ))),
         }
+    }
+}
+
+impl FromStr for AppEntityViewMode {
+    type Err = AppError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::parse(value)
     }
 }
 
