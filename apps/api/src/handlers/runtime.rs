@@ -666,6 +666,7 @@ mod tests {
                         is_unique: false,
                         default_value: None,
                         relation_target_entity: None,
+                        option_set_logical_name: None,
                     },
                 )
                 .await
@@ -690,6 +691,7 @@ mod tests {
                         is_unique: false,
                         default_value: None,
                         relation_target_entity: None,
+                        option_set_logical_name: None,
                     },
                 )
                 .await
@@ -708,6 +710,7 @@ mod tests {
                         is_unique: false,
                         default_value: None,
                         relation_target_entity: Some("contact".to_owned()),
+                        option_set_logical_name: None,
                     },
                 )
                 .await

@@ -5,8 +5,10 @@ import { redirect } from "next/navigation";
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
-  PageHeader,
+  CardTitle,
+  StatusBadge,
   buttonVariants,
 } from "@qryvanta/ui";
 
@@ -114,31 +116,73 @@ export default async function MakerEntityWorkbenchPage({
   }
 
   return (
-    <Card>
-      <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <PageHeader
-          eyebrow="Maker Center"
-          title={entityLogicalName}
-          description="Design fields, publish schemas, and query runtime records."
-          actions={
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+              Maker Center
+            </p>
+            <CardTitle className="font-serif text-3xl">{entityLogicalName}</CardTitle>
+            <CardDescription>
+              Model-driven entity designer for schema, publishing, and runtime validation.
+            </CardDescription>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge tone="neutral">Fields {fields.length}</StatusBadge>
+            <StatusBadge tone="neutral">Records {records.length}</StatusBadge>
+            <StatusBadge tone={publishedSchema ? "success" : "warning"}>
+              {publishedSchema ? `Published v${publishedSchema.version}` : "Draft only"}
+            </StatusBadge>
+            <Link
+              href={`/maker/entities/${encodeURIComponent(entityLogicalName)}/forms`}
+              className={cn(buttonVariants({ variant: "outline" }))}
+            >
+              Forms
+            </Link>
+            <Link
+              href={`/maker/entities/${encodeURIComponent(entityLogicalName)}/views`}
+              className={cn(buttonVariants({ variant: "outline" }))}
+            >
+              Views
+            </Link>
             <Link
               href="/maker/entities"
               className={cn(buttonVariants({ variant: "outline" }))}
             >
-              Back to entities
+              Back to library
             </Link>
-          }
-        />
-      </CardHeader>
+          </div>
+        </CardHeader>
+      </Card>
 
-      <CardContent>
-        <EntityWorkbenchPanel
-          entityLogicalName={entityLogicalName}
-          initialFields={fields}
-          initialPublishedSchema={publishedSchema}
-          initialRecords={records}
-        />
-      </CardContent>
-    </Card>
+      <div className="grid gap-4 xl:grid-cols-[280px_1fr]">
+        <Card className="h-fit border-emerald-200 bg-white">
+          <CardHeader>
+            <CardTitle className="text-base">Designer Map</CardTitle>
+            <CardDescription>
+              Follow schema-first model-driven delivery sequence.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-zinc-700">
+            <p>1. Define fields and constraints</p>
+            <p>2. Publish schema versions</p>
+            <p>3. Create and query runtime data</p>
+            <p>4. Validate app bindings in Worker Apps</p>
+          </CardContent>
+        </Card>
+
+        <Card className="border-emerald-200 bg-white">
+          <CardContent className="pt-6">
+            <EntityWorkbenchPanel
+              entityLogicalName={entityLogicalName}
+              initialFields={fields}
+              initialPublishedSchema={publishedSchema}
+              initialRecords={records}
+            />
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
 }

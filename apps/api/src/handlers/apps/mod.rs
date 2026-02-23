@@ -2,8 +2,9 @@ mod admin;
 mod workspace;
 
 pub use admin::{
-    bind_app_entity_handler, create_app_handler, list_app_entities_handler,
-    list_app_role_permissions_handler, list_apps_handler, save_app_role_permission_handler,
+    bind_app_entity_handler, create_app_handler, get_app_sitemap_handler,
+    list_app_entities_handler, list_app_role_permissions_handler, list_apps_handler,
+    save_app_role_permission_handler, save_app_sitemap_handler,
 };
 pub use workspace::{
     app_navigation_handler, list_workspace_apps_handler, workspace_create_record_handler,

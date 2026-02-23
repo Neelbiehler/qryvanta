@@ -87,6 +87,7 @@ async fn runtime_record_unique_constraint_conflict() {
                 .list_fields(tenant_id, "contact")
                 .await
                 .unwrap_or_default(),
+            Vec::new(),
             "alice",
         )
         .await;
@@ -390,6 +391,7 @@ async fn query_runtime_records_supports_link_entity_alias_filters_and_where_grou
                     .list_fields(tenant_id, "contact")
                     .await
                     .unwrap_or_default(),
+                Vec::new(),
                 "alice",
             )
             .await
@@ -404,6 +406,7 @@ async fn query_runtime_records_supports_link_entity_alias_filters_and_where_grou
                     .list_fields(tenant_id, "deal")
                     .await
                     .unwrap_or_default(),
+                Vec::new(),
                 "alice",
             )
             .await
@@ -566,6 +569,7 @@ async fn relation_reference_check_detects_incoming_reference() {
                 .list_fields(tenant_id, "contact")
                 .await
                 .unwrap_or_default(),
+            Vec::new(),
             "alice",
         )
         .await;
@@ -579,6 +583,7 @@ async fn relation_reference_check_detects_incoming_reference() {
                 .list_fields(tenant_id, "deal")
                 .await
                 .unwrap_or_default(),
+            Vec::new(),
             "alice",
         )
         .await;
@@ -697,6 +702,7 @@ async fn relation_reference_check_does_not_leak_across_tenants() {
                     .list_fields(left_tenant, "deal")
                     .await
                     .unwrap_or_default(),
+                Vec::new(),
                 "alice",
             )
             .await
@@ -711,6 +717,7 @@ async fn relation_reference_check_does_not_leak_across_tenants() {
                     .list_fields(right_tenant, "deal")
                     .await
                     .unwrap_or_default(),
+                Vec::new(),
                 "alice",
             )
             .await

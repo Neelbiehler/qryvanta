@@ -100,15 +100,25 @@ export function WorkspaceEntityPanel({
   }
 
   const formFields = useMemo(
-    () => resolveConfiguredFields(schema, binding?.form_field_logical_names ?? []),
-    [binding?.form_field_logical_names, schema],
+    () => {
+      const presentation = resolveBindingPresentation(binding);
+      const defaultForm = presentation.forms.find(
+        (form) => form.logical_name === presentation.default_form_logical_name,
+      );
+      return resolveConfiguredFields(schema, defaultForm?.field_logical_names ?? presentation.fallback_form_field_logical_names);
+    },
+    [binding, schema],
   );
 
   const gridFields = useMemo(
     () => {
+      const presentation = resolveBindingPresentation(binding);
+      const defaultListView = presentation.list_views.find(
+        (view) => view.logical_name === presentation.default_list_view_logical_name,
+      );
       const configuredListFields = resolveConfiguredFields(
         schema,
-        binding?.list_field_logical_names ?? [],
+        defaultListView?.field_logical_names ?? presentation.fallback_list_field_logical_names,
       ).filter((field) => field.field_type !== "json");
 
       if (configuredListFields.length > 0) {
@@ -117,7 +127,7 @@ export function WorkspaceEntityPanel({
 
       return schema.fields.filter((field) => field.field_type !== "json").slice(0, 5);
     },
-    [binding?.list_field_logical_names, schema],
+    [binding, schema],
   );
 
   const filteredRecords = useMemo(() => {
@@ -258,7 +268,7 @@ export function WorkspaceEntityPanel({
 
   return (
     <div className="space-y-6">
-      <section className="space-y-3 rounded-md border border-emerald-100 bg-white p-4">
+      <section className="space-y-3 rounded-md border border-zinc-200 bg-zinc-50 p-4">
         <WorkspaceToolbar
           capabilities={capabilities}
           filteredRecordCount={filteredRecords.length}
@@ -318,6 +328,39 @@ export function WorkspaceEntityPanel({
   );
 }
 
+type BindingPresentation = {
+  forms: Array<{ logical_name: string; field_logical_names: string[] }>;
+  list_views: Array<{ logical_name: string; field_logical_names: string[] }>;
+  default_form_logical_name: string;
+  default_list_view_logical_name: string;
+  fallback_form_field_logical_names: string[];
+  fallback_list_field_logical_names: string[];
+};
+
+function resolveBindingPresentation(
+  binding: AppEntityBindingResponse | null,
+): BindingPresentation {
+  if (!binding) {
+    return {
+      forms: [],
+      list_views: [],
+      default_form_logical_name: "main_form",
+      default_list_view_logical_name: "main_view",
+      fallback_form_field_logical_names: [],
+      fallback_list_field_logical_names: [],
+    };
+  }
+
+  return {
+    forms: binding.forms,
+    list_views: binding.list_views,
+    default_form_logical_name: binding.default_form_logical_name,
+    default_list_view_logical_name: binding.default_list_view_logical_name,
+    fallback_form_field_logical_names: binding.form_field_logical_names,
+    fallback_list_field_logical_names: binding.list_field_logical_names,
+  };
+}
+
 type WorkspaceToolbarProps = {
   capabilities: AppEntityCapabilitiesResponse;
   filteredRecordCount: number;
@@ -345,6 +388,13 @@ function WorkspaceToolbar({
 }: WorkspaceToolbarProps) {
   return (
     <>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 pb-2">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+          Command Bar
+        </p>
+        <p className="text-xs text-zinc-500">Model-driven runtime view</p>
+      </div>
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <StatusBadge tone="success">Schema v{schemaVersion}</StatusBadge>
@@ -363,7 +413,7 @@ function WorkspaceToolbar({
             variant={showCreatePanel ? "default" : "outline"}
             onClick={onToggleCreatePanel}
           >
-            {showCreatePanel ? "Hide New Form" : "New Record"}
+            {showCreatePanel ? "Hide Quick Create" : "Quick Create"}
           </Button>
           <Button
             type="button"
@@ -389,7 +439,7 @@ function WorkspaceToolbar({
         <Input
           value={recordSearch}
           onChange={(event) => onSearchChange(event.target.value)}
-          placeholder="Search by record id or any field value"
+          placeholder="Search by record id or field value"
         />
         <p className="text-xs text-zinc-500 md:self-center">
           {filteredRecordCount} visible row(s)

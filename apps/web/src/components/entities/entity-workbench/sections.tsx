@@ -47,23 +47,28 @@ export function WorkbenchOverview({
 }: WorkbenchOverviewProps) {
   return (
     <>
-      <div className="flex flex-wrap items-center gap-2 rounded-md border border-emerald-100 bg-white/90 p-3">
-        <StatusBadge tone="neutral">Fields {fieldCount}</StatusBadge>
-        <StatusBadge tone="neutral">Records {recordCount}</StatusBadge>
-        <StatusBadge tone={hasPublishedSchema ? "success" : "warning"}>
-          {hasPublishedSchema && publishedVersion !== null
-            ? `Published v${publishedVersion}`
-            : "Not Published"}
-        </StatusBadge>
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-zinc-200 bg-zinc-50 p-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+          Entity Designer
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusBadge tone="neutral">Fields {fieldCount}</StatusBadge>
+          <StatusBadge tone="neutral">Records {recordCount}</StatusBadge>
+          <StatusBadge tone={hasPublishedSchema ? "success" : "warning"}>
+            {hasPublishedSchema && publishedVersion !== null
+              ? `Published v${publishedVersion}`
+              : "Not Published"}
+          </StatusBadge>
+        </div>
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2 rounded-md border border-zinc-200 bg-white p-3">
         <Button
           type="button"
           variant={activeSection === "schema" ? "default" : "outline"}
           onClick={() => onSectionChange("schema")}
         >
-          Schema Design
+          Data Model
         </Button>
         <Button
           type="button"
@@ -141,7 +146,7 @@ export function SchemaDesignSection({
       </div>
 
       <form
-        className="grid gap-3 rounded-md border border-emerald-100 bg-white p-4 md:grid-cols-2"
+        className="grid gap-3 rounded-md border border-zinc-200 bg-white p-4 md:grid-cols-2"
         onSubmit={handleSaveField}
       >
         <div className="space-y-2">
@@ -379,7 +384,7 @@ export function RuntimeOperationsSection({
 
       {activeRuntimeSection === "create" ? (
         <form
-          className="space-y-3 rounded-md border border-emerald-100 bg-white p-4"
+          className="space-y-3 rounded-md border border-zinc-200 bg-white p-4"
           onSubmit={handleCreateRecord}
         >
           <Label htmlFor="record_payload">Record Payload (JSON object)</Label>

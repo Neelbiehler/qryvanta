@@ -10,6 +10,9 @@ use serde_json::Value;
 pub struct EntityDefinition {
     logical_name: NonEmptyString,
     display_name: NonEmptyString,
+    description: Option<String>,
+    plural_display_name: Option<NonEmptyString>,
+    icon: Option<String>,
 }
 
 impl EntityDefinition {
@@ -18,9 +21,26 @@ impl EntityDefinition {
         logical_name: impl Into<String>,
         display_name: impl Into<String>,
     ) -> AppResult<Self> {
+        Self::new_with_details(logical_name, display_name, None, None, None)
+    }
+
+    /// Creates a new entity definition with optional enriched metadata fields.
+    pub fn new_with_details(
+        logical_name: impl Into<String>,
+        display_name: impl Into<String>,
+        description: Option<String>,
+        plural_display_name: Option<String>,
+        icon: Option<String>,
+    ) -> AppResult<Self> {
         Ok(Self {
             logical_name: NonEmptyString::new(logical_name)?,
             display_name: NonEmptyString::new(display_name)?,
+            description: normalize_optional_text(description),
+            plural_display_name: plural_display_name
+                .and_then(|value| normalize_optional_text(Some(value)))
+                .map(NonEmptyString::new)
+                .transpose()?,
+            icon: normalize_optional_text(icon),
         })
     }
 
@@ -34,6 +54,24 @@ impl EntityDefinition {
     #[must_use]
     pub fn display_name(&self) -> &NonEmptyString {
         &self.display_name
+    }
+
+    /// Returns optional longer-form description text.
+    #[must_use]
+    pub fn description(&self) -> Option<&str> {
+        self.description.as_deref()
+    }
+
+    /// Returns optional plural display label.
+    #[must_use]
+    pub fn plural_display_name(&self) -> Option<&NonEmptyString> {
+        self.plural_display_name.as_ref()
+    }
+
+    /// Returns optional icon key.
+    #[must_use]
+    pub fn icon(&self) -> Option<&str> {
+        self.icon.as_deref()
     }
 }
 
@@ -53,6 +91,10 @@ pub enum FieldType {
     DateTime,
     /// Arbitrary JSON field.
     Json,
+    /// Single-select option set field.
+    Choice,
+    /// Multi-select option set field.
+    MultiChoice,
     /// Many-to-one relation field.
     Relation,
 }
@@ -68,6 +110,8 @@ impl FieldType {
             Self::Date => "date",
             Self::DateTime => "datetime",
             Self::Json => "json",
+            Self::Choice => "choice",
+            Self::MultiChoice => "multichoice",
             Self::Relation => "relation",
         }
     }
@@ -78,6 +122,8 @@ impl FieldType {
             Self::Number => value.is_number(),
             Self::Boolean => value.is_boolean(),
             Self::Json => true,
+            Self::Choice => value.is_i64() || value.is_u64(),
+            Self::MultiChoice => value.is_array(),
             Self::Relation => value
                 .as_str()
                 .map(|text| !text.trim().is_empty())
@@ -106,11 +152,135 @@ impl FromStr for FieldType {
             "date" => Ok(Self::Date),
             "datetime" => Ok(Self::DateTime),
             "json" => Ok(Self::Json),
+            "choice" => Ok(Self::Choice),
+            "multichoice" => Ok(Self::MultiChoice),
             "relation" => Ok(Self::Relation),
             _ => Err(AppError::Validation(format!(
                 "unknown field type '{value}'"
             ))),
         }
+    }
+}
+
+/// Option set item used by choice-style field types.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OptionSetItem {
+    value: i32,
+    label: NonEmptyString,
+    color: Option<String>,
+    position: i32,
+}
+
+impl OptionSetItem {
+    /// Creates a validated option set item.
+    pub fn new(
+        value: i32,
+        label: impl Into<String>,
+        color: Option<String>,
+        position: i32,
+    ) -> AppResult<Self> {
+        Ok(Self {
+            value,
+            label: NonEmptyString::new(label)?,
+            color: normalize_optional_text(color),
+            position,
+        })
+    }
+
+    /// Returns stable item value.
+    #[must_use]
+    pub fn value(&self) -> i32 {
+        self.value
+    }
+
+    /// Returns item label.
+    #[must_use]
+    pub fn label(&self) -> &NonEmptyString {
+        &self.label
+    }
+
+    /// Returns optional color token.
+    #[must_use]
+    pub fn color(&self) -> Option<&str> {
+        self.color.as_deref()
+    }
+
+    /// Returns item sort position.
+    #[must_use]
+    pub fn position(&self) -> i32 {
+        self.position
+    }
+}
+
+/// Entity-scoped option set definition.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OptionSetDefinition {
+    entity_logical_name: NonEmptyString,
+    logical_name: NonEmptyString,
+    display_name: NonEmptyString,
+    options: Vec<OptionSetItem>,
+}
+
+impl OptionSetDefinition {
+    /// Creates a validated option set definition.
+    pub fn new(
+        entity_logical_name: impl Into<String>,
+        logical_name: impl Into<String>,
+        display_name: impl Into<String>,
+        options: Vec<OptionSetItem>,
+    ) -> AppResult<Self> {
+        if options.is_empty() {
+            return Err(AppError::Validation(
+                "option sets must include at least one item".to_owned(),
+            ));
+        }
+
+        let mut seen_values = HashSet::new();
+        for option in &options {
+            if !seen_values.insert(option.value()) {
+                return Err(AppError::Validation(format!(
+                    "duplicate option set value '{}' in option set",
+                    option.value()
+                )));
+            }
+        }
+
+        Ok(Self {
+            entity_logical_name: NonEmptyString::new(entity_logical_name)?,
+            logical_name: NonEmptyString::new(logical_name)?,
+            display_name: NonEmptyString::new(display_name)?,
+            options,
+        })
+    }
+
+    /// Returns parent entity logical name.
+    #[must_use]
+    pub fn entity_logical_name(&self) -> &NonEmptyString {
+        &self.entity_logical_name
+    }
+
+    /// Returns option set logical name.
+    #[must_use]
+    pub fn logical_name(&self) -> &NonEmptyString {
+        &self.logical_name
+    }
+
+    /// Returns option set display name.
+    #[must_use]
+    pub fn display_name(&self) -> &NonEmptyString {
+        &self.display_name
+    }
+
+    /// Returns configured options.
+    #[must_use]
+    pub fn options(&self) -> &[OptionSetItem] {
+        &self.options
+    }
+
+    /// Returns whether a numeric option value exists.
+    #[must_use]
+    pub fn contains_value(&self, value: i32) -> bool {
+        self.options.iter().any(|item| item.value() == value)
     }
 }
 
@@ -125,6 +295,11 @@ pub struct EntityFieldDefinition {
     is_unique: bool,
     default_value: Option<Value>,
     relation_target_entity: Option<NonEmptyString>,
+    option_set_logical_name: Option<NonEmptyString>,
+    description: Option<String>,
+    max_length: Option<i32>,
+    min_value: Option<f64>,
+    max_value: Option<f64>,
 }
 
 impl EntityFieldDefinition {
@@ -140,6 +315,40 @@ impl EntityFieldDefinition {
         default_value: Option<Value>,
         relation_target_entity: Option<String>,
     ) -> AppResult<Self> {
+        Self::new_with_details(
+            entity_logical_name,
+            logical_name,
+            display_name,
+            field_type,
+            is_required,
+            is_unique,
+            default_value,
+            relation_target_entity,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+    }
+
+    /// Creates a validated metadata field definition with optional enriched metadata.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_details(
+        entity_logical_name: impl Into<String>,
+        logical_name: impl Into<String>,
+        display_name: impl Into<String>,
+        field_type: FieldType,
+        is_required: bool,
+        is_unique: bool,
+        default_value: Option<Value>,
+        relation_target_entity: Option<String>,
+        option_set_logical_name: Option<String>,
+        description: Option<String>,
+        max_length: Option<i32>,
+        min_value: Option<f64>,
+        max_value: Option<f64>,
+    ) -> AppResult<Self> {
         if is_unique && matches!(field_type, FieldType::Json) {
             return Err(AppError::Validation(
                 "unique constraints are not supported for json field type".to_owned(),
@@ -147,6 +356,9 @@ impl EntityFieldDefinition {
         }
 
         let relation_target_entity = relation_target_entity
+            .map(NonEmptyString::new)
+            .transpose()?;
+        let option_set_logical_name = option_set_logical_name
             .map(NonEmptyString::new)
             .transpose()?;
 
@@ -165,8 +377,70 @@ impl EntityFieldDefinition {
             (_, false) => {}
         }
 
+        match (field_type, option_set_logical_name.is_some()) {
+            (FieldType::Choice | FieldType::MultiChoice, false) => {
+                return Err(AppError::Validation(
+                    "choice and multichoice fields require option_set_logical_name".to_owned(),
+                ));
+            }
+            (FieldType::Choice | FieldType::MultiChoice, true) => {}
+            (_, true) => {
+                return Err(AppError::Validation(
+                    "option_set_logical_name is only allowed for choice and multichoice fields"
+                        .to_owned(),
+                ));
+            }
+            (_, false) => {}
+        }
+
         if let Some(default_value) = &default_value {
             field_type.validate_value(default_value)?;
+        }
+
+        match field_type {
+            FieldType::Text => {
+                if let Some(value) = max_length
+                    && value <= 0
+                {
+                    return Err(AppError::Validation(
+                        "max_length must be greater than zero for text fields".to_owned(),
+                    ));
+                }
+
+                if min_value.is_some() || max_value.is_some() {
+                    return Err(AppError::Validation(
+                        "min_value/max_value are only allowed for number fields".to_owned(),
+                    ));
+                }
+            }
+            FieldType::Number => {
+                if max_length.is_some() {
+                    return Err(AppError::Validation(
+                        "max_length is only allowed for text fields".to_owned(),
+                    ));
+                }
+
+                if let (Some(minimum), Some(maximum)) = (min_value, max_value)
+                    && minimum > maximum
+                {
+                    return Err(AppError::Validation(
+                        "min_value must be less than or equal to max_value".to_owned(),
+                    ));
+                }
+            }
+            _ => {
+                if max_length.is_some() {
+                    return Err(AppError::Validation(
+                        "max_length is only allowed for text fields".to_owned(),
+                    ));
+                }
+
+                if min_value.is_some() || max_value.is_some() {
+                    return Err(AppError::Validation(
+                        "min_value/max_value are only allowed for number fields".to_owned(),
+                    ));
+                }
+            }
         }
 
         Ok(Self {
@@ -178,6 +452,11 @@ impl EntityFieldDefinition {
             is_unique,
             default_value,
             relation_target_entity,
+            option_set_logical_name,
+            description: normalize_optional_text(description),
+            max_length,
+            min_value,
+            max_value,
         })
     }
 
@@ -229,10 +508,76 @@ impl EntityFieldDefinition {
         self.relation_target_entity.as_ref()
     }
 
+    /// Returns option set logical name for choice-like fields.
+    #[must_use]
+    pub fn option_set_logical_name(&self) -> Option<&NonEmptyString> {
+        self.option_set_logical_name.as_ref()
+    }
+
+    /// Returns optional field description.
+    #[must_use]
+    pub fn description(&self) -> Option<&str> {
+        self.description.as_deref()
+    }
+
+    /// Returns optional text max length constraint.
+    #[must_use]
+    pub fn max_length(&self) -> Option<i32> {
+        self.max_length
+    }
+
+    /// Returns optional number minimum value constraint.
+    #[must_use]
+    pub fn min_value(&self) -> Option<f64> {
+        self.min_value
+    }
+
+    /// Returns optional number maximum value constraint.
+    #[must_use]
+    pub fn max_value(&self) -> Option<f64> {
+        self.max_value
+    }
+
+    /// Returns a copy with updated mutable metadata fields.
+    pub fn with_mutable_updates(
+        &self,
+        display_name: String,
+        description: Option<String>,
+        default_value: Option<Value>,
+        max_length: Option<i32>,
+        min_value: Option<f64>,
+        max_value: Option<f64>,
+    ) -> AppResult<Self> {
+        Self::new_with_details(
+            self.entity_logical_name().as_str(),
+            self.logical_name().as_str(),
+            display_name,
+            self.field_type,
+            self.is_required,
+            self.is_unique,
+            default_value,
+            self.relation_target_entity()
+                .map(|value| value.as_str().to_owned()),
+            self.option_set_logical_name()
+                .map(|value| value.as_str().to_owned()),
+            description,
+            max_length,
+            min_value,
+            max_value,
+        )
+    }
+
     /// Validates a runtime value against this field definition.
     pub fn validate_runtime_value(&self, value: &Value) -> AppResult<()> {
         self.field_type.validate_value(value)
     }
+}
+
+fn normalize_optional_text(value: Option<String>) -> Option<String> {
+    value.and_then(|candidate| {
+        let trimmed = candidate.trim().to_owned();
+        (!trimmed.is_empty()).then_some(trimmed)
+    })
 }
 
 /// Immutable published entity schema snapshot.
@@ -241,6 +586,8 @@ pub struct PublishedEntitySchema {
     entity: EntityDefinition,
     version: i32,
     fields: Vec<EntityFieldDefinition>,
+    #[serde(default)]
+    option_sets: Vec<OptionSetDefinition>,
 }
 
 impl PublishedEntitySchema {
@@ -249,6 +596,7 @@ impl PublishedEntitySchema {
         entity: EntityDefinition,
         version: i32,
         fields: Vec<EntityFieldDefinition>,
+        option_sets: Vec<OptionSetDefinition>,
     ) -> AppResult<Self> {
         if version <= 0 {
             return Err(AppError::Validation(
@@ -266,10 +614,29 @@ impl PublishedEntitySchema {
             }
         }
 
+        for field in &fields {
+            let Some(option_set_logical_name) = field.option_set_logical_name() else {
+                continue;
+            };
+
+            let exists = option_sets
+                .iter()
+                .any(|set| set.logical_name().as_str() == option_set_logical_name.as_str());
+            if !exists {
+                return Err(AppError::Validation(format!(
+                    "field '{}.{}' references missing option set '{}'",
+                    field.entity_logical_name().as_str(),
+                    field.logical_name().as_str(),
+                    option_set_logical_name.as_str()
+                )));
+            }
+        }
+
         Ok(Self {
             entity,
             version,
             fields,
+            option_sets,
         })
     }
 
@@ -289,6 +656,12 @@ impl PublishedEntitySchema {
     #[must_use]
     pub fn fields(&self) -> &[EntityFieldDefinition] {
         &self.fields
+    }
+
+    /// Returns all option set definitions resolved into this schema snapshot.
+    #[must_use]
+    pub fn option_sets(&self) -> &[OptionSetDefinition] {
+        &self.option_sets
     }
 }
 
@@ -344,7 +717,8 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        EntityDefinition, EntityFieldDefinition, FieldType, PublishedEntitySchema, RuntimeRecord,
+        EntityDefinition, EntityFieldDefinition, FieldType, OptionSetDefinition, OptionSetItem,
+        PublishedEntitySchema, RuntimeRecord,
     };
 
     #[test]
@@ -394,7 +768,7 @@ mod tests {
         )
         .unwrap_or_else(|_| unreachable!());
 
-        let result = PublishedEntitySchema::new(entity, 1, vec![first, second]);
+        let result = PublishedEntitySchema::new(entity, 1, vec![first, second], Vec::new());
         assert!(result.is_err());
     }
 
@@ -402,5 +776,61 @@ mod tests {
     fn runtime_record_requires_object_payload() {
         let result = RuntimeRecord::new("1", "contact", json!("not-object"));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn choice_field_requires_option_set_reference() {
+        let result = EntityFieldDefinition::new(
+            "contact",
+            "status",
+            "Status",
+            FieldType::Choice,
+            true,
+            false,
+            None,
+            None,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn option_set_definition_rejects_duplicate_values() {
+        let option_set = OptionSetDefinition::new(
+            "contact",
+            "status",
+            "Status",
+            vec![
+                OptionSetItem::new(1, "Open", None, 0).unwrap_or_else(|_| unreachable!()),
+                OptionSetItem::new(1, "Closed", None, 1).unwrap_or_else(|_| unreachable!()),
+            ],
+        );
+        assert!(option_set.is_err());
+    }
+
+    #[test]
+    fn published_schema_deserializes_missing_option_sets_for_backwards_compatibility() {
+        let entity = EntityDefinition::new("contact", "Contact").unwrap_or_else(|_| unreachable!());
+        let field = EntityFieldDefinition::new(
+            "contact",
+            "name",
+            "Name",
+            FieldType::Text,
+            true,
+            false,
+            None,
+            None,
+        )
+        .unwrap_or_else(|_| unreachable!());
+        let schema =
+            PublishedEntitySchema::new(entity, 1, vec![field], Vec::new()).unwrap_or_else(|_| unreachable!());
+
+        let mut schema_json = serde_json::to_value(schema).unwrap_or_else(|_| unreachable!());
+        if let Some(object) = schema_json.as_object_mut() {
+            object.remove("option_sets");
+        }
+
+        let parsed: PublishedEntitySchema =
+            serde_json::from_value(schema_json).unwrap_or_else(|_| unreachable!());
+        assert!(parsed.option_sets().is_empty());
     }
 }

@@ -13,7 +13,7 @@ use ts_rs::TS;
 #[serde(rename_all = "snake_case")]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/workflow-condition-operator-dto.ts"
+    export_to = "../../../packages/api-types/src/generated/workflow-condition-operator-dto.ts"
 )]
 pub enum WorkflowConditionOperatorDto {
     Equals,
@@ -26,7 +26,7 @@ pub enum WorkflowConditionOperatorDto {
 #[serde(tag = "type", rename_all = "snake_case")]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/workflow-step-dto.ts"
+    export_to = "../../../packages/api-types/src/generated/workflow-step-dto.ts"
 )]
 pub enum WorkflowStepDto {
     LogMessage {
@@ -53,7 +53,7 @@ pub enum WorkflowStepDto {
 #[derive(Debug, Deserialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/save-workflow-request.ts"
+    export_to = "../../../packages/api-types/src/generated/save-workflow-request.ts"
 )]
 pub struct SaveWorkflowRequest {
     pub logical_name: String,
@@ -74,7 +74,7 @@ pub struct SaveWorkflowRequest {
 #[derive(Debug, Deserialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/execute-workflow-request.ts"
+    export_to = "../../../packages/api-types/src/generated/execute-workflow-request.ts"
 )]
 pub struct ExecuteWorkflowRequest {
     #[ts(type = "Record<string, unknown>")]
@@ -85,7 +85,7 @@ pub struct ExecuteWorkflowRequest {
 #[derive(Debug, Serialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/workflow-response.ts"
+    export_to = "../../../packages/api-types/src/generated/workflow-response.ts"
 )]
 pub struct WorkflowResponse {
     pub logical_name: String,
@@ -106,7 +106,7 @@ pub struct WorkflowResponse {
 #[derive(Debug, Serialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/workflow-run-response.ts"
+    export_to = "../../../packages/api-types/src/generated/workflow-run-response.ts"
 )]
 pub struct WorkflowRunResponse {
     pub run_id: String,
@@ -126,7 +126,7 @@ pub struct WorkflowRunResponse {
 #[derive(Debug, Serialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/workflow-run-attempt-response.ts"
+    export_to = "../../../packages/api-types/src/generated/workflow-run-attempt-response.ts"
 )]
 pub struct WorkflowRunAttemptResponse {
     pub run_id: String,

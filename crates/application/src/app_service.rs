@@ -4,14 +4,15 @@ use async_trait::async_trait;
 
 use qryvanta_core::{AppError, AppResult, TenantId, UserIdentity};
 use qryvanta_domain::{
-    AppDefinition, AppEntityAction, AppEntityBinding, AppEntityRolePermission, AppEntityViewMode,
-    AuditAction, Permission, PublishedEntitySchema, RuntimeRecord,
+    AppDefinition, AppEntityAction, AppEntityBinding, AppEntityForm, AppEntityRolePermission,
+    AppEntityView, AppEntityViewMode, AppSitemap, AuditAction, Permission, PublishedEntitySchema,
+    RuntimeRecord, SitemapArea, SitemapGroup, SitemapSubArea, SitemapTarget,
 };
 use serde_json::Value;
 
 use crate::app_ports::{
     AppRepository, BindAppEntityInput, CreateAppInput, RuntimeRecordService,
-    SaveAppRoleEntityPermissionInput, SubjectEntityPermission,
+    SaveAppRoleEntityPermissionInput, SaveAppSitemapInput, SubjectEntityPermission,
 };
 use crate::{
     AuditEvent, AuditRepository, AuthorizationService, MetadataService, RecordListQuery,
@@ -160,13 +161,26 @@ impl AppService {
         self.require_app_exists(actor.tenant_id(), input.app_logical_name.as_str())
             .await?;
 
+        let forms = resolve_forms(&input)?;
+        let list_views = resolve_list_views(&input)?;
+        let default_form_logical_name = input
+            .default_form_logical_name
+            .clone()
+            .unwrap_or_else(|| "main_form".to_owned());
+        let default_list_view_logical_name = input
+            .default_list_view_logical_name
+            .clone()
+            .unwrap_or_else(|| "main_view".to_owned());
+
         let binding = AppEntityBinding::new(
             input.app_logical_name,
             input.entity_logical_name,
             input.navigation_label,
             input.navigation_order,
-            input.form_field_logical_names.unwrap_or_default(),
-            input.list_field_logical_names.unwrap_or_default(),
+            forms,
+            list_views,
+            default_form_logical_name,
+            default_list_view_logical_name,
             input.default_view_mode.unwrap_or(AppEntityViewMode::Grid),
         )?;
 
@@ -283,13 +297,8 @@ impl AppService {
         &self,
         actor: &UserIdentity,
         app_logical_name: &str,
-    ) -> AppResult<Vec<AppEntityBinding>> {
+    ) -> AppResult<AppSitemap> {
         self.ensure_subject_can_access_app(actor, app_logical_name)
-            .await?;
-
-        let bindings = self
-            .repository
-            .list_app_entity_bindings(actor.tenant_id(), app_logical_name)
             .await?;
 
         let permissions = self
@@ -297,18 +306,83 @@ impl AppService {
             .list_subject_entity_permissions(actor.tenant_id(), actor.subject(), app_logical_name)
             .await?;
 
-        Ok(bindings
-            .into_iter()
-            .filter(|binding| {
-                permissions
-                    .iter()
-                    .find(|permission| {
-                        permission.entity_logical_name == binding.entity_logical_name().as_str()
-                    })
-                    .map(|permission| permission.can_read)
-                    .unwrap_or(false)
+        let sitemap = if let Some(sitemap) = self
+            .repository
+            .get_sitemap(actor.tenant_id(), app_logical_name)
+            .await?
+        {
+            sitemap
+        } else {
+            let bindings = self
+                .repository
+                .list_app_entity_bindings(actor.tenant_id(), app_logical_name)
+                .await?;
+            Self::derive_sitemap_from_bindings(app_logical_name, bindings)?
+        };
+
+        Self::filter_sitemap_by_permissions(sitemap, permissions)
+    }
+
+    /// Returns app sitemap in admin scope (without subject filtering).
+    pub async fn get_sitemap(
+        &self,
+        actor: &UserIdentity,
+        app_logical_name: &str,
+    ) -> AppResult<AppSitemap> {
+        self.require_admin(actor).await?;
+        self.require_app_exists(actor.tenant_id(), app_logical_name)
+            .await?;
+        if let Some(sitemap) = self
+            .repository
+            .get_sitemap(actor.tenant_id(), app_logical_name)
+            .await?
+        {
+            return Ok(sitemap);
+        }
+
+        let bindings = self
+            .repository
+            .list_app_entity_bindings(actor.tenant_id(), app_logical_name)
+            .await?;
+        Self::derive_sitemap_from_bindings(app_logical_name, bindings)
+    }
+
+    /// Saves app sitemap in admin scope.
+    pub async fn save_sitemap(
+        &self,
+        actor: &UserIdentity,
+        input: SaveAppSitemapInput,
+    ) -> AppResult<AppSitemap> {
+        self.require_admin(actor).await?;
+        self.require_app_exists(actor.tenant_id(), input.app_logical_name.as_str())
+            .await?;
+
+        if input.sitemap.app_logical_name().as_str() != input.app_logical_name.as_str() {
+            return Err(AppError::Validation(format!(
+                "sitemap app '{}' must match path app '{}'",
+                input.sitemap.app_logical_name().as_str(),
+                input.app_logical_name
+            )));
+        }
+
+        self.repository
+            .save_sitemap(actor.tenant_id(), input.sitemap.clone())
+            .await?;
+        self.audit_repository
+            .append_event(AuditEvent {
+                tenant_id: actor.tenant_id(),
+                subject: actor.subject().to_owned(),
+                action: AuditAction::AppEntityBound,
+                resource_type: "app_sitemap".to_owned(),
+                resource_id: input.app_logical_name.clone(),
+                detail: Some(format!(
+                    "saved sitemap for app '{}'",
+                    input.app_logical_name
+                )),
             })
-            .collect())
+            .await?;
+
+        Ok(input.sitemap)
     }
 
     /// Returns effective capabilities for one app entity and subject.
@@ -585,6 +659,150 @@ impl AppService {
             app_logical_name
         )))
     }
+
+    fn derive_sitemap_from_bindings(
+        app_logical_name: &str,
+        bindings: Vec<AppEntityBinding>,
+    ) -> AppResult<AppSitemap> {
+        let mut sorted_bindings = bindings;
+        sorted_bindings.sort_by(|left, right| {
+            left.navigation_order()
+                .cmp(&right.navigation_order())
+                .then_with(|| {
+                    left.entity_logical_name()
+                        .as_str()
+                        .cmp(right.entity_logical_name().as_str())
+                })
+        });
+
+        let mut sub_areas = Vec::with_capacity(sorted_bindings.len());
+        for binding in sorted_bindings {
+            let entity_logical_name = binding.entity_logical_name().as_str().to_owned();
+            let display_name = binding
+                .navigation_label()
+                .map(ToOwned::to_owned)
+                .unwrap_or_else(|| entity_logical_name.clone());
+
+            sub_areas.push(SitemapSubArea::new(
+                entity_logical_name.clone(),
+                display_name,
+                binding.navigation_order(),
+                SitemapTarget::Entity {
+                    entity_logical_name,
+                    default_form: Some(binding.default_form_logical_name().as_str().to_owned()),
+                    default_view: Some(
+                        binding.default_list_view_logical_name().as_str().to_owned(),
+                    ),
+                },
+                None,
+            )?);
+        }
+
+        let area = SitemapArea::new(
+            "main_area",
+            "Main",
+            0,
+            None,
+            vec![SitemapGroup::new("main_group", "Main", 0, sub_areas)?],
+        )?;
+
+        AppSitemap::new(app_logical_name, vec![area])
+    }
+
+    fn filter_sitemap_by_permissions(
+        sitemap: AppSitemap,
+        permissions: Vec<SubjectEntityPermission>,
+    ) -> AppResult<AppSitemap> {
+        let mut filtered_areas = Vec::new();
+        for area in sitemap.areas() {
+            let mut filtered_groups = Vec::new();
+            for group in area.groups() {
+                let mut filtered_sub_areas = Vec::new();
+                for sub_area in group.sub_areas() {
+                    let allowed = match sub_area.target() {
+                        SitemapTarget::Entity {
+                            entity_logical_name,
+                            ..
+                        } => permissions
+                            .iter()
+                            .find(|permission| {
+                                permission.entity_logical_name == *entity_logical_name
+                            })
+                            .map(|permission| permission.can_read)
+                            .unwrap_or(false),
+                        SitemapTarget::Dashboard { .. } | SitemapTarget::CustomPage { .. } => true,
+                    };
+
+                    if allowed {
+                        filtered_sub_areas.push(sub_area.clone());
+                    }
+                }
+
+                if !filtered_sub_areas.is_empty() {
+                    filtered_groups.push(SitemapGroup::new(
+                        group.logical_name().as_str(),
+                        group.display_name().as_str(),
+                        group.position(),
+                        filtered_sub_areas,
+                    )?);
+                }
+            }
+
+            if !filtered_groups.is_empty() {
+                filtered_areas.push(SitemapArea::new(
+                    area.logical_name().as_str(),
+                    area.display_name().as_str(),
+                    area.position(),
+                    area.icon().map(ToOwned::to_owned),
+                    filtered_groups,
+                )?);
+            }
+        }
+
+        AppSitemap::new(sitemap.app_logical_name().as_str(), filtered_areas)
+    }
+}
+
+fn resolve_forms(input: &BindAppEntityInput) -> AppResult<Vec<AppEntityForm>> {
+    if let Some(forms) = &input.forms {
+        return forms
+            .iter()
+            .map(|form| {
+                AppEntityForm::new(
+                    form.logical_name.clone(),
+                    form.display_name.clone(),
+                    form.field_logical_names.clone(),
+                )
+            })
+            .collect();
+    }
+
+    Ok(vec![AppEntityForm::new(
+        "main_form",
+        "Main Form",
+        input.form_field_logical_names.clone().unwrap_or_default(),
+    )?])
+}
+
+fn resolve_list_views(input: &BindAppEntityInput) -> AppResult<Vec<AppEntityView>> {
+    if let Some(list_views) = &input.list_views {
+        return list_views
+            .iter()
+            .map(|view| {
+                AppEntityView::new(
+                    view.logical_name.clone(),
+                    view.display_name.clone(),
+                    view.field_logical_names.clone(),
+                )
+            })
+            .collect();
+    }
+
+    Ok(vec![AppEntityView::new(
+        "main_view",
+        "Main View",
+        input.list_field_logical_names.clone().unwrap_or_default(),
+    )?])
 }
 
 #[cfg(test)]

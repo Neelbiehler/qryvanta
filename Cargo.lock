@@ -1917,6 +1917,7 @@ dependencies = [
  "qryvanta-core",
  "qryvanta-domain",
  "redis",
+ "serde",
  "serde_json",
  "sqlx",
  "tokio",

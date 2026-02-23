@@ -3,4 +3,4 @@
 /**
  * Incoming payload for entity creation.
  */
-export type CreateEntityRequest = { logical_name: string, display_name: string, };
+export type CreateEntityRequest = { logical_name: string, display_name: string, description: string | null, plural_display_name: string | null, icon: string | null, };

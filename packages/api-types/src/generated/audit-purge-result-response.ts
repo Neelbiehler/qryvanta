@@ -3,4 +3,4 @@
 /**
  * API representation of audit purge operation result.
  */
-export type AuditPurgeResultResponse = { deleted_count: number, retention_days: number, };
+export type AuditPurgeResultResponse = { deleted_count: bigint, retention_days: number, };

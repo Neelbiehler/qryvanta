@@ -9,7 +9,6 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  PageHeader,
   StatusBadge,
   buttonVariants,
 } from "@qryvanta/ui";
@@ -92,35 +91,27 @@ export default async function WorkerAppEntityPage({
   const binding =
     navigation.find((item) => item.entity_logical_name === entityLogicalName) ??
     null;
+  const sortedNavigation = [...navigation].sort(
+    (left, right) => left.navigation_order - right.navigation_order,
+  );
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        eyebrow="Worker Apps"
-        title={`${schema.entity_display_name} | ${appLogicalName}`}
-        description="Operate records using app-scoped capabilities and fast grid workflows."
-        actions={
-          <Link
-            href={`/worker/apps/${appLogicalName}`}
-            className={cn(buttonVariants({ variant: "outline" }))}
-          >
-            Back to app
-          </Link>
-        }
-      />
-
-      <div className="grid gap-4 xl:grid-cols-[300px_1fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Entity Workspace</CardTitle>
+      <Card>
+        <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+              Worker Apps
+            </p>
+            <CardTitle className="font-serif text-3xl">
+              {schema.entity_display_name} - {appLogicalName}
+            </CardTitle>
             <CardDescription>
-              Record operations for {schema.entity_display_name}
+              Dynamics-style entity workspace with app-scoped capabilities and model-driven views.
             </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <StatusBadge tone="success">
-              Published v{schema.version}
-            </StatusBadge>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge tone="success">Published v{schema.version}</StatusBadge>
             <StatusBadge tone={capabilities.can_create ? "success" : "warning"}>
               Create {capabilities.can_create ? "Allowed" : "Blocked"}
             </StatusBadge>
@@ -130,13 +121,48 @@ export default async function WorkerAppEntityPage({
             <StatusBadge tone={capabilities.can_delete ? "warning" : "neutral"}>
               Delete {capabilities.can_delete ? "Allowed" : "Blocked"}
             </StatusBadge>
-            <p className="text-xs text-zinc-500">
-              Loaded {records.length} row(s) for initial grid view.
-            </p>
+            <Link
+              href={`/worker/apps/${appLogicalName}`}
+              className={cn(buttonVariants({ variant: "outline" }))}
+            >
+              Back to app
+            </Link>
+          </div>
+        </CardHeader>
+      </Card>
+
+      <div className="grid gap-4 xl:grid-cols-[280px_1fr]">
+        <Card className="h-fit border-zinc-200 bg-zinc-50">
+          <CardHeader>
+            <CardTitle className="text-base">Sitemap</CardTitle>
+            <CardDescription>Switch entity work areas within this app.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {sortedNavigation.map((item) => {
+              const isActive = item.entity_logical_name === entityLogicalName;
+              return (
+                <Link
+                  key={`${item.app_logical_name}.${item.entity_logical_name}`}
+                  href={`/worker/apps/${appLogicalName}/${item.entity_logical_name}`}
+                  className={`block rounded-md border px-3 py-2 text-sm transition ${
+                    isActive
+                      ? "border-emerald-400 bg-emerald-50"
+                      : "border-zinc-200 bg-white hover:border-emerald-300"
+                  }`}
+                >
+                  <p className="font-medium text-zinc-900">
+                    {item.navigation_label ?? item.entity_logical_name}
+                  </p>
+                  <p className="font-mono text-[11px] text-zinc-500">
+                    {item.entity_logical_name}
+                  </p>
+                </Link>
+              );
+            })}
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-zinc-200 bg-white">
           <CardContent className="pt-6">
             <WorkspaceEntityPanel
               appLogicalName={appLogicalName}
@@ -148,6 +174,15 @@ export default async function WorkerAppEntityPage({
             />
           </CardContent>
         </Card>
+      </div>
+
+      <div className="flex justify-end">
+        <Link
+          href={`/worker/apps/${appLogicalName}`}
+          className={cn(buttonVariants({ variant: "outline" }))}
+        >
+          Return to app hub
+        </Link>
       </div>
     </div>
   );

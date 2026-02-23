@@ -5,7 +5,7 @@ use ts_rs::TS;
 #[derive(Debug, Deserialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/auth-register-request.ts"
+    export_to = "../../../packages/api-types/src/generated/auth-register-request.ts"
 )]
 pub struct AuthRegisterRequest {
     pub email: String,
@@ -17,7 +17,7 @@ pub struct AuthRegisterRequest {
 #[derive(Debug, Deserialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/auth-login-request.ts"
+    export_to = "../../../packages/api-types/src/generated/auth-login-request.ts"
 )]
 pub struct AuthLoginRequest {
     pub email: String,
@@ -28,7 +28,7 @@ pub struct AuthLoginRequest {
 #[derive(Debug, Serialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/auth-login-response.ts"
+    export_to = "../../../packages/api-types/src/generated/auth-login-response.ts"
 )]
 pub struct AuthLoginResponse {
     pub status: String,
@@ -39,7 +39,7 @@ pub struct AuthLoginResponse {
 #[derive(Debug, Deserialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/auth-mfa-verify-request.ts"
+    export_to = "../../../packages/api-types/src/generated/auth-mfa-verify-request.ts"
 )]
 pub struct AuthMfaVerifyRequest {
     pub code: String,
@@ -50,7 +50,7 @@ pub struct AuthMfaVerifyRequest {
 #[derive(Debug, Deserialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/invite-request.ts"
+    export_to = "../../../packages/api-types/src/generated/invite-request.ts"
 )]
 pub struct InviteRequest {
     pub email: String,
@@ -61,7 +61,7 @@ pub struct InviteRequest {
 #[derive(Debug, Deserialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/accept-invite-request.ts"
+    export_to = "../../../packages/api-types/src/generated/accept-invite-request.ts"
 )]
 pub struct AcceptInviteRequest {
     pub token: String,

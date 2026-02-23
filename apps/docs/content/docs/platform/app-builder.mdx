@@ -10,12 +10,44 @@ The current app-builder baseline supports metadata-driven workspace behavior wit
 ## Implemented Baseline
 
 - Multi-app model per tenant via `app_definitions`.
-- App navigation bound to metadata entities.
+- App navigation supports hierarchical sitemap definitions (`areas -> groups -> sub_areas`) with entity targets.
+- Backward compatibility: when sitemap is not configured, workspace navigation is derived from existing flat entity bindings.
+- Maker form-builder routes are available for standalone entity forms:
+  - `/maker/entities/:entity_logical_name/forms`
+  - `/maker/entities/:entity_logical_name/forms/new`
+  - `/maker/entities/:entity_logical_name/forms/:form_logical_name`
+- Form designer includes:
+  - field palette with search and placement
+  - tab/section/column canvas
+  - context-sensitive properties panel
+  - preview toggle and save flow against form metadata endpoints
+- Maker view-builder routes are available for standalone entity views:
+  - `/maker/entities/:entity_logical_name/views`
+  - `/maker/entities/:entity_logical_name/views/new`
+  - `/maker/entities/:entity_logical_name/views/:view_logical_name`
+- View designer includes:
+  - active column configurator with ordering + width + label override
+  - default sort field/direction controls
+  - visual filter rule rows with AND/OR logical mode
+  - live preview table using recent runtime records
+- Maker sitemap editor route is available for full app navigation design:
+  - `/maker/apps/:app_logical_name/sitemap`
+- Sitemap editor includes:
+  - hierarchical tree editor for areas, groups, and sub areas
+  - drag-to-reorder within hierarchy levels
+  - context-sensitive target properties (entity, dashboard, custom page)
+  - entity target defaults for standalone form and view logical names
 - App access granted by assigned roles.
 - App-scoped presentation metadata on entity bindings:
-  - `form_field_logical_names` for create-form field order
-  - `list_field_logical_names` for grid column order
+  - `forms[]` for named app-scoped form definitions
+  - `list_views[]` for named app-scoped list/grid view definitions
+  - `default_form_logical_name` and `default_list_view_logical_name` for runtime defaults
   - `default_view_mode` (`grid` | `json`) for initial workspace rendering
+- App Studio navigation binding now includes click/drag field layout editing for:
+  - Multi-form composition and ordering
+  - Multi-view (grid) composition and ordering
+  - Default form/view selection per app entity
+  - Form/view catalog operations (rename, set default, delete non-default)
 - App-scoped role permissions per entity action (`read`, `create`, `update`, `delete`).
 - Worker runtime pages resolve forms from published metadata schemas.
 - Worker runtime resolves per-app entity presentation overrides before rendering forms and list views.
@@ -42,6 +74,8 @@ App-builder and workspace routes are documented in `API Conventions`:
 - `POST /api/apps/:app_logical_name/entities`
 - `GET /api/apps/:app_logical_name/permissions`
 - `PUT /api/apps/:app_logical_name/permissions`
+- `GET /api/apps/:app_logical_name/sitemap`
+- `PUT /api/apps/:app_logical_name/sitemap`
 - `GET /api/workspace/apps`
 - `GET /api/workspace/apps/:app_logical_name/navigation`
 - `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/schema`
@@ -52,8 +86,8 @@ App-builder and workspace routes are documented in `API Conventions`:
 ## Planned Scope
 
 - Entity and field management UI
-- Form layout editor
-- List view configuration (columns, sorting, filtering)
+- Form layout editor (baseline implemented)
+- List view configuration (baseline implemented)
 - Saved view presets
 
 ## Non-Goals (Current)

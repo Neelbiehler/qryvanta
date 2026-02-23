@@ -8,7 +8,8 @@ use uuid::Uuid;
 
 use qryvanta_core::{AppError, AppResult, TenantId};
 use qryvanta_domain::{
-    EntityDefinition, EntityFieldDefinition, PublishedEntitySchema, RuntimeRecord,
+    EntityDefinition, EntityFieldDefinition, FormDefinition, OptionSetDefinition,
+    PublishedEntitySchema, RuntimeRecord, ViewDefinition,
 };
 
 use crate::{
@@ -19,6 +20,9 @@ use crate::{
 struct FakeMetadataRepository {
     entities: Mutex<HashMap<(TenantId, String), EntityDefinition>>,
     fields: Mutex<HashMap<(TenantId, String, String), EntityFieldDefinition>>,
+    option_sets: Mutex<HashMap<(TenantId, String, String), OptionSetDefinition>>,
+    forms: Mutex<HashMap<(TenantId, String, String), FormDefinition>>,
+    views: Mutex<HashMap<(TenantId, String, String), ViewDefinition>>,
     published_schemas: Mutex<HashMap<(TenantId, String), Vec<PublishedEntitySchema>>>,
     runtime_records: Mutex<HashMap<(TenantId, String, String), RuntimeRecord>>,
 }
@@ -28,6 +32,9 @@ impl FakeMetadataRepository {
         Self {
             entities: Mutex::new(HashMap::new()),
             fields: Mutex::new(HashMap::new()),
+            option_sets: Mutex::new(HashMap::new()),
+            forms: Mutex::new(HashMap::new()),
+            views: Mutex::new(HashMap::new()),
             published_schemas: Mutex::new(HashMap::new()),
             runtime_records: Mutex::new(HashMap::new()),
         }
@@ -100,11 +107,268 @@ impl MetadataRepository for FakeMetadataRepository {
         Ok(listed)
     }
 
+    async fn find_field(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        field_logical_name: &str,
+    ) -> AppResult<Option<EntityFieldDefinition>> {
+        Ok(self
+            .fields
+            .lock()
+            .await
+            .get(&(
+                tenant_id,
+                entity_logical_name.to_owned(),
+                field_logical_name.to_owned(),
+            ))
+            .cloned())
+    }
+
+    async fn delete_field(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        field_logical_name: &str,
+    ) -> AppResult<()> {
+        let removed = self.fields.lock().await.remove(&(
+            tenant_id,
+            entity_logical_name.to_owned(),
+            field_logical_name.to_owned(),
+        ));
+        if removed.is_none() {
+            return Err(AppError::NotFound(format!(
+                "field '{}.{}' does not exist for tenant '{}'",
+                entity_logical_name, field_logical_name, tenant_id
+            )));
+        }
+
+        Ok(())
+    }
+
+    async fn field_exists_in_published_schema(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        field_logical_name: &str,
+    ) -> AppResult<bool> {
+        let published_schemas = self.published_schemas.lock().await;
+        let Some(versions) = published_schemas.get(&(tenant_id, entity_logical_name.to_owned()))
+        else {
+            return Ok(false);
+        };
+
+        Ok(versions.iter().any(|schema| {
+            schema
+                .fields()
+                .iter()
+                .any(|field| field.logical_name().as_str() == field_logical_name)
+        }))
+    }
+
+    async fn save_option_set(
+        &self,
+        tenant_id: TenantId,
+        option_set: OptionSetDefinition,
+    ) -> AppResult<()> {
+        self.option_sets.lock().await.insert(
+            (
+                tenant_id,
+                option_set.entity_logical_name().as_str().to_owned(),
+                option_set.logical_name().as_str().to_owned(),
+            ),
+            option_set,
+        );
+        Ok(())
+    }
+
+    async fn list_option_sets(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+    ) -> AppResult<Vec<OptionSetDefinition>> {
+        let option_sets = self.option_sets.lock().await;
+        let mut listed: Vec<OptionSetDefinition> = option_sets
+            .iter()
+            .filter_map(|((stored_tenant_id, stored_entity, _), option_set)| {
+                (stored_tenant_id == &tenant_id && stored_entity == entity_logical_name)
+                    .then_some(option_set.clone())
+            })
+            .collect();
+        listed.sort_by(|left, right| {
+            left.logical_name()
+                .as_str()
+                .cmp(right.logical_name().as_str())
+        });
+        Ok(listed)
+    }
+
+    async fn find_option_set(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        option_set_logical_name: &str,
+    ) -> AppResult<Option<OptionSetDefinition>> {
+        Ok(self
+            .option_sets
+            .lock()
+            .await
+            .get(&(
+                tenant_id,
+                entity_logical_name.to_owned(),
+                option_set_logical_name.to_owned(),
+            ))
+            .cloned())
+    }
+
+    async fn delete_option_set(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        option_set_logical_name: &str,
+    ) -> AppResult<()> {
+        let removed = self.option_sets.lock().await.remove(&(
+            tenant_id,
+            entity_logical_name.to_owned(),
+            option_set_logical_name.to_owned(),
+        ));
+        if removed.is_none() {
+            return Err(AppError::NotFound(format!(
+                "option set '{}.{}' does not exist for tenant '{}'",
+                entity_logical_name, option_set_logical_name, tenant_id
+            )));
+        }
+        Ok(())
+    }
+
+    async fn save_form(&self, tenant_id: TenantId, form: FormDefinition) -> AppResult<()> {
+        self.forms.lock().await.insert(
+            (
+                tenant_id,
+                form.entity_logical_name().as_str().to_owned(),
+                form.logical_name().as_str().to_owned(),
+            ),
+            form,
+        );
+        Ok(())
+    }
+
+    async fn list_forms(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+    ) -> AppResult<Vec<FormDefinition>> {
+        Ok(self
+            .forms
+            .lock()
+            .await
+            .iter()
+            .filter_map(|((stored_tenant_id, stored_entity, _), form)| {
+                (stored_tenant_id == &tenant_id && stored_entity == entity_logical_name)
+                    .then_some(form.clone())
+            })
+            .collect())
+    }
+
+    async fn find_form(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        form_logical_name: &str,
+    ) -> AppResult<Option<FormDefinition>> {
+        Ok(self
+            .forms
+            .lock()
+            .await
+            .get(&(
+                tenant_id,
+                entity_logical_name.to_owned(),
+                form_logical_name.to_owned(),
+            ))
+            .cloned())
+    }
+
+    async fn delete_form(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        form_logical_name: &str,
+    ) -> AppResult<()> {
+        self.forms.lock().await.remove(&(
+            tenant_id,
+            entity_logical_name.to_owned(),
+            form_logical_name.to_owned(),
+        ));
+        Ok(())
+    }
+
+    async fn save_view(&self, tenant_id: TenantId, view: ViewDefinition) -> AppResult<()> {
+        self.views.lock().await.insert(
+            (
+                tenant_id,
+                view.entity_logical_name().as_str().to_owned(),
+                view.logical_name().as_str().to_owned(),
+            ),
+            view,
+        );
+        Ok(())
+    }
+
+    async fn list_views(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+    ) -> AppResult<Vec<ViewDefinition>> {
+        Ok(self
+            .views
+            .lock()
+            .await
+            .iter()
+            .filter_map(|((stored_tenant_id, stored_entity, _), view)| {
+                (stored_tenant_id == &tenant_id && stored_entity == entity_logical_name)
+                    .then_some(view.clone())
+            })
+            .collect())
+    }
+
+    async fn find_view(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        view_logical_name: &str,
+    ) -> AppResult<Option<ViewDefinition>> {
+        Ok(self
+            .views
+            .lock()
+            .await
+            .get(&(
+                tenant_id,
+                entity_logical_name.to_owned(),
+                view_logical_name.to_owned(),
+            ))
+            .cloned())
+    }
+
+    async fn delete_view(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        view_logical_name: &str,
+    ) -> AppResult<()> {
+        self.views.lock().await.remove(&(
+            tenant_id,
+            entity_logical_name.to_owned(),
+            view_logical_name.to_owned(),
+        ));
+        Ok(())
+    }
+
     async fn publish_entity_schema(
         &self,
         tenant_id: TenantId,
         entity: EntityDefinition,
         fields: Vec<EntityFieldDefinition>,
+        option_sets: Vec<OptionSetDefinition>,
         _published_by: &str,
     ) -> AppResult<PublishedEntitySchema> {
         let key = (tenant_id, entity.logical_name().as_str().to_owned());
@@ -113,7 +377,7 @@ impl MetadataRepository for FakeMetadataRepository {
             .get(&key)
             .and_then(|versions| versions.last().map(|schema| schema.version() + 1))
             .unwrap_or(1);
-        let schema = PublishedEntitySchema::new(entity, next_version, fields)?;
+        let schema = PublishedEntitySchema::new(entity, next_version, fields, option_sets)?;
         published_schemas
             .entry(key)
             .or_default()

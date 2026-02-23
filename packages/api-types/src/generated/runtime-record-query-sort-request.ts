@@ -3,4 +3,4 @@
 /**
  * Incoming runtime record query sort payload.
  */
-export type RuntimeRecordQuerySortRequest = { scope_alias: string | null, field_logical_name: string, direction: string | null, };
+export type RuntimeRecordQuerySortRequest = { scope_alias: string | null, field_logical_name: string, direction: "asc" | "desc" | null, };

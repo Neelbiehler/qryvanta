@@ -35,6 +35,11 @@ where
                 .put(handlers::apps::save_app_role_permission_handler),
         )
         .route(
+            "/api/apps/{app_logical_name}/sitemap",
+            get(handlers::apps::get_app_sitemap_handler)
+                .put(handlers::apps::save_app_sitemap_handler),
+        )
+        .route(
             "/api/workflows",
             get(handlers::workflows::list_workflows_handler)
                 .post(handlers::workflows::save_workflow_handler),
@@ -89,6 +94,42 @@ where
         .route(
             "/api/entities/{entity_logical_name}/fields",
             get(handlers::entities::list_fields_handler).post(handlers::entities::save_field_handler),
+        )
+        .route(
+            "/api/entities/{entity_logical_name}/fields/{field_logical_name}",
+            put(handlers::entities::update_field_handler)
+                .delete(handlers::entities::delete_field_handler),
+        )
+        .route(
+            "/api/entities/{entity_logical_name}/option-sets",
+            get(handlers::entities::list_option_sets_handler)
+                .post(handlers::entities::save_option_set_handler),
+        )
+        .route(
+            "/api/entities/{entity_logical_name}/option-sets/{option_set_logical_name}",
+            get(handlers::entities::get_option_set_handler)
+                .put(handlers::entities::update_option_set_handler)
+                .delete(handlers::entities::delete_option_set_handler),
+        )
+        .route(
+            "/api/entities/{entity_logical_name}/forms",
+            get(handlers::entities::list_forms_handler).post(handlers::entities::save_form_handler),
+        )
+        .route(
+            "/api/entities/{entity_logical_name}/forms/{form_logical_name}",
+            get(handlers::entities::get_form_handler)
+                .put(handlers::entities::update_form_handler)
+                .delete(handlers::entities::delete_form_handler),
+        )
+        .route(
+            "/api/entities/{entity_logical_name}/views",
+            get(handlers::entities::list_views_handler).post(handlers::entities::save_view_handler),
+        )
+        .route(
+            "/api/entities/{entity_logical_name}/views/{view_logical_name}",
+            get(handlers::entities::get_view_handler)
+                .put(handlers::entities::update_view_handler)
+                .delete(handlers::entities::delete_view_handler),
         )
         .route(
             "/api/entities/{entity_logical_name}/publish",

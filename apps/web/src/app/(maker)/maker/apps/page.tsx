@@ -4,10 +4,7 @@ import { redirect } from "next/navigation";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
-  CardTitle,
-  PageHeader,
   StatusBadge,
 } from "@qryvanta/ui";
 
@@ -58,39 +55,30 @@ export default async function MakerAppStudioPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        eyebrow="Maker Center"
-        title="App Studio"
-        description="Model app navigation and role permissions with a task-driven builder flow."
-      />
-
-      <div className="grid gap-4 xl:grid-cols-[300px_1fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Builder Checklist</CardTitle>
-            <CardDescription>
-              Recommended sequence for delivery-ready apps.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
+      <Card>
+        <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+              Maker Center
+            </p>
+            <h1 className="font-serif text-3xl text-zinc-900">Model-driven App Designer</h1>
+            <p className="text-sm text-zinc-600">
+              Configure sitemap navigation, role matrix permissions, and workspace presentation.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
             <StatusBadge tone="neutral">Apps {apps.length}</StatusBadge>
             <StatusBadge tone="neutral">Entities {entities.length}</StatusBadge>
             <StatusBadge tone="neutral">Roles {roles.length}</StatusBadge>
-            <ol className="space-y-2 text-sm text-zinc-700">
-              <li>1. Create app shell</li>
-              <li>2. Bind entities to navigation</li>
-              <li>3. Assign role entity permissions</li>
-              <li>4. Validate in Worker Apps</li>
-            </ol>
-          </CardContent>
-        </Card>
+          </div>
+        </CardHeader>
+      </Card>
 
-        <Card>
-          <CardContent className="pt-6">
-            <AppStudioPanel apps={apps} entities={entities} roles={roles} />
-          </CardContent>
-        </Card>
-      </div>
+      <Card className="border-emerald-200 bg-white">
+        <CardContent className="pt-6">
+          <AppStudioPanel apps={apps} entities={entities} roles={roles} />
+        </CardContent>
+      </Card>
     </div>
   );
 }

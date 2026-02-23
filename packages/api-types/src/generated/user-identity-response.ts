@@ -3,4 +3,8 @@
 /**
  * API representation of the authenticated user.
  */
-export type UserIdentityResponse = { subject: string, display_name: string, email: string | null, tenant_id: string, };
+export type UserIdentityResponse = { subject: string, display_name: string, email: string | null, tenant_id: string, 
+/**
+ * Surfaces the authenticated user may access (e.g. `["admin", "maker", "worker"]`).
+ */
+accessible_surfaces: Array<string>, };
