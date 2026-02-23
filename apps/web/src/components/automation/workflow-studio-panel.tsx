@@ -30,6 +30,7 @@ import {
   type WorkflowRunResponse,
   type WorkflowStepDto,
 } from "@/lib/api";
+import { formatUtcDateTime } from "@/lib/date-format";
 import {
   CANVAS_NODE_HEIGHT,
   CANVAS_NODE_WIDTH,
@@ -80,9 +81,18 @@ import {
 type WorkflowStudioPanelProps = {
   workflows: WorkflowResponse[];
   runs: WorkflowRunResponse[];
+  initialSelectedWorkflow?: string;
+  initialWorkspaceMode?: WorkflowWorkspaceMode;
 };
 
-export function WorkflowStudioPanel({ workflows, runs }: WorkflowStudioPanelProps) {
+export type WorkflowWorkspaceMode = "edit" | "history";
+
+export function WorkflowStudioPanel({
+  workflows,
+  runs,
+  initialSelectedWorkflow,
+  initialWorkspaceMode,
+}: WorkflowStudioPanelProps) {
   const router = useRouter();
   const idCounterRef = useRef(1);
 
@@ -107,9 +117,19 @@ export function WorkflowStudioPanel({ workflows, runs }: WorkflowStudioPanelProp
   const [inspectorNode, setInspectorNode] = useState<InspectorNode>("trigger");
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
 
-  const [selectedWorkflow, setSelectedWorkflow] = useState(
-    workflows.at(0)?.logical_name ?? "",
-  );
+  const initialWorkflowSelection =
+    initialSelectedWorkflow === undefined
+      ? workflows.at(0)?.logical_name ?? ""
+      : workflows.some((workflow) => workflow.logical_name === initialSelectedWorkflow)
+        ? initialSelectedWorkflow
+        : "";
+
+  const [selectedWorkflow, setSelectedWorkflow] =
+    useState(initialWorkflowSelection);
+  const [workflowWorkspaceMode, setWorkflowWorkspaceMode] = useState<
+    "edit" | "history"
+  >(initialWorkspaceMode ?? "edit");
+  const [workflowQuery, setWorkflowQuery] = useState("");
   const [executePayload, setExecutePayload] = useState(
     JSON.stringify({ manual: true }, null, 2),
   );
@@ -124,7 +144,6 @@ export function WorkflowStudioPanel({ workflows, runs }: WorkflowStudioPanelProp
   const [isExecuting, setIsExecuting] = useState(false);
   const [showBuilderPanel, setShowBuilderPanel] = useState(true);
   const [showInspectorPanel, setShowInspectorPanel] = useState(true);
-  const [showRunsPanel, setShowRunsPanel] = useState(false);
   const [catalogQuery, setCatalogQuery] = useState("");
   const [catalogCategory, setCatalogCategory] =
     useState<"all" | FlowTemplateCategory>("all");
@@ -161,6 +180,7 @@ export function WorkflowStudioPanel({ workflows, runs }: WorkflowStudioPanelProp
   const nodePickerInputRef = useRef<HTMLInputElement | null>(null);
   const lastCanvasPointerRef = useRef<CanvasPosition | null>(null);
   const suppressHistoryRef = useRef(false);
+  const initializedFromRouteRef = useRef(false);
 
   const selectedStep = useMemo(
     () => (selectedStepId ? findStepById(steps, selectedStepId) : null),
@@ -172,6 +192,26 @@ export function WorkflowStudioPanel({ workflows, runs }: WorkflowStudioPanelProp
   );
   const normalizedCatalogQuery = catalogQuery.trim().toLowerCase();
   const normalizedNodePickerQuery = nodePickerQuery.trim().toLowerCase();
+  const normalizedWorkflowQuery = workflowQuery.trim().toLowerCase();
+  const filteredWorkflows = useMemo(
+    () =>
+      workflows.filter((workflow) => {
+        if (normalizedWorkflowQuery.length === 0) {
+          return true;
+        }
+
+        const searchable = `${workflow.display_name} ${workflow.logical_name}`.toLowerCase();
+        return searchable.includes(normalizedWorkflowQuery);
+      }),
+    [normalizedWorkflowQuery, workflows],
+  );
+  const selectedWorkflowRuns = useMemo(
+    () =>
+      selectedWorkflow
+        ? runs.filter((run) => run.workflow_logical_name === selectedWorkflow)
+        : runs,
+    [runs, selectedWorkflow],
+  );
 
   const filteredTemplates = useMemo(() => {
     return resolveTemplateList(normalizedCatalogQuery, catalogCategory);
@@ -600,9 +640,60 @@ export function WorkflowStudioPanel({ workflows, runs }: WorkflowStudioPanelProp
     };
   }, [showNodePicker]);
 
+  useEffect(() => {
+    if (initializedFromRouteRef.current) {
+      return;
+    }
+
+    if (!initialSelectedWorkflow) {
+      initializedFromRouteRef.current = true;
+      return;
+    }
+
+    const workflow = workflows.find(
+      (entry) => entry.logical_name === initialSelectedWorkflow,
+    );
+    if (!workflow) {
+      initializedFromRouteRef.current = true;
+      return;
+    }
+
+    if (initialWorkspaceMode === "history") {
+      openWorkflowHistory(workflow, { pushRoute: false });
+    } else {
+      loadWorkflowIntoBuilder(workflow, { pushRoute: false });
+    }
+
+    initializedFromRouteRef.current = true;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- Route-based initialization should run once per mount.
+  }, [initialSelectedWorkflow, initialWorkspaceMode, workflows]);
+
   function resetMessages() {
     setErrorMessage(null);
     setStatusMessage(null);
+  }
+
+  function workflowModePath(
+    workflowLogicalName: string,
+    mode: WorkflowWorkspaceMode,
+  ): string {
+    return `/maker/automation/${encodeURIComponent(workflowLogicalName)}/${mode}`;
+  }
+
+  function navigateWorkspaceMode(mode: WorkflowWorkspaceMode) {
+    setWorkflowWorkspaceMode(mode);
+
+    if (selectedWorkflow) {
+      router.push(workflowModePath(selectedWorkflow, mode));
+      return;
+    }
+
+    if (mode === "history") {
+      setErrorMessage("Select a workflow first.");
+      return;
+    }
+
+    router.push("/maker/automation");
   }
 
   function openNodePicker() {
@@ -830,6 +921,8 @@ export function WorkflowStudioPanel({ workflows, runs }: WorkflowStudioPanelProp
 
   function resetBuilder() {
     pushHistoryCheckpoint();
+    setSelectedWorkflow("");
+    setWorkflowWorkspaceMode("edit");
     setLogicalName("");
     setDisplayName("");
     setDescription("");
@@ -845,6 +938,7 @@ export function WorkflowStudioPanel({ workflows, runs }: WorkflowStudioPanelProp
     setWiringSourceStepId(null);
     setInspectorNode("trigger");
     resetMessages();
+    router.push("/maker/automation");
   }
 
   function ensureAtLeastOneRootStep() {
@@ -1023,8 +1117,16 @@ export function WorkflowStudioPanel({ workflows, runs }: WorkflowStudioPanelProp
     }, 0);
   }
 
-  function loadWorkflowIntoBuilder(workflow: WorkflowResponse) {
+  function loadWorkflowIntoBuilder(
+    workflow: WorkflowResponse,
+    options?: { pushRoute?: boolean },
+  ) {
     resetMessages();
+    setSelectedWorkflow(workflow.logical_name);
+    setWorkflowWorkspaceMode("edit");
+    if (options?.pushRoute !== false) {
+      router.push(workflowModePath(workflow.logical_name, "edit"));
+    }
 
     setUndoStack([]);
     setRedoStack([]);
@@ -1060,6 +1162,18 @@ export function WorkflowStudioPanel({ workflows, runs }: WorkflowStudioPanelProp
     setSelectedCanvasNodeIds(firstStepId ? [firstStepId] : []);
     setInspectorNode(firstStepId ? "step" : "trigger");
     setStatusMessage(`Loaded ${workflow.display_name} into the flow canvas.`);
+  }
+
+  function openWorkflowHistory(
+    workflow: WorkflowResponse,
+    options?: { pushRoute?: boolean },
+  ) {
+    resetMessages();
+    setSelectedWorkflow(workflow.logical_name);
+    setWorkflowWorkspaceMode("history");
+    if (options?.pushRoute !== false) {
+      router.push(workflowModePath(workflow.logical_name, "history"));
+    }
   }
 
   function compileStep(step: DraftWorkflowStep): WorkflowStepDto {
@@ -1358,6 +1472,12 @@ export function WorkflowStudioPanel({ workflows, runs }: WorkflowStudioPanelProp
       <div className="absolute inset-x-0 top-0 z-40 flex flex-wrap items-center gap-2 border-b border-zinc-200 bg-white/95 px-3 py-2 backdrop-blur">
         <StatusBadge tone="neutral">Flows {workflows.length}</StatusBadge>
         <StatusBadge tone="neutral">Runs {runs.length}</StatusBadge>
+        <StatusBadge tone="neutral">
+          View {workflowWorkspaceMode === "edit" ? "Edit" : "History"}
+        </StatusBadge>
+        {selectedWorkflow ? (
+          <StatusBadge tone="neutral">Active {selectedWorkflow}</StatusBadge>
+        ) : null}
         {errorMessage ? (
           <p className="max-w-md truncate rounded-md border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-700">
             {errorMessage}
@@ -1390,8 +1510,21 @@ export function WorkflowStudioPanel({ workflows, runs }: WorkflowStudioPanelProp
           <Button type="button" size="sm" variant="outline" onClick={() => setShowInspectorPanel((current) => !current)}>
             {showInspectorPanel ? "Hide Inspector" : "Show Inspector"}
           </Button>
-          <Button type="button" size="sm" variant="outline" onClick={() => setShowRunsPanel((current) => !current)}>
-            {showRunsPanel ? "Hide Runs" : "Show Runs"}
+          <Button
+            type="button"
+            size="sm"
+            variant={workflowWorkspaceMode === "edit" ? "default" : "outline"}
+            onClick={() => navigateWorkspaceMode("edit")}
+          >
+            Edit View
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={workflowWorkspaceMode === "history" ? "default" : "outline"}
+            onClick={() => navigateWorkspaceMode("history")}
+          >
+            History View
           </Button>
           {wiringSourceStep ? (
             <Button type="button" size="sm" variant="outline" onClick={cancelWireRouting}>
@@ -1491,129 +1624,293 @@ export function WorkflowStudioPanel({ workflows, runs }: WorkflowStudioPanelProp
 
       {showBuilderPanel ? (
         <div className="absolute bottom-3 left-3 top-16 z-30 w-[340px] overflow-y-auto rounded-lg border border-zinc-200 bg-white/95 p-3 shadow-lg backdrop-blur">
-          <form className="space-y-3" onSubmit={handleSaveWorkflow}>
-            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">Flow Builder</p>
-            <Input value={logicalName} onChange={(event) => setLogicalName(event.target.value)} placeholder="logical_name" required />
-            <Input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Display name" required />
-            <Input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Description" />
-            <Input type="number" min={1} max={10} value={maxAttempts} onChange={(event) => setMaxAttempts(event.target.value)} required />
-            <label className="inline-flex items-center gap-2 text-xs text-zinc-700">
-              <input type="checkbox" checked={isEnabled} onChange={(event) => setIsEnabled(event.target.checked)} />
-              enabled
-            </label>
-
+          <div className="space-y-3">
             <div className="space-y-2 rounded-md border border-zinc-200 bg-zinc-50 p-2">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-600">
-                Function Catalog
+                Workflow Library
               </p>
               <Input
-                value={catalogQuery}
-                onChange={(event) => setCatalogQuery(event.target.value)}
-                placeholder="Search functions"
+                value={workflowQuery}
+                onChange={(event) => setWorkflowQuery(event.target.value)}
+                placeholder="Search workflows"
               />
-              <div className="grid grid-cols-2 gap-2">
-                <Select
-                  value={catalogCategory}
-                  onChange={(event) =>
-                    setCatalogCategory(
-                      event.target.value as "all" | FlowTemplateCategory,
-                    )
-                  }
-                >
-                  <option value="all">All</option>
-                  <option value="trigger">Trigger</option>
-                  <option value="logic">Logic</option>
-                  <option value="integration">Integration</option>
-                  <option value="data">Data</option>
-                  <option value="operations">Operations</option>
-                </Select>
-
-                <Select
-                  value={catalogInsertMode}
-                  onChange={(event) =>
-                    setCatalogInsertMode(event.target.value as CatalogInsertMode)
-                  }
-                >
-                  <option value="after_selected">After selected</option>
-                  <option value="root">Append root</option>
-                  <option value="then_selected" disabled={!canInsertIntoConditionBranch}>
-                    Condition: yes
-                  </option>
-                  <option value="else_selected" disabled={!canInsertIntoConditionBranch}>
-                    Condition: no
-                  </option>
-                </Select>
-              </div>
-
-              <div className="max-h-52 space-y-1 overflow-y-auto pr-1">
-                {filteredTemplates.length > 0 ? (
-                  filteredTemplates.map((template) => (
-                    <button
-                      key={template.id}
-                      type="button"
-                      className="w-full rounded-md border border-zinc-200 bg-white px-2 py-2 text-left transition hover:border-emerald-300"
-                      onClick={() => insertTemplateFromCatalog(template.id)}
-                    >
-                      <p className="text-xs font-semibold text-zinc-900">{template.label}</p>
-                      <p className="text-[11px] text-zinc-600">{template.description}</p>
-                    </button>
-                  ))
+              <div className="max-h-40 space-y-1 overflow-y-auto pr-1">
+                {filteredWorkflows.length > 0 ? (
+                  filteredWorkflows.map((workflow) => {
+                    const isSelected = selectedWorkflow === workflow.logical_name;
+                    return (
+                      <div
+                        key={workflow.logical_name}
+                        className={`rounded-md border px-2 py-2 ${
+                          isSelected
+                            ? "border-emerald-300 bg-emerald-50"
+                            : "border-zinc-200 bg-white"
+                        }`}
+                      >
+                        <p className="text-xs font-semibold text-zinc-900">
+                          {workflow.display_name}
+                        </p>
+                        <p className="font-mono text-[10px] text-zinc-500">
+                          {workflow.logical_name}
+                        </p>
+                        <div className="mt-2 flex gap-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => loadWorkflowIntoBuilder(workflow)}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openWorkflowHistory(workflow)}
+                          >
+                            History
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })
                 ) : (
-                  <p className="text-[11px] text-zinc-500">No matching functions.</p>
+                  <p className="text-[11px] text-zinc-500">No matching workflows.</p>
                 )}
               </div>
-
-              <div className="flex flex-wrap gap-1">
-                {STEP_LIBRARY.map((entry) => (
-                  <Button
-                    key={entry.type}
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => addRootStep(entry.type)}
-                  >
-                    + {entry.label}
-                  </Button>
-                ))}
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {workflows.map((workflow) => (
-                <Button key={workflow.logical_name} type="button" size="sm" variant="outline" onClick={() => loadWorkflowIntoBuilder(workflow)}>
-                  Load {workflow.display_name}
-                </Button>
-              ))}
               <Button type="button" size="sm" variant="outline" onClick={resetBuilder}>
-                New
+                New Workflow
               </Button>
             </div>
-            <Button type="submit" disabled={isSaving}>
-              {isSaving ? "Saving..." : "Save Flow"}
-            </Button>
-          </form>
 
-          <Separator className="my-3" />
+            {workflowWorkspaceMode === "edit" ? (
+              <>
+                <form className="space-y-3" onSubmit={handleSaveWorkflow}>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">
+                    Flow Builder
+                  </p>
+                  <Input
+                    value={logicalName}
+                    onChange={(event) => setLogicalName(event.target.value)}
+                    placeholder="logical_name"
+                    required
+                  />
+                  <Input
+                    value={displayName}
+                    onChange={(event) => setDisplayName(event.target.value)}
+                    placeholder="Display name"
+                    required
+                  />
+                  <Input
+                    value={description}
+                    onChange={(event) => setDescription(event.target.value)}
+                    placeholder="Description"
+                  />
+                  <Input
+                    type="number"
+                    min={1}
+                    max={10}
+                    value={maxAttempts}
+                    onChange={(event) => setMaxAttempts(event.target.value)}
+                    required
+                  />
+                  <label className="inline-flex items-center gap-2 text-xs text-zinc-700">
+                    <input
+                      type="checkbox"
+                      checked={isEnabled}
+                      onChange={(event) => setIsEnabled(event.target.checked)}
+                    />
+                    enabled
+                  </label>
 
-          <form className="space-y-2" onSubmit={handleExecuteWorkflow}>
-            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">Test Run</p>
-            <Select value={selectedWorkflow} onChange={(event) => setSelectedWorkflow(event.target.value)}>
-              <option value="">Select workflow</option>
-              {workflows.map((workflow) => (
-                <option key={workflow.logical_name} value={workflow.logical_name}>
-                  {workflow.display_name}
-                </option>
-              ))}
-            </Select>
-            <Textarea className="font-mono text-xs" value={executePayload} onChange={(event) => setExecutePayload(event.target.value)} rows={4} />
-            <Button type="submit" size="sm" variant="outline" disabled={isExecuting}>
-              {isExecuting ? "Executing..." : "Execute"}
-            </Button>
-          </form>
+                  <div className="space-y-2 rounded-md border border-zinc-200 bg-zinc-50 p-2">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-600">
+                      Function Catalog
+                    </p>
+                    <Input
+                      value={catalogQuery}
+                      onChange={(event) => setCatalogQuery(event.target.value)}
+                      placeholder="Search functions"
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <Select
+                        value={catalogCategory}
+                        onChange={(event) =>
+                          setCatalogCategory(
+                            event.target.value as "all" | FlowTemplateCategory,
+                          )
+                        }
+                      >
+                        <option value="all">All</option>
+                        <option value="trigger">Trigger</option>
+                        <option value="logic">Logic</option>
+                        <option value="integration">Integration</option>
+                        <option value="data">Data</option>
+                        <option value="operations">Operations</option>
+                      </Select>
 
-          <Separator className="my-3" />
-          <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">Flow Outline</p>
-            <div className="space-y-2">{steps.map((step) => renderCanvasStep(step, 0))}</div>
+                      <Select
+                        value={catalogInsertMode}
+                        onChange={(event) =>
+                          setCatalogInsertMode(event.target.value as CatalogInsertMode)
+                        }
+                      >
+                        <option value="after_selected">After selected</option>
+                        <option value="root">Append root</option>
+                        <option
+                          value="then_selected"
+                          disabled={!canInsertIntoConditionBranch}
+                        >
+                          Condition: yes
+                        </option>
+                        <option
+                          value="else_selected"
+                          disabled={!canInsertIntoConditionBranch}
+                        >
+                          Condition: no
+                        </option>
+                      </Select>
+                    </div>
+
+                    <div className="max-h-52 space-y-1 overflow-y-auto pr-1">
+                      {filteredTemplates.length > 0 ? (
+                        filteredTemplates.map((template) => (
+                          <button
+                            key={template.id}
+                            type="button"
+                            className="w-full rounded-md border border-zinc-200 bg-white px-2 py-2 text-left transition hover:border-emerald-300"
+                            onClick={() => insertTemplateFromCatalog(template.id)}
+                          >
+                            <p className="text-xs font-semibold text-zinc-900">
+                              {template.label}
+                            </p>
+                            <p className="text-[11px] text-zinc-600">
+                              {template.description}
+                            </p>
+                          </button>
+                        ))
+                      ) : (
+                        <p className="text-[11px] text-zinc-500">No matching functions.</p>
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap gap-1">
+                      {STEP_LIBRARY.map((entry) => (
+                        <Button
+                          key={entry.type}
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => addRootStep(entry.type)}
+                        >
+                          + {entry.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                  <Button type="submit" disabled={isSaving}>
+                    {isSaving ? "Saving..." : "Save Flow"}
+                  </Button>
+                </form>
+
+                <Separator className="my-3" />
+
+                <form className="space-y-2" onSubmit={handleExecuteWorkflow}>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">
+                    Test Run
+                  </p>
+                  <Select
+                    value={selectedWorkflow}
+                    onChange={(event) => {
+                      const nextWorkflow = event.target.value;
+                      setSelectedWorkflow(nextWorkflow);
+                      if (!nextWorkflow) {
+                        router.push("/maker/automation");
+                        return;
+                      }
+
+                      router.push(
+                        workflowModePath(nextWorkflow, workflowWorkspaceMode),
+                      );
+                    }}
+                  >
+                    <option value="">Select workflow</option>
+                    {workflows.map((workflow) => (
+                      <option key={workflow.logical_name} value={workflow.logical_name}>
+                        {workflow.display_name}
+                      </option>
+                    ))}
+                  </Select>
+                  <Textarea
+                    className="font-mono text-xs"
+                    value={executePayload}
+                    onChange={(event) => setExecutePayload(event.target.value)}
+                    rows={4}
+                  />
+                  <Button
+                    type="submit"
+                    size="sm"
+                    variant="outline"
+                    disabled={isExecuting}
+                  >
+                    {isExecuting ? "Executing..." : "Execute"}
+                  </Button>
+                </form>
+
+                <Separator className="my-3" />
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">
+                    Flow Outline
+                  </p>
+                  <div className="space-y-2">{steps.map((step) => renderCanvasStep(step, 0))}</div>
+                </div>
+              </>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">
+                  Workflow History
+                </p>
+                {selectedWorkflowRuns.length > 0 ? (
+                  <div className="max-h-[520px] space-y-2 overflow-y-auto pr-1">
+                    {selectedWorkflowRuns.map((run) => (
+                      <div key={run.run_id} className="rounded-md border border-zinc-200 p-2 text-xs">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-mono text-[11px]">{run.run_id}</span>
+                          <StatusBadge tone="neutral">{run.status}</StatusBadge>
+                          <span>{formatUtcDateTime(run.started_at)}</span>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              void toggleAttempts(run.run_id);
+                            }}
+                          >
+                            {expandedRunId === run.run_id ? "Hide" : "Attempts"}
+                          </Button>
+                        </div>
+                        {expandedRunId === run.run_id ? (
+                          <div className="mt-1 space-y-1 text-[11px] text-zinc-600">
+                            {(attemptsByRun[run.run_id] ?? []).map((attempt) => (
+                              <p key={`${attempt.run_id}-${attempt.attempt_number}`}>
+                                #{attempt.attempt_number} {attempt.status}
+                                {attempt.error_message ? ` - ${attempt.error_message}` : ""}
+                              </p>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-zinc-500">
+                    {selectedWorkflow
+                      ? "No runs for this workflow yet."
+                      : "Select a workflow to view run history."}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       ) : null}
@@ -1685,38 +1982,6 @@ export function WorkflowStudioPanel({ workflows, runs }: WorkflowStudioPanelProp
               </>
             ) : (
               <p className="text-sm text-zinc-500">Select any node on canvas to edit.</p>
-            )}
-          </div>
-        </div>
-      ) : null}
-
-      {showRunsPanel ? (
-        <div className="absolute bottom-3 left-1/2 z-30 w-[min(1040px,calc(100%-2rem))] -translate-x-1/2 rounded-lg border border-zinc-200 bg-white/95 p-3 shadow-lg backdrop-blur">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-600">Recent Workflow Runs</p>
-          <div className="max-h-48 space-y-2 overflow-y-auto">
-            {runs.length > 0 ? runs.map((run) => (
-              <div key={run.run_id} className="rounded-md border border-zinc-200 p-2 text-xs">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono text-[11px]">{run.run_id}</span>
-                  <span>{run.workflow_logical_name}</span>
-                  <StatusBadge tone="neutral">{run.status}</StatusBadge>
-                  <span>{new Date(run.started_at).toLocaleString()}</span>
-                  <Button type="button" size="sm" variant="outline" onClick={() => { void toggleAttempts(run.run_id); }}>
-                    {expandedRunId === run.run_id ? "Hide" : "Attempts"}
-                  </Button>
-                </div>
-                {expandedRunId === run.run_id ? (
-                  <div className="mt-1 space-y-1 text-[11px] text-zinc-600">
-                    {(attemptsByRun[run.run_id] ?? []).map((attempt) => (
-                      <p key={`${attempt.run_id}-${attempt.attempt_number}`}>
-                        #{attempt.attempt_number} {attempt.status}{attempt.error_message ? ` - ${attempt.error_message}` : ""}
-                      </p>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            )) : (
-              <p className="text-xs text-zinc-500">No runs yet.</p>
             )}
           </div>
         </div>

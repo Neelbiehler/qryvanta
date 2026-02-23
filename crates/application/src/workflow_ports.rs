@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use qryvanta_core::{AppResult, TenantId, UserIdentity};
+use qryvanta_core::{AppError, AppResult, TenantId, UserIdentity};
 use qryvanta_domain::{
     RuntimeRecord, WorkflowAction, WorkflowDefinition, WorkflowStep, WorkflowTrigger,
 };
@@ -192,6 +192,8 @@ pub struct ClaimedWorkflowJob {
     pub workflow: WorkflowDefinition,
     /// Trigger payload captured when the run was enqueued.
     pub trigger_payload: Value,
+    /// Job lease token used for fencing-token completion checks.
+    pub lease_token: String,
 }
 
 /// Worker heartbeat payload persisted for queue observability.
@@ -203,6 +205,8 @@ pub struct WorkflowWorkerHeartbeatInput {
     pub executed_jobs: u32,
     /// Number of jobs that failed in the latest worker cycle.
     pub failed_jobs: u32,
+    /// Optional tenant-hash partition associated with this worker.
+    pub partition: Option<WorkflowClaimPartition>,
 }
 
 /// Aggregated queue stats for operations visibility.
@@ -220,6 +224,67 @@ pub struct WorkflowQueueStats {
     pub expired_leases: i64,
     /// Workers with a heartbeat in the active window.
     pub active_workers: i64,
+}
+
+/// Optional queue partition selector for worker job claims.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct WorkflowClaimPartition {
+    partition_count: u32,
+    partition_index: u32,
+}
+
+/// Query options for queue stats.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct WorkflowQueueStatsQuery {
+    /// Active worker heartbeat window in seconds.
+    pub active_window_seconds: u32,
+    /// Optional tenant-hash partition scope.
+    pub partition: Option<WorkflowClaimPartition>,
+}
+
+/// One distributed worker lease claim.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkflowWorkerLease {
+    /// Coordination scope key.
+    pub scope_key: String,
+    /// Lease token used for safe release.
+    pub token: String,
+    /// Lease holder identity.
+    pub holder_id: String,
+}
+
+impl WorkflowClaimPartition {
+    /// Creates one validated queue partition selector.
+    pub fn new(partition_count: u32, partition_index: u32) -> AppResult<Self> {
+        if partition_count == 0 {
+            return Err(AppError::Validation(
+                "partition_count must be greater than zero".to_owned(),
+            ));
+        }
+
+        if partition_index >= partition_count {
+            return Err(AppError::Validation(format!(
+                "partition_index must be less than partition_count ({partition_count})"
+            )));
+        }
+
+        Ok(Self {
+            partition_count,
+            partition_index,
+        })
+    }
+
+    /// Returns total number of partitions.
+    #[must_use]
+    pub fn partition_count(&self) -> u32 {
+        self.partition_count
+    }
+
+    /// Returns selected partition index.
+    #[must_use]
+    pub fn partition_index(&self) -> u32 {
+        self.partition_index
+    }
 }
 
 /// Repository port for workflow definitions and execution history.
@@ -265,6 +330,7 @@ pub trait WorkflowRepository: Send + Sync {
         worker_id: &str,
         limit: usize,
         lease_seconds: u32,
+        partition: Option<WorkflowClaimPartition>,
     ) -> AppResult<Vec<ClaimedWorkflowJob>>;
 
     /// Marks one leased job as completed.
@@ -273,6 +339,7 @@ pub trait WorkflowRepository: Send + Sync {
         tenant_id: TenantId,
         job_id: &str,
         worker_id: &str,
+        lease_token: &str,
     ) -> AppResult<()>;
 
     /// Marks one leased job as failed with an error message.
@@ -281,6 +348,7 @@ pub trait WorkflowRepository: Send + Sync {
         tenant_id: TenantId,
         job_id: &str,
         worker_id: &str,
+        lease_token: &str,
         error_message: &str,
     ) -> AppResult<()>;
 
@@ -292,7 +360,7 @@ pub trait WorkflowRepository: Send + Sync {
     ) -> AppResult<()>;
 
     /// Returns aggregate queue and worker heartbeat stats.
-    async fn queue_stats(&self, active_window_seconds: u32) -> AppResult<WorkflowQueueStats>;
+    async fn queue_stats(&self, query: WorkflowQueueStatsQuery) -> AppResult<WorkflowQueueStats>;
 
     /// Appends one attempt row to a workflow run.
     async fn append_run_attempt(
@@ -321,6 +389,43 @@ pub trait WorkflowRepository: Send + Sync {
         tenant_id: TenantId,
         run_id: &str,
     ) -> AppResult<Vec<WorkflowRunAttempt>>;
+}
+
+/// Optional cache port for queue stats.
+#[async_trait]
+pub trait WorkflowQueueStatsCache: Send + Sync {
+    /// Returns cached queue stats for one query.
+    async fn get_queue_stats(
+        &self,
+        query: WorkflowQueueStatsQuery,
+    ) -> AppResult<Option<WorkflowQueueStats>>;
+
+    /// Stores queue stats for one query with ttl.
+    async fn set_queue_stats(
+        &self,
+        query: WorkflowQueueStatsQuery,
+        stats: WorkflowQueueStats,
+        ttl_seconds: u32,
+    ) -> AppResult<()>;
+}
+
+/// Distributed coordination port for worker lease claims.
+#[async_trait]
+pub trait WorkflowWorkerLeaseCoordinator: Send + Sync {
+    /// Attempts to acquire one lease for the given scope.
+    async fn try_acquire_lease(
+        &self,
+        scope_key: &str,
+        holder_id: &str,
+        lease_seconds: u32,
+    ) -> AppResult<Option<WorkflowWorkerLease>>;
+
+    /// Releases one lease using token compare-and-delete semantics.
+    async fn release_lease(&self, lease: &WorkflowWorkerLease) -> AppResult<()>;
+
+    /// Renews one existing lease and returns false when token ownership changed.
+    async fn renew_lease(&self, lease: &WorkflowWorkerLease, lease_seconds: u32)
+    -> AppResult<bool>;
 }
 
 /// Runtime record gateway for workflow actions.

@@ -9,6 +9,11 @@ description: Logging, metrics, and trace expectations for platform reliability.
 - Log errors with actionable messages and identifiers.
 - Avoid logging secrets or sensitive payloads.
 
+## Health and Readiness
+
+- `GET /health` returns dependency-level health for Postgres and Redis.
+- The endpoint returns `503 Service Unavailable` when required dependencies are not ready.
+
 ## Metrics
 
 Track at minimum:
@@ -18,6 +23,7 @@ Track at minimum:
 - Queue depth and worker throughput
 - Worker heartbeat freshness and active worker count
 - DB query latency and connection pool health
+- Redis command latency and connection health when Redis backends are enabled
 
 ## Tracing
 
@@ -29,3 +35,15 @@ Add distributed trace spans across:
 4. Workflow action pipelines
 
 Use trace ids in logs for correlation.
+
+## Capacity and Failure-Mode Guidance
+
+- Sustained `pending_jobs` growth with flat `executed_jobs` indicates worker under-capacity; scale worker replicas, increase `WORKER_MAX_CONCURRENCY`, or reduce action latency.
+- High `expired_leases` indicates workers are claiming jobs they cannot finish within lease; increase `WORKER_LEASE_SECONDS`, reduce per-worker claim pressure, or scale out workers.
+- Low `active_workers` relative to expected replicas indicates worker health/connectivity drift; verify internal auth, network path, and worker process restarts.
+- For partitioned workers, compare `/api/internal/worker/jobs/stats?partition_count=<n>&partition_index=<i>` across slices to detect partition skew and rebalance workers.
+- If Redis-backed rate limiting is enabled, alert on elevated Redis error rates because auth/mutation throttling depends on Redis availability.
+- If `WORKER_COORDINATION_BACKEND=redis`, track repeated "lease not acquired" worker logs per scope to detect coordination contention or duplicate worker identities.
+- If lease renewal fails with ownership-loss logs, investigate Redis latency/outages or overlapping worker scope keys.
+- On lease ownership loss, workers now cancel in-flight execution tasks; monitor cancellation spikes as a signal of coordination instability.
+- With `WORKER_LEASE_LOSS_STRATEGY=graceful_drain`, expect only mutating in-flight tasks to be cancelled while non-mutating tasks complete.

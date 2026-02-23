@@ -10,10 +10,13 @@ mod dto;
 mod error;
 mod handlers;
 mod middleware;
+mod redis_session_store;
 mod state;
 
 use qryvanta_core::AppError;
 use tracing::info;
+
+use crate::api_config::SessionStoreBackend;
 
 #[tokio::main]
 async fn main() -> Result<(), AppError> {
@@ -28,10 +31,24 @@ async fn main() -> Result<(), AppError> {
         return Ok(());
     }
 
-    let session_layer =
-        api_services::build_session_layer(pool.clone(), config.cookie_secure).await?;
-    let app_state = api_services::build_app_state(pool, &config)?;
-    let app = api_router::build_router(app_state, &config.frontend_url, session_layer)?;
+    let app_state = api_services::build_app_state(pool.clone(), &config)?;
+    let app = match config.session_store_backend {
+        SessionStoreBackend::Postgres => {
+            let session_layer =
+                api_services::build_postgres_session_layer(pool.clone(), config.cookie_secure)
+                    .await?;
+            api_router::build_router(app_state, &config.frontend_url, session_layer)?
+        }
+        SessionStoreBackend::Redis => {
+            let redis_url = config.redis_url.as_deref().ok_or_else(|| {
+                AppError::Validation("REDIS_URL is required when SESSION_STORE=redis".to_owned())
+            })?;
+            let redis_client = api_services::build_redis_client(redis_url)?;
+            let session_layer =
+                api_services::build_redis_session_layer(redis_client, config.cookie_secure).await?;
+            api_router::build_router(app_state, &config.frontend_url, session_layer)?
+        }
+    };
     let address = config.socket_address()?;
 
     let listener = tokio::net::TcpListener::bind(address)

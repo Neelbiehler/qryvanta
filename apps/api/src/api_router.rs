@@ -7,17 +7,19 @@ use qryvanta_application::RateLimitRule;
 use qryvanta_core::AppError;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
-use tower_sessions::SessionManagerLayer;
-use tower_sessions_sqlx_store::PostgresStore;
+use tower_sessions::{SessionManagerLayer, SessionStore};
 
 use crate::state::AppState;
 use crate::{auth, handlers, middleware};
 
-pub fn build_router(
+pub fn build_router<S>(
     app_state: AppState,
     frontend_url: &str,
-    session_layer: SessionManagerLayer<PostgresStore>,
-) -> Result<Router, AppError> {
+    session_layer: SessionManagerLayer<S>,
+) -> Result<Router, AppError>
+where
+    S: SessionStore + Clone + Send + Sync + 'static,
+{
     let protected_routes = Router::new()
         .route(
             "/api/apps",

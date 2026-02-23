@@ -9,7 +9,10 @@ import {
   CardTitle,
 } from "@qryvanta/ui";
 
-import { WorkflowLibraryPanel } from "@/components/automation/workflow-library-panel";
+import {
+  WorkflowStudioPanel,
+  type WorkflowWorkspaceMode,
+} from "@/components/automation/workflow-studio-panel";
 import { AccessDeniedCard } from "@/components/shared/access-denied-card";
 import {
   apiServerFetch,
@@ -17,12 +20,20 @@ import {
   type WorkflowRunResponse,
 } from "@/lib/api";
 
-export default async function MakerAutomationPage() {
+type WorkflowStudioShellProps = {
+  initialSelectedWorkflow?: string;
+  initialWorkspaceMode?: WorkflowWorkspaceMode;
+};
+
+export async function WorkflowStudioShell({
+  initialSelectedWorkflow,
+  initialWorkspaceMode,
+}: WorkflowStudioShellProps) {
   const cookieHeader = (await cookies()).toString();
 
   const [workflowsResponse, runsResponse] = await Promise.all([
     apiServerFetch("/api/workflows", cookieHeader),
-    apiServerFetch("/api/workflows/runs?limit=100&offset=0", cookieHeader),
+    apiServerFetch("/api/workflows/runs?limit=25&offset=0", cookieHeader),
   ]);
 
   if (workflowsResponse.status === 401 || runsResponse.status === 401) {
@@ -76,5 +87,14 @@ export default async function MakerAutomationPage() {
   const workflows = (await workflowsResponse.json()) as WorkflowResponse[];
   const runs = (await runsResponse.json()) as WorkflowRunResponse[];
 
-  return <WorkflowLibraryPanel workflows={workflows} runs={runs} />;
+  return (
+    <div className="-mx-4 -my-5 h-[calc(100vh-64px)] md:-mx-8 md:-my-8">
+      <WorkflowStudioPanel
+        workflows={workflows}
+        runs={runs}
+        initialSelectedWorkflow={initialSelectedWorkflow}
+        initialWorkspaceMode={initialWorkspaceMode}
+      />
+    </div>
+  );
 }

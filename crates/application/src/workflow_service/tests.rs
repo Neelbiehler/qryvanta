@@ -14,9 +14,9 @@ use qryvanta_domain::{
 
 use crate::workflow_ports::{
     ClaimedWorkflowJob, CompleteWorkflowRunInput, CreateWorkflowRunInput, SaveWorkflowInput,
-    WorkflowExecutionMode, WorkflowQueueStats, WorkflowRepository, WorkflowRun, WorkflowRunAttempt,
-    WorkflowRunListQuery, WorkflowRunStatus, WorkflowRuntimeRecordService,
-    WorkflowWorkerHeartbeatInput,
+    WorkflowClaimPartition, WorkflowExecutionMode, WorkflowQueueStats, WorkflowQueueStatsQuery,
+    WorkflowRepository, WorkflowRun, WorkflowRunAttempt, WorkflowRunListQuery, WorkflowRunStatus,
+    WorkflowRuntimeRecordService, WorkflowWorkerHeartbeatInput,
 };
 use crate::{
     AuditEvent, AuditRepository, AuthorizationRepository, AuthorizationService, RuntimeFieldGrant,
@@ -86,6 +86,8 @@ struct FakeQueuedJob {
     tenant_id: TenantId,
     run_id: String,
     leased_by: Option<String>,
+    lease_token: Option<String>,
+    lease_version: u32,
     completed: bool,
     failed: bool,
 }
@@ -179,6 +181,8 @@ impl WorkflowRepository for FakeWorkflowRepository {
             tenant_id,
             run_id: run_id.to_owned(),
             leased_by: None,
+            lease_token: None,
+            lease_version: 0,
             completed: false,
             failed: false,
         });
@@ -190,6 +194,7 @@ impl WorkflowRepository for FakeWorkflowRepository {
         worker_id: &str,
         limit: usize,
         _lease_seconds: u32,
+        _partition: Option<WorkflowClaimPartition>,
     ) -> AppResult<Vec<ClaimedWorkflowJob>> {
         let mut jobs = self.jobs.lock().await;
         let workflows = self.workflows.lock().await;
@@ -216,12 +221,16 @@ impl WorkflowRepository for FakeWorkflowRepository {
                 })?;
 
             job.leased_by = Some(worker_id.to_owned());
+            job.lease_version = job.lease_version.saturating_add(1);
+            let lease_token = format!("lease-{}-{}", job.job_id, job.lease_version);
+            job.lease_token = Some(lease_token.clone());
             claimed.push(ClaimedWorkflowJob {
                 job_id: job.job_id.clone(),
                 tenant_id: job.tenant_id,
                 run_id: job.run_id.clone(),
                 workflow,
                 trigger_payload: run.trigger_payload.clone(),
+                lease_token,
             });
         }
 
@@ -233,6 +242,7 @@ impl WorkflowRepository for FakeWorkflowRepository {
         tenant_id: TenantId,
         job_id: &str,
         worker_id: &str,
+        lease_token: &str,
     ) -> AppResult<()> {
         let mut jobs = self.jobs.lock().await;
         let job = jobs
@@ -246,7 +256,14 @@ impl WorkflowRepository for FakeWorkflowRepository {
             )));
         }
 
+        if job.lease_token.as_deref() != Some(lease_token) {
+            return Err(AppError::Conflict(format!(
+                "job '{job_id}' lease token does not match worker claim"
+            )));
+        }
+
         job.completed = true;
+        job.lease_token = None;
         Ok(())
     }
 
@@ -255,6 +272,7 @@ impl WorkflowRepository for FakeWorkflowRepository {
         tenant_id: TenantId,
         job_id: &str,
         worker_id: &str,
+        lease_token: &str,
         _error_message: &str,
     ) -> AppResult<()> {
         let mut jobs = self.jobs.lock().await;
@@ -269,7 +287,14 @@ impl WorkflowRepository for FakeWorkflowRepository {
             )));
         }
 
+        if job.lease_token.as_deref() != Some(lease_token) {
+            return Err(AppError::Conflict(format!(
+                "job '{job_id}' lease token does not match worker claim"
+            )));
+        }
+
         job.failed = true;
+        job.lease_token = None;
         Ok(())
     }
 
@@ -281,7 +306,7 @@ impl WorkflowRepository for FakeWorkflowRepository {
         Ok(())
     }
 
-    async fn queue_stats(&self, _active_window_seconds: u32) -> AppResult<WorkflowQueueStats> {
+    async fn queue_stats(&self, _query: WorkflowQueueStatsQuery) -> AppResult<WorkflowQueueStats> {
         Ok(WorkflowQueueStats {
             pending_jobs: 0,
             leased_jobs: 0,
@@ -598,7 +623,9 @@ async fn queued_mode_enqueues_and_worker_executes_claimed_job() {
     let enqueued_run = enqueued_run.unwrap_or_else(|_| unreachable!());
     assert_eq!(enqueued_run.status, WorkflowRunStatus::Running);
 
-    let claimed_jobs = service.claim_jobs_for_worker("worker-alpha", 10, 30).await;
+    let claimed_jobs = service
+        .claim_jobs_for_worker("worker-alpha", 10, 30, None)
+        .await;
     assert!(claimed_jobs.is_ok());
     let mut claimed_jobs = claimed_jobs.unwrap_or_default();
     assert_eq!(claimed_jobs.len(), 1);
@@ -609,6 +636,84 @@ async fn queued_mode_enqueues_and_worker_executes_claimed_job() {
     assert!(completed.is_ok());
     let completed = completed.unwrap_or_else(|_| unreachable!());
     assert_eq!(completed.status, WorkflowRunStatus::Succeeded);
+}
+
+#[tokio::test]
+async fn queued_mode_rejects_claimed_job_with_empty_lease_token() {
+    let tenant_id = TenantId::new();
+    let actor = UserIdentity::new("maker", "maker", None, tenant_id);
+    let repository = Arc::new(FakeWorkflowRepository::default());
+    let runtime_service = Arc::new(FakeRuntimeRecordService::default());
+    let service = build_service(
+        HashMap::from([(
+            (tenant_id, "maker".to_owned()),
+            vec![
+                Permission::MetadataFieldWrite,
+                Permission::MetadataFieldRead,
+            ],
+        )]),
+        repository,
+        runtime_service,
+        WorkflowExecutionMode::Queued,
+    );
+
+    let save_result = service
+        .save_workflow(
+            &actor,
+            SaveWorkflowInput {
+                logical_name: "queued_contact_create_empty_token".to_owned(),
+                display_name: "Queued Contact Create Empty Token".to_owned(),
+                description: None,
+                trigger: WorkflowTrigger::Manual,
+                action: WorkflowAction::LogMessage {
+                    message: "queued".to_owned(),
+                },
+                steps: None,
+                max_attempts: 2,
+                is_enabled: true,
+            },
+        )
+        .await;
+    assert!(save_result.is_ok());
+
+    let enqueued_run = service
+        .execute_workflow(
+            &actor,
+            "queued_contact_create_empty_token",
+            json!({"source": "test"}),
+        )
+        .await;
+    assert!(enqueued_run.is_ok());
+
+    let claimed_jobs = service
+        .claim_jobs_for_worker("worker-alpha", 10, 30, None)
+        .await;
+    assert!(claimed_jobs.is_ok());
+    let mut claimed_jobs = claimed_jobs.unwrap_or_default();
+    assert_eq!(claimed_jobs.len(), 1);
+
+    let mut claimed_job = claimed_jobs.remove(0);
+    claimed_job.lease_token = String::new();
+
+    let completed = service
+        .execute_claimed_job("worker-alpha", claimed_job)
+        .await;
+    assert!(completed.is_err());
+}
+
+#[test]
+fn workflow_claim_partition_rejects_invalid_index() {
+    let partition = WorkflowClaimPartition::new(4, 4);
+    assert!(partition.is_err());
+}
+
+#[test]
+fn workflow_claim_partition_accepts_valid_values() {
+    let partition = WorkflowClaimPartition::new(8, 3);
+    assert!(partition.is_ok());
+    let partition = partition.unwrap_or_else(|_| unreachable!());
+    assert_eq!(partition.partition_count(), 8);
+    assert_eq!(partition.partition_index(), 3);
 }
 
 #[tokio::test]
@@ -629,6 +734,7 @@ async fn queued_mode_supports_worker_heartbeat_and_queue_stats() {
                 claimed_jobs: 2,
                 executed_jobs: 2,
                 failed_jobs: 0,
+                partition: None,
             },
         )
         .await;

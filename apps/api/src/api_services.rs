@@ -2,16 +2,18 @@ use std::sync::Arc;
 
 use qryvanta_application::{
     AppService, AuthEventService, AuthTokenService, AuthorizationService, ContactBootstrapService,
-    EmailService, MetadataService, MfaService, TenantRepository, UserService, WorkflowService,
+    EmailService, MetadataService, MfaService, RateLimitRepository, TenantRepository, UserService,
+    WorkflowQueueStatsCache, WorkflowService,
 };
 use qryvanta_core::AppError;
 use qryvanta_infrastructure::{
-    AesSecretEncryptor, Argon2PasswordHasher, ConsoleEmailService, PostgresAppRepository,
-    PostgresAuditLogRepository, PostgresAuditRepository, PostgresAuthEventRepository,
-    PostgresAuthTokenRepository, PostgresAuthorizationRepository, PostgresMetadataRepository,
-    PostgresPasskeyRepository, PostgresRateLimitRepository, PostgresSecurityAdminRepository,
-    PostgresTenantRepository, PostgresUserRepository, PostgresWorkflowRepository, SmtpEmailConfig,
-    SmtpEmailService, TotpRsProvider,
+    AesSecretEncryptor, Argon2PasswordHasher, ConsoleEmailService, InMemoryWorkflowQueueStatsCache,
+    PostgresAppRepository, PostgresAuditLogRepository, PostgresAuditRepository,
+    PostgresAuthEventRepository, PostgresAuthTokenRepository, PostgresAuthorizationRepository,
+    PostgresMetadataRepository, PostgresPasskeyRepository, PostgresRateLimitRepository,
+    PostgresSecurityAdminRepository, PostgresTenantRepository, PostgresUserRepository,
+    PostgresWorkflowRepository, RedisRateLimitRepository, RedisWorkflowQueueStatsCache,
+    SmtpEmailConfig, SmtpEmailService, TotpRsProvider,
 };
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
@@ -22,7 +24,10 @@ use tower_sessions_sqlx_store::PostgresStore;
 use url::Url;
 use webauthn_rs::WebauthnBuilder;
 
-use crate::api_config::{ApiConfig, EmailProviderConfig};
+use crate::api_config::{
+    ApiConfig, EmailProviderConfig, RateLimitStoreConfig, WorkflowQueueStatsCacheBackend,
+};
+use crate::redis_session_store::RedisSessionStore;
 use crate::state::AppState;
 
 pub async fn connect_and_migrate(database_url: &str) -> Result<PgPool, AppError> {
@@ -40,7 +45,7 @@ pub async fn connect_and_migrate(database_url: &str) -> Result<PgPool, AppError>
     Ok(pool)
 }
 
-pub async fn build_session_layer(
+pub async fn build_postgres_session_layer(
     pool: PgPool,
     cookie_secure: bool,
 ) -> Result<SessionManagerLayer<PostgresStore>, AppError> {
@@ -61,10 +66,47 @@ pub async fn build_session_layer(
         .with_expiry(Expiry::OnInactivity(Duration::minutes(30))))
 }
 
+pub async fn build_redis_session_layer(
+    redis_client: redis::Client,
+    cookie_secure: bool,
+) -> Result<SessionManagerLayer<RedisSessionStore>, AppError> {
+    let session_store = RedisSessionStore::new(redis_client, "qryvanta:session");
+
+    Ok(SessionManagerLayer::new(session_store)
+        .with_secure(cookie_secure)
+        .with_same_site(SameSite::Lax)
+        .with_http_only(true)
+        .with_expiry(Expiry::OnInactivity(Duration::minutes(30))))
+}
+
 pub fn build_app_state(pool: PgPool, config: &ApiConfig) -> Result<AppState, AppError> {
+    let redis_client = config
+        .redis_url
+        .as_deref()
+        .map(build_redis_client)
+        .transpose()?;
+
     let metadata_repository = Arc::new(PostgresMetadataRepository::new(pool.clone()));
     let app_repository = Arc::new(PostgresAppRepository::new(pool.clone()));
     let workflow_repository = Arc::new(PostgresWorkflowRepository::new(pool.clone()));
+    let workflow_queue_stats_cache: Arc<dyn WorkflowQueueStatsCache> =
+        match config.workflow_queue_stats_cache_backend {
+            WorkflowQueueStatsCacheBackend::InMemory => {
+                Arc::new(InMemoryWorkflowQueueStatsCache::new())
+            }
+            WorkflowQueueStatsCacheBackend::Redis => {
+                let redis_client = redis_client.clone().ok_or_else(|| {
+                    AppError::Validation(
+                        "REDIS_URL is required when WORKFLOW_QUEUE_STATS_CACHE_BACKEND=redis"
+                            .to_owned(),
+                    )
+                })?;
+                Arc::new(RedisWorkflowQueueStatsCache::new(
+                    redis_client,
+                    "qryvanta:workflow_queue_stats",
+                ))
+            }
+        };
     let authorization_repository = Arc::new(PostgresAuthorizationRepository::new(pool.clone()));
     let audit_repository = Arc::new(PostgresAuditRepository::new(pool.clone()));
     let authorization_service =
@@ -114,7 +156,18 @@ pub fn build_app_state(pool: PgPool, config: &ApiConfig) -> Result<AppState, App
         secret_encryptor,
     );
 
-    let rate_limit_repository = Arc::new(PostgresRateLimitRepository::new(pool.clone()));
+    let rate_limit_repository: Arc<dyn RateLimitRepository> = match config.rate_limit_store {
+        RateLimitStoreConfig::Postgres => Arc::new(PostgresRateLimitRepository::new(pool.clone())),
+        RateLimitStoreConfig::Redis => {
+            let redis_client = redis_client.clone().ok_or_else(|| {
+                AppError::Validation("REDIS_URL is required when RATE_LIMIT_STORE=redis".to_owned())
+            })?;
+            Arc::new(RedisRateLimitRepository::new(
+                redis_client,
+                "qryvanta:rate_limit",
+            ))
+        }
+    };
     let rate_limit_service = qryvanta_application::RateLimitService::new(rate_limit_repository);
 
     let webauthn_origin = Url::parse(&config.webauthn_rp_origin)
@@ -166,6 +219,10 @@ pub fn build_app_state(pool: PgPool, config: &ApiConfig) -> Result<AppState, App
             )),
             audit_repository.clone(),
             config.workflow_execution_mode,
+        )
+        .with_queue_stats_cache(
+            workflow_queue_stats_cache,
+            config.workflow_queue_stats_cache_ttl_seconds,
         ),
         mfa_service,
         rate_limit_service,
@@ -178,7 +235,16 @@ pub fn build_app_state(pool: PgPool, config: &ApiConfig) -> Result<AppState, App
         worker_shared_secret: config.worker_shared_secret.clone(),
         workflow_worker_default_lease_seconds: config.workflow_worker_default_lease_seconds,
         workflow_worker_max_claim_limit: config.workflow_worker_max_claim_limit,
+        workflow_worker_max_partition_count: config.workflow_worker_max_partition_count,
+        postgres_pool: pool,
+        redis_client,
+        redis_required: config.requires_redis(),
     })
+}
+
+pub fn build_redis_client(redis_url: &str) -> Result<redis::Client, AppError> {
+    redis::Client::open(redis_url)
+        .map_err(|error| AppError::Validation(format!("invalid REDIS_URL: {error}")))
 }
 
 fn build_email_service(config: &ApiConfig) -> Result<Arc<dyn EmailService>, AppError> {

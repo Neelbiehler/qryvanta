@@ -32,6 +32,7 @@ description: Configuration strategy for local, staging, and production environme
 | `API_PORT` | No | API bind port (`3001` default) |
 | `FRONTEND_URL` | No | Allowed CORS origin and post-login redirect target |
 | `SESSION_SECRET` | Yes | Session secret (32+ chars) |
+| `SESSION_STORE` | No | Session backend (`postgres` default, `redis` for shared session state across API replicas) |
 | `AUTH_BOOTSTRAP_TOKEN` | Yes | One-time bootstrap token for initial authenticated session setup |
 | `DEV_DEFAULT_TENANT_ID` | No | Optional local-development tenant UUID used when bootstrap creates first membership |
 | `WEBAUTHN_RP_ID` | No | WebAuthn relying party id (`localhost` default) |
@@ -44,18 +45,38 @@ description: Configuration strategy for local, staging, and production environme
 | `SMTP_USERNAME` | Required if `EMAIL_PROVIDER=smtp` | SMTP username (must be non-empty) |
 | `SMTP_PASSWORD` | Required if `EMAIL_PROVIDER=smtp` | SMTP password (must be non-empty) |
 | `SMTP_FROM_ADDRESS` | Required if `EMAIL_PROVIDER=smtp` | Sender address used for auth/invite emails (must be non-empty and valid) |
+| `REDIS_URL` | Required for Redis backends | Redis connection URL used by API cache/rate-limit adapters (for example `redis://127.0.0.1:6379`) |
+| `RATE_LIMIT_STORE` | No | Rate-limit storage backend (`postgres` default, `redis` for shared throttling across API replicas) |
+| `WORKFLOW_QUEUE_STATS_CACHE_BACKEND` | No | Queue-stats cache backend (`in_memory` default, `redis` for shared cache across replicas) |
 | `WORKFLOW_EXECUTION_MODE` | No | Workflow runtime mode (`inline` default, `queued` enables remote worker claim flow) |
 | `WORKER_SHARED_SECRET` | Required if `WORKFLOW_EXECUTION_MODE=queued` | Shared bearer token used by worker-to-API internal claim channel |
 | `WORKFLOW_WORKER_DEFAULT_LEASE_SECONDS` | No | Default worker job lease duration in seconds for internal claim requests (`30` default) |
 | `WORKFLOW_WORKER_MAX_CLAIM_LIMIT` | No | Upper bound for jobs returned per worker claim request (`25` default) |
+| `WORKFLOW_WORKER_MAX_PARTITION_COUNT` | No | Upper bound for accepted queue partition counts in worker claim requests (`128` default) |
+| `WORKFLOW_QUEUE_STATS_CACHE_TTL_SECONDS` | No | Queue-stats cache TTL in seconds (`0` disables cache; default `0`) |
 | `WORKER_API_BASE_URL` | Required for `qryvanta-worker` | API base URL used by worker process for internal claim requests |
 | `WORKER_ID` | No | Stable worker identity sent to API (`worker-<pid>` default when unset) |
 | `WORKER_CLAIM_LIMIT` | No | Number of jobs requested per worker poll (`10` default) |
+| `WORKER_MAX_CONCURRENCY` | No | Max number of claimed jobs processed concurrently per worker poll cycle (`4` default) |
 | `WORKER_LEASE_SECONDS` | No | Job lease duration requested by worker claim calls (`30` default) |
 | `WORKER_POLL_INTERVAL_MS` | No | Worker poll interval in milliseconds (`1500` default) |
+| `WORKER_PARTITION_COUNT` | Optional pair | Partition count for tenant-hash queue claiming (must be provided with `WORKER_PARTITION_INDEX`) |
+| `WORKER_PARTITION_INDEX` | Optional pair | Zero-based partition index for this worker group (must be less than `WORKER_PARTITION_COUNT`) |
+| `WORKER_COORDINATION_BACKEND` | No | Worker lease-coordination backend (`none` default, `redis` for distributed lock semantics) |
+| `WORKER_COORDINATION_LEASE_SECONDS` | No | TTL for worker coordination leases when Redis coordination is enabled (`120` default, auto-renewed every ~`lease/3` during active cycles) |
+| `WORKER_COORDINATION_SCOPE_KEY` | No | Optional lock scope override (defaults to `partition:<count>:<index>` when partitioned, otherwise `worker:<worker_id>`) |
+| `WORKER_LEASE_LOSS_STRATEGY` | No | Lease-loss behavior (`graceful_drain` default cancels mutating in-flight tasks and stops new work, `abort_all` cancels all in-flight tasks) |
 | `NEXT_PUBLIC_API_BASE_URL` | No | Browser-facing API base URL for web app |
 
 For local passkey and session stability, keep `FRONTEND_URL`, `WEBAUTHN_RP_ORIGIN`, and `NEXT_PUBLIC_API_BASE_URL` aligned to `localhost` hosts.
+
+When configuring partitioned worker claims, define both `WORKER_PARTITION_COUNT` and `WORKER_PARTITION_INDEX` together or leave both unset.
+
+When `WORKER_COORDINATION_BACKEND=redis`, `REDIS_URL` must be set for worker runtimes.
+
+Use a short `WORKFLOW_QUEUE_STATS_CACHE_TTL_SECONDS` only for operator polling workloads where a few seconds of staleness is acceptable.
+
+When `SESSION_STORE=redis`, `RATE_LIMIT_STORE=redis`, or `WORKFLOW_QUEUE_STATS_CACHE_BACKEND=redis`, `REDIS_URL` must be set and reachable during API runtime.
 
 When `DEV_DEFAULT_TENANT_ID` is set, unauthenticated registration (`/auth/register`) follows that tenant's `registration_mode` (`invite_only` by default). Administrators can update this mode via `PUT /api/security/registration-mode`.
 

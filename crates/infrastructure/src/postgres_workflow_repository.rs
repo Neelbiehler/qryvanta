@@ -1,8 +1,9 @@
 use async_trait::async_trait;
 use qryvanta_application::{
-    ClaimedWorkflowJob, CompleteWorkflowRunInput, CreateWorkflowRunInput, WorkflowQueueStats,
-    WorkflowRepository, WorkflowRun, WorkflowRunAttempt, WorkflowRunAttemptStatus,
-    WorkflowRunListQuery, WorkflowRunStatus, WorkflowWorkerHeartbeatInput,
+    ClaimedWorkflowJob, CompleteWorkflowRunInput, CreateWorkflowRunInput, WorkflowClaimPartition,
+    WorkflowQueueStats, WorkflowQueueStatsQuery, WorkflowRepository, WorkflowRun,
+    WorkflowRunAttempt, WorkflowRunAttemptStatus, WorkflowRunListQuery, WorkflowRunStatus,
+    WorkflowWorkerHeartbeatInput,
 };
 use qryvanta_core::{AppError, AppResult, TenantId};
 use qryvanta_domain::{
@@ -68,6 +69,7 @@ struct ClaimedWorkflowJobRow {
     job_id: uuid::Uuid,
     tenant_id: uuid::Uuid,
     run_id: uuid::Uuid,
+    lease_token: String,
     trigger_payload: Value,
     logical_name: String,
     display_name: String,
@@ -364,7 +366,23 @@ impl WorkflowRepository for PostgresWorkflowRepository {
         worker_id: &str,
         limit: usize,
         lease_seconds: u32,
+        partition: Option<WorkflowClaimPartition>,
     ) -> AppResult<Vec<ClaimedWorkflowJob>> {
+        let partition_count = partition
+            .map(|value| {
+                i32::try_from(value.partition_count()).map_err(|error| {
+                    AppError::Validation(format!("invalid workflow partition_count value: {error}"))
+                })
+            })
+            .transpose()?;
+        let partition_index = partition
+            .map(|value| {
+                i32::try_from(value.partition_index()).map_err(|error| {
+                    AppError::Validation(format!("invalid workflow partition_index value: {error}"))
+                })
+            })
+            .transpose()?;
+
         let mut transaction = self.pool.begin().await.map_err(|error| {
             AppError::Internal(format!(
                 "failed to start workflow job claim transaction: {error}"
@@ -376,8 +394,17 @@ impl WorkflowRepository for PostgresWorkflowRepository {
             WITH candidate_jobs AS (
                 SELECT id
                 FROM workflow_execution_jobs
-                WHERE status = 'pending'
-                   OR (status = 'leased' AND lease_expires_at < now())
+                WHERE (
+                        status = 'pending'
+                        OR (status = 'leased' AND lease_expires_at < now())
+                      )
+                  AND (
+                        $4::INT IS NULL
+                        OR mod(
+                            (hashtext(tenant_id::text)::BIGINT & 2147483647),
+                            $4::BIGINT
+                        ) = $5::BIGINT
+                      )
                 ORDER BY created_at ASC
                 LIMIT $1
                 FOR UPDATE SKIP LOCKED
@@ -387,17 +414,19 @@ impl WorkflowRepository for PostgresWorkflowRepository {
                 SET
                     status = 'leased',
                     leased_by = $2,
+                    lease_token = gen_random_uuid()::TEXT,
                     lease_expires_at = now() + make_interval(secs => $3::INT),
                     updated_at = now(),
                     last_error = NULL
                 FROM candidate_jobs
                 WHERE jobs.id = candidate_jobs.id
-                RETURNING jobs.id, jobs.tenant_id, jobs.run_id
+                RETURNING jobs.id, jobs.tenant_id, jobs.run_id, jobs.lease_token
             )
             SELECT
                 leased_jobs.id AS job_id,
                 leased_jobs.tenant_id,
                 leased_jobs.run_id,
+                leased_jobs.lease_token,
                 runs.trigger_payload,
                 workflows.logical_name,
                 workflows.display_name,
@@ -427,6 +456,8 @@ impl WorkflowRepository for PostgresWorkflowRepository {
         .bind(i32::try_from(lease_seconds).map_err(|error| {
             AppError::Validation(format!("invalid workflow lease_seconds: {error}"))
         })?)
+        .bind(partition_count)
+        .bind(partition_index)
         .fetch_all(&mut *transaction)
         .await
         .map_err(|error| {
@@ -452,6 +483,7 @@ impl WorkflowRepository for PostgresWorkflowRepository {
         tenant_id: TenantId,
         job_id: &str,
         worker_id: &str,
+        lease_token: &str,
     ) -> AppResult<()> {
         let job_uuid = uuid::Uuid::parse_str(job_id).map_err(|error| {
             AppError::Validation(format!("invalid workflow job id '{job_id}': {error}"))
@@ -462,17 +494,21 @@ impl WorkflowRepository for PostgresWorkflowRepository {
             UPDATE workflow_execution_jobs
             SET
                 status = 'completed',
+                leased_by = NULL,
+                lease_token = NULL,
                 lease_expires_at = NULL,
                 updated_at = now()
             WHERE tenant_id = $1
               AND id = $2
               AND leased_by = $3
+              AND lease_token = $4
               AND status = 'leased'
             "#,
         )
         .bind(tenant_id.as_uuid())
         .bind(job_uuid)
         .bind(worker_id)
+        .bind(lease_token)
         .execute(&self.pool)
         .await
         .map_err(|error| {
@@ -483,7 +519,7 @@ impl WorkflowRepository for PostgresWorkflowRepository {
 
         if result.rows_affected() == 0 {
             return Err(AppError::Conflict(format!(
-                "workflow job '{job_id}' is not currently leased by worker '{worker_id}'"
+                "workflow job '{job_id}' is not currently leased by worker '{worker_id}' with matching lease token"
             )));
         }
 
@@ -495,6 +531,7 @@ impl WorkflowRepository for PostgresWorkflowRepository {
         tenant_id: TenantId,
         job_id: &str,
         worker_id: &str,
+        lease_token: &str,
         error_message: &str,
     ) -> AppResult<()> {
         let job_uuid = uuid::Uuid::parse_str(job_id).map_err(|error| {
@@ -506,18 +543,22 @@ impl WorkflowRepository for PostgresWorkflowRepository {
             UPDATE workflow_execution_jobs
             SET
                 status = 'failed',
+                leased_by = NULL,
+                lease_token = NULL,
                 lease_expires_at = NULL,
                 updated_at = now(),
-                last_error = $4
+                last_error = $5
             WHERE tenant_id = $1
               AND id = $2
               AND leased_by = $3
+              AND lease_token = $4
               AND status = 'leased'
             "#,
         )
         .bind(tenant_id.as_uuid())
         .bind(job_uuid)
         .bind(worker_id)
+        .bind(lease_token)
         .bind(error_message)
         .execute(&self.pool)
         .await
@@ -529,7 +570,7 @@ impl WorkflowRepository for PostgresWorkflowRepository {
 
         if result.rows_affected() == 0 {
             return Err(AppError::Conflict(format!(
-                "workflow job '{job_id}' is not currently leased by worker '{worker_id}'"
+                "workflow job '{job_id}' is not currently leased by worker '{worker_id}' with matching lease token"
             )));
         }
 
@@ -541,6 +582,27 @@ impl WorkflowRepository for PostgresWorkflowRepository {
         worker_id: &str,
         input: WorkflowWorkerHeartbeatInput,
     ) -> AppResult<()> {
+        let partition_count = input
+            .partition
+            .map(|value| {
+                i32::try_from(value.partition_count()).map_err(|error| {
+                    AppError::Validation(format!(
+                        "invalid worker heartbeat partition_count value: {error}"
+                    ))
+                })
+            })
+            .transpose()?;
+        let partition_index = input
+            .partition
+            .map(|value| {
+                i32::try_from(value.partition_index()).map_err(|error| {
+                    AppError::Validation(format!(
+                        "invalid worker heartbeat partition_index value: {error}"
+                    ))
+                })
+            })
+            .transpose()?;
+
         sqlx::query(
             r#"
             INSERT INTO workflow_worker_heartbeats (
@@ -549,15 +611,19 @@ impl WorkflowRepository for PostgresWorkflowRepository {
                 last_claimed_jobs,
                 last_executed_jobs,
                 last_failed_jobs,
+                partition_count,
+                partition_index,
                 updated_at
             )
-            VALUES ($1, now(), $2, $3, $4, now())
+            VALUES ($1, now(), $2, $3, $4, $5, $6, now())
             ON CONFLICT (worker_id)
             DO UPDATE SET
                 last_seen_at = now(),
                 last_claimed_jobs = EXCLUDED.last_claimed_jobs,
                 last_executed_jobs = EXCLUDED.last_executed_jobs,
                 last_failed_jobs = EXCLUDED.last_failed_jobs,
+                partition_count = EXCLUDED.partition_count,
+                partition_index = EXCLUDED.partition_index,
                 updated_at = now()
             "#,
         )
@@ -565,6 +631,8 @@ impl WorkflowRepository for PostgresWorkflowRepository {
         .bind(i64::from(input.claimed_jobs))
         .bind(i64::from(input.executed_jobs))
         .bind(i64::from(input.failed_jobs))
+        .bind(partition_count)
+        .bind(partition_index)
         .execute(&self.pool)
         .await
         .map_err(|error| {
@@ -576,7 +644,28 @@ impl WorkflowRepository for PostgresWorkflowRepository {
         Ok(())
     }
 
-    async fn queue_stats(&self, active_window_seconds: u32) -> AppResult<WorkflowQueueStats> {
+    async fn queue_stats(&self, query: WorkflowQueueStatsQuery) -> AppResult<WorkflowQueueStats> {
+        let partition_count = query
+            .partition
+            .map(|value| {
+                i32::try_from(value.partition_count()).map_err(|error| {
+                    AppError::Validation(format!(
+                        "invalid queue stats partition_count value: {error}"
+                    ))
+                })
+            })
+            .transpose()?;
+        let partition_index = query
+            .partition
+            .map(|value| {
+                i32::try_from(value.partition_index()).map_err(|error| {
+                    AppError::Validation(format!(
+                        "invalid queue stats partition_index value: {error}"
+                    ))
+                })
+            })
+            .transpose()?;
+
         let queue_stats = sqlx::query_as::<_, WorkflowQueueStatsRow>(
             r#"
             SELECT
@@ -594,8 +683,17 @@ impl WorkflowRepository for PostgresWorkflowRepository {
                     0
                 ) AS expired_leases
             FROM workflow_execution_jobs
+            WHERE (
+                    $1::INT IS NULL
+                    OR mod(
+                        (hashtext(tenant_id::text)::BIGINT & 2147483647),
+                        $1::BIGINT
+                    ) = $2::BIGINT
+                  )
             "#,
         )
+        .bind(partition_count)
+        .bind(partition_index)
         .fetch_one(&self.pool)
         .await
         .map_err(|error| {
@@ -607,11 +705,17 @@ impl WorkflowRepository for PostgresWorkflowRepository {
             SELECT COUNT(*)
             FROM workflow_worker_heartbeats
             WHERE last_seen_at >= now() - make_interval(secs => $1::INT)
+              AND (
+                    $2::INT IS NULL
+                    OR (partition_count = $2 AND partition_index = $3)
+                  )
             "#,
         )
-        .bind(i32::try_from(active_window_seconds).map_err(|error| {
+        .bind(i32::try_from(query.active_window_seconds).map_err(|error| {
             AppError::Validation(format!("invalid active heartbeat window: {error}"))
         })?)
+        .bind(partition_count)
+        .bind(partition_index)
         .fetch_one(&self.pool)
         .await
         .map_err(|error| {
@@ -959,6 +1063,7 @@ fn claimed_workflow_job_from_row(row: ClaimedWorkflowJobRow) -> AppResult<Claime
         run_id: row.run_id.to_string(),
         workflow,
         trigger_payload: row.trigger_payload,
+        lease_token: row.lease_token,
     })
 }
 
