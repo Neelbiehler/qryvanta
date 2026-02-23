@@ -15,7 +15,9 @@ pub use auth::{
     AcceptInviteRequest, AuthLoginRequest, AuthLoginResponse, AuthMfaVerifyRequest,
     AuthRegisterRequest, InviteRequest,
 };
-pub use common::{GenericMessageResponse, HealthResponse, UserIdentityResponse};
+pub use common::{
+    GenericMessageResponse, HealthDependencyStatus, HealthResponse, UserIdentityResponse,
+};
 pub use entities::{
     CreateEntityRequest, CreateFieldRequest, EntityResponse, FieldResponse, PublishedSchemaResponse,
 };

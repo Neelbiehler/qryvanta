@@ -51,8 +51,10 @@ pub use user_service::{
 };
 pub use workflow_ports::{
     ClaimedWorkflowJob, CompleteWorkflowRunInput, CreateWorkflowRunInput, SaveWorkflowInput,
-    WorkflowExecutionMode, WorkflowQueueStats, WorkflowRepository, WorkflowRun, WorkflowRunAttempt,
+    WorkflowClaimPartition, WorkflowExecutionMode, WorkflowQueueStats, WorkflowQueueStatsCache,
+    WorkflowQueueStatsQuery, WorkflowRepository, WorkflowRun, WorkflowRunAttempt,
     WorkflowRunAttemptStatus, WorkflowRunListQuery, WorkflowRunStatus,
-    WorkflowRuntimeRecordService, WorkflowWorkerHeartbeatInput,
+    WorkflowRuntimeRecordService, WorkflowWorkerHeartbeatInput, WorkflowWorkerLease,
+    WorkflowWorkerLeaseCoordinator,
 };
 pub use workflow_service::WorkflowService;

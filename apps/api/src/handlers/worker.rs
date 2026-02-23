@@ -2,7 +2,8 @@ use axum::Json;
 use axum::extract::{Extension, Query, State};
 use axum::http::StatusCode;
 
-use qryvanta_application::WorkflowWorkerHeartbeatInput;
+use qryvanta_application::{WorkflowClaimPartition, WorkflowWorkerHeartbeatInput};
+use qryvanta_core::AppError;
 use qryvanta_domain::{WorkflowAction, WorkflowStep, WorkflowTrigger};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -15,6 +16,8 @@ use crate::state::AppState;
 pub struct ClaimWorkflowJobsRequest {
     pub limit: Option<usize>,
     pub lease_seconds: Option<u32>,
+    pub partition_count: Option<u32>,
+    pub partition_index: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -22,11 +25,15 @@ pub struct WorkerHeartbeatRequest {
     pub claimed_jobs: Option<u32>,
     pub executed_jobs: Option<u32>,
     pub failed_jobs: Option<u32>,
+    pub partition_count: Option<u32>,
+    pub partition_index: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct WorkflowQueueStatsQuery {
     pub active_window_seconds: Option<u32>,
+    pub partition_count: Option<u32>,
+    pub partition_index: Option<u32>,
 }
 
 #[derive(Debug, Serialize)]
@@ -37,6 +44,7 @@ pub struct ClaimedWorkflowJobsResponse {
 #[derive(Debug, Serialize)]
 pub struct ClaimedWorkflowJobResponse {
     pub job_id: String,
+    pub lease_token: String,
     pub tenant_id: String,
     pub run_id: String,
     pub workflow_logical_name: String,
@@ -74,14 +82,37 @@ pub async fn claim_workflow_jobs_handler(
 
     let effective_limit = requested_limit.clamp(1, state.workflow_worker_max_claim_limit);
     let effective_lease_seconds = requested_lease_seconds.max(1);
+    let partition = match (payload.partition_count, payload.partition_index) {
+        (None, None) => None,
+        (Some(requested_partition_count), Some(requested_partition_index)) => {
+            let effective_partition_count =
+                requested_partition_count.clamp(1, state.workflow_worker_max_partition_count);
+            Some(WorkflowClaimPartition::new(
+                effective_partition_count,
+                requested_partition_index,
+            )?)
+        }
+        _ => {
+            return Err(AppError::Validation(
+                "partition_count and partition_index must be provided together".to_owned(),
+            )
+            .into());
+        }
+    };
 
     let jobs = state
         .workflow_service
-        .claim_jobs_for_worker(worker.worker_id(), effective_limit, effective_lease_seconds)
+        .claim_jobs_for_worker(
+            worker.worker_id(),
+            effective_limit,
+            effective_lease_seconds,
+            partition,
+        )
         .await?
         .into_iter()
         .map(|job| ClaimedWorkflowJobResponse {
             job_id: job.job_id,
+            lease_token: job.lease_token,
             tenant_id: job.tenant_id.to_string(),
             run_id: job.run_id,
             workflow_logical_name: job.workflow.logical_name().as_str().to_owned(),
@@ -104,6 +135,24 @@ pub async fn worker_heartbeat_handler(
     Extension(worker): Extension<WorkerIdentity>,
     Json(payload): Json<WorkerHeartbeatRequest>,
 ) -> ApiResult<StatusCode> {
+    let partition = match (payload.partition_count, payload.partition_index) {
+        (None, None) => None,
+        (Some(requested_partition_count), Some(requested_partition_index)) => {
+            let effective_partition_count =
+                requested_partition_count.clamp(1, state.workflow_worker_max_partition_count);
+            Some(WorkflowClaimPartition::new(
+                effective_partition_count,
+                requested_partition_index,
+            )?)
+        }
+        _ => {
+            return Err(AppError::Validation(
+                "partition_count and partition_index must be provided together".to_owned(),
+            )
+            .into());
+        }
+    };
+
     state
         .workflow_service
         .heartbeat_worker(
@@ -112,6 +161,7 @@ pub async fn worker_heartbeat_handler(
                 claimed_jobs: payload.claimed_jobs.unwrap_or(0),
                 executed_jobs: payload.executed_jobs.unwrap_or(0),
                 failed_jobs: payload.failed_jobs.unwrap_or(0),
+                partition,
             },
         )
         .await?;
@@ -125,9 +175,27 @@ pub async fn workflow_queue_stats_handler(
     Query(query): Query<WorkflowQueueStatsQuery>,
 ) -> ApiResult<Json<WorkflowQueueStatsResponse>> {
     let active_window_seconds = query.active_window_seconds.unwrap_or(120).max(1);
+    let partition = match (query.partition_count, query.partition_index) {
+        (None, None) => None,
+        (Some(requested_partition_count), Some(requested_partition_index)) => {
+            let effective_partition_count =
+                requested_partition_count.clamp(1, state.workflow_worker_max_partition_count);
+            Some(WorkflowClaimPartition::new(
+                effective_partition_count,
+                requested_partition_index,
+            )?)
+        }
+        _ => {
+            return Err(AppError::Validation(
+                "partition_count and partition_index must be provided together".to_owned(),
+            )
+            .into());
+        }
+    };
+
     let stats = state
         .workflow_service
-        .queue_stats(active_window_seconds)
+        .queue_stats_with_partition(active_window_seconds, partition)
         .await?;
 
     Ok(Json(WorkflowQueueStatsResponse {

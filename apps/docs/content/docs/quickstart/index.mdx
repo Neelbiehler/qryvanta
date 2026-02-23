@@ -25,7 +25,7 @@ pnpm install
 2. Start local infrastructure:
 
 ```bash
-docker compose up -d
+pnpm infra:up
 ```
 
 3. Create local environment file:
@@ -62,7 +62,7 @@ curl http://127.0.0.1:3001/health
 Expected:
 
 ```json
-{"status":"ok"}
+{"status":"ok","ready":true,"postgres":{"status":"ok","detail":null},"redis":{"status":"ok","detail":null}}
 ```
 
 ## Next Pages

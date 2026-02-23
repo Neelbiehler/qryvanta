@@ -12,7 +12,8 @@ use serde_json::Value;
 use crate::metadata_service::MetadataService;
 use crate::workflow_ports::{
     ClaimedWorkflowJob, CompleteWorkflowRunInput, CreateWorkflowRunInput, SaveWorkflowInput,
-    WorkflowExecutionMode, WorkflowQueueStats, WorkflowRepository, WorkflowRun, WorkflowRunAttempt,
+    WorkflowClaimPartition, WorkflowExecutionMode, WorkflowQueueStats, WorkflowQueueStatsCache,
+    WorkflowQueueStatsQuery, WorkflowRepository, WorkflowRun, WorkflowRunAttempt,
     WorkflowRunAttemptStatus, WorkflowRunListQuery, WorkflowRunStatus,
     WorkflowRuntimeRecordService, WorkflowWorkerHeartbeatInput,
 };
@@ -39,6 +40,8 @@ pub struct WorkflowService {
     runtime_record_service: Arc<dyn WorkflowRuntimeRecordService>,
     audit_repository: Arc<dyn AuditRepository>,
     execution_mode: WorkflowExecutionMode,
+    queue_stats_cache: Option<Arc<dyn WorkflowQueueStatsCache>>,
+    queue_stats_cache_ttl_seconds: u32,
 }
 
 impl WorkflowService {
@@ -57,7 +60,21 @@ impl WorkflowService {
             runtime_record_service,
             audit_repository,
             execution_mode,
+            queue_stats_cache: None,
+            queue_stats_cache_ttl_seconds: 0,
         }
+    }
+
+    /// Adds optional queue stats caching behavior.
+    #[must_use]
+    pub fn with_queue_stats_cache(
+        mut self,
+        queue_stats_cache: Arc<dyn WorkflowQueueStatsCache>,
+        ttl_seconds: u32,
+    ) -> Self {
+        self.queue_stats_cache = Some(queue_stats_cache);
+        self.queue_stats_cache_ttl_seconds = ttl_seconds;
+        self
     }
 
     /// Saves one workflow definition.
@@ -208,6 +225,7 @@ impl WorkflowService {
         worker_id: &str,
         limit: usize,
         lease_seconds: u32,
+        partition: Option<WorkflowClaimPartition>,
     ) -> AppResult<Vec<ClaimedWorkflowJob>> {
         if self.execution_mode != WorkflowExecutionMode::Queued {
             return Err(AppError::Conflict(
@@ -234,7 +252,7 @@ impl WorkflowService {
         }
 
         self.repository
-            .claim_jobs(worker_id, limit, lease_seconds)
+            .claim_jobs(worker_id, limit, lease_seconds, partition)
             .await
     }
 
@@ -256,8 +274,15 @@ impl WorkflowService {
             ));
         }
 
+        if job.lease_token.trim().is_empty() {
+            return Err(AppError::Validation(
+                "claimed workflow job lease_token must not be empty".to_owned(),
+            ));
+        }
+
         let job_id = job.job_id.clone();
         let tenant_id = job.tenant_id;
+        let lease_token = job.lease_token.clone();
         let actor = UserIdentity::new(
             format!("workflow-worker:{worker_id}"),
             "Workflow Worker",
@@ -277,7 +302,7 @@ impl WorkflowService {
         match run_result {
             Ok(run) => {
                 self.repository
-                    .complete_job(tenant_id, job_id.as_str(), worker_id)
+                    .complete_job(tenant_id, job_id.as_str(), worker_id, lease_token.as_str())
                     .await?;
                 Ok(run)
             }
@@ -289,6 +314,7 @@ impl WorkflowService {
                         tenant_id,
                         job_id.as_str(),
                         worker_id,
+                        lease_token.as_str(),
                         error_message.as_str(),
                     )
                     .await
@@ -328,6 +354,16 @@ impl WorkflowService {
 
     /// Returns queue and worker heartbeat stats for operations.
     pub async fn queue_stats(&self, active_window_seconds: u32) -> AppResult<WorkflowQueueStats> {
+        self.queue_stats_with_partition(active_window_seconds, None)
+            .await
+    }
+
+    /// Returns queue and worker heartbeat stats for one optional partition.
+    pub async fn queue_stats_with_partition(
+        &self,
+        active_window_seconds: u32,
+        partition: Option<WorkflowClaimPartition>,
+    ) -> AppResult<WorkflowQueueStats> {
         if self.execution_mode != WorkflowExecutionMode::Queued {
             return Err(AppError::Conflict(
                 "queued workflow execution mode is not enabled".to_owned(),
@@ -340,7 +376,29 @@ impl WorkflowService {
             ));
         }
 
-        self.repository.queue_stats(active_window_seconds).await
+        let query = WorkflowQueueStatsQuery {
+            active_window_seconds,
+            partition,
+        };
+
+        if self.queue_stats_cache_ttl_seconds > 0
+            && let Some(cache) = &self.queue_stats_cache
+            && let Some(stats) = cache.get_queue_stats(query).await?
+        {
+            return Ok(stats);
+        }
+
+        let stats = self.repository.queue_stats(query).await?;
+
+        if self.queue_stats_cache_ttl_seconds > 0
+            && let Some(cache) = &self.queue_stats_cache
+        {
+            cache
+                .set_queue_stats(query, stats, self.queue_stats_cache_ttl_seconds)
+                .await?;
+        }
+
+        Ok(stats)
     }
 
     /// Lists workflow runs for operational traceability.

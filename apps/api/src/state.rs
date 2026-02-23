@@ -7,6 +7,7 @@ use qryvanta_application::{
 };
 use qryvanta_core::TenantId;
 use qryvanta_infrastructure::PostgresPasskeyRepository;
+use sqlx::PgPool;
 use webauthn_rs::Webauthn;
 
 /// Shared application state.
@@ -32,4 +33,8 @@ pub struct AppState {
     pub worker_shared_secret: Option<String>,
     pub workflow_worker_default_lease_seconds: u32,
     pub workflow_worker_max_claim_limit: usize,
+    pub workflow_worker_max_partition_count: u32,
+    pub postgres_pool: PgPool,
+    pub redis_client: Option<redis::Client>,
+    pub redis_required: bool,
 }

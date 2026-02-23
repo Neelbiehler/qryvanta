@@ -29,6 +29,7 @@ Phase status: in progress.
 
 - `inline`: simplest local setup, run executes inside API request handling.
 - `queued`: API enqueues jobs and `qryvanta-worker` claims them through authenticated internal routes.
+- `queued` workers can optionally claim by tenant-hash partition (`partition_count` + `partition_index`) for deterministic scale-out slices.
 
 Use queued mode for isolation and independent worker scaling.
 
@@ -41,6 +42,9 @@ Use queued mode for isolation and independent worker scaling.
 - Builder and inspector are in-canvas overlays.
 - Node picker supports keyboard insert (`A`) with fuzzy search.
 - Function catalog supports category browsing and template insertion for trigger/logic/integration/data/operations paths.
+- Workflow library supports master/detail navigation with dedicated edit and history routes (`/maker/automation/:workflow/edit`, `/maker/automation/:workflow/history`).
+- `/maker/automation` is the workflow library landing page (not the editor), with explicit actions to open edit/history workspaces.
+- Workflow library includes operational filters (enabled state, trigger type, last-run status) and sort controls (last run, failures, run volume, name).
 
 ## Endpoint Reference
 
@@ -53,7 +57,7 @@ Automation routes are defined in `API Conventions`:
 - `GET /api/workflows/runs/:run_id/attempts`
 - `POST /api/internal/worker/jobs/claim`
 - `POST /api/internal/worker/heartbeat`
-- `GET /api/internal/worker/jobs/stats`
+- `GET /api/internal/worker/jobs/stats` (supports optional partition filters)
 
 ## Reliability Requirements
 

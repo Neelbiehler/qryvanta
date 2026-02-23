@@ -17,9 +17,14 @@ This model applies when `WORKFLOW_EXECUTION_MODE=queued` and one or more `qryvan
 
 - Worker claim requests require `Authorization: Bearer <WORKER_SHARED_SECRET>`.
 - Worker identity is explicit via `x-qryvanta-worker-id` and used for job leasing.
+- Optional claim partitions (`partition_count` + `partition_index`) shard work by tenant hash without weakening tenant-scope checks.
 - Worker heartbeat and queue-stats endpoints share the same internal auth model.
+- Claimed jobs include opaque lease tokens; completion/failure updates require matching tokens (fencing-token protection against stale worker loops).
 - Internal worker routes bypass browser same-origin checks and rely on worker auth middleware.
 - Operators should restrict internal route reachability to private networks or service mesh paths.
+- Optional Redis-backed worker coordination leases reduce duplicate active loops when worker identities overlap.
+- When lease ownership is lost, worker runtimes cancel in-flight execution tasks before the next claim cycle.
+- Graceful drain mode cancels mutating in-flight tasks while allowing non-mutating tasks to complete before loop shutdown.
 
 ## Threat Scenarios and Controls
 

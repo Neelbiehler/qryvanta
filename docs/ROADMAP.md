@@ -131,8 +131,8 @@ Exit criteria:
 
 ## Immediate Backlog (Start Here)
 
-1. ST-07: Optional remote workflow workers with secure execution boundaries (active).
-2. ST-11: Connected environment promotion (Dev/Staging/Prod instances).
-3. ST-12: Solutions packaging (git-backed import/export + deployment pipeline).
-4. ST-13: Internal scaling layers for queue/cache/partition-ready runtime.
+1. ST-07: Optional remote workflow workers with secure execution boundaries (complete).
+2. ST-13: Internal scaling layers for queue/cache/partition-ready runtime (active).
+3. ST-11: Connected environment promotion (Dev/Staging/Prod instances).
+4. ST-12: Solutions packaging (git-backed import/export + deployment pipeline).
 5. ST-16: Security adversarial test pack (Claude Sec when available).

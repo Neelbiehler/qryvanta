@@ -6,7 +6,7 @@ description: Day-to-day loop for running API, web, docs, and Postgres.
 ## Daily Startup
 
 ```bash
-docker compose up -d
+pnpm infra:up
 cp .env.example .env
 pnpm dev
 ```
@@ -68,5 +68,5 @@ Use one hostname (`localhost`) for the web app and API while testing auth.
 ## Daily Shutdown
 
 ```bash
-docker compose down
+pnpm infra:down
 ```

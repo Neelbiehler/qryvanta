@@ -24,6 +24,7 @@ The project is built as a Rust-first monorepo with a Next.js frontend and docs s
 - Authentication with email/password, passkeys, MFA, and server-side sessions.
 - Tenant-scoped RBAC checks and audit/event persistence.
 - Optional queued workflow execution via `qryvanta-worker`.
+- Optional Redis-backed rate limiting and workflow queue-stats caching.
 
 ## Repository Layout
 
@@ -46,7 +47,7 @@ Prerequisites: Rust stable, Node.js 22+, Docker + Docker Compose, pnpm 10+.
 
 ```bash
 pnpm install
-docker compose up -d
+pnpm infra:up
 cp .env.example .env
 cargo xcheck
 pnpm dev
@@ -61,7 +62,7 @@ curl http://127.0.0.1:3001/health
 Expected response:
 
 ```json
-{"status":"ok"}
+{"status":"ok","ready":true,"postgres":{"status":"ok","detail":null},"redis":{"status":"ok","detail":null}}
 ```
 
 Local URLs:
@@ -89,6 +90,25 @@ When using queued execution, run at least one worker process:
 cargo run -p qryvanta-worker
 ```
 
+For partitioned scale-out, set `WORKER_PARTITION_COUNT` and `WORKER_PARTITION_INDEX` together (for example, `count=4` and indexes `0..3` across worker groups).
+
+Use `WORKER_MAX_CONCURRENCY` to process claimed jobs in parallel per worker loop.
+
+For distributed worker coordination, set `WORKER_COORDINATION_BACKEND=redis` and tune `WORKER_COORDINATION_LEASE_SECONDS` (optional `WORKER_COORDINATION_SCOPE_KEY` override). Active worker cycles auto-renew coordination leases during execution.
+
+Queued worker claims include opaque lease tokens; queue completion/failure writes are fenced by those tokens to reduce stale-worker split-brain effects.
+
+Set `WORKER_LEASE_LOSS_STRATEGY=graceful_drain` to stop new work and cancel mutating in-flight tasks while allowing non-mutating jobs to finish after lease loss (`abort_all` cancels everything immediately).
+
+For high-frequency ops polling, set `WORKFLOW_QUEUE_STATS_CACHE_TTL_SECONDS` to a small value (for example `2`-`5`) to enable API-side in-memory queue stats caching.
+
+## Redis Runtime (Optional)
+
+- `REDIS_URL` enables shared Redis integrations.
+- Set `RATE_LIMIT_STORE=redis` to move auth/API throttling state out of Postgres.
+- Set `WORKFLOW_QUEUE_STATS_CACHE_BACKEND=redis` to share queue stats cache across API replicas.
+- Set `SESSION_STORE=redis` to move session storage out of Postgres.
+
 ## Transactional Email
 
 - Local default: `EMAIL_PROVIDER=console` (email content goes to API logs).
@@ -98,6 +118,8 @@ cargo run -p qryvanta-worker
 ## Daily Commands
 
 - `pnpm dev`: run API, web, landing, and docs.
+- `pnpm infra:up`: start local Postgres + Redis.
+- `pnpm infra:down`: stop local infrastructure.
 - `pnpm dev:docs`: run docs app only.
 - `pnpm dev:landing`: run landing app only.
 - `pnpm build`: build JS workspaces.

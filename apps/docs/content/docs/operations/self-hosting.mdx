@@ -14,7 +14,7 @@ Use this guidance for local, staging, and controlled internal environments.
 - Docs app
 - Postgres database
 - Background worker process (`qryvanta-worker`) when workflow execution is queued
-- Optional cache/queue service
+- Optional Redis service for shared rate limiting and queue-stats cache
 
 ## Deployment Direction
 
@@ -31,6 +31,7 @@ Use this guidance for local, staging, and controlled internal environments.
 - Health endpoints monitored
 - Log and metric collection enabled
 - Worker runtime enabled when `WORKFLOW_EXECUTION_MODE=queued`
+- Redis enabled when using `SESSION_STORE=redis`, `RATE_LIMIT_STORE=redis`, or `WORKFLOW_QUEUE_STATS_CACHE_BACKEND=redis`
 
 ## Worker Runtime Startup
 
@@ -40,6 +41,6 @@ When `WORKFLOW_EXECUTION_MODE=queued`, run at least one worker process:
 cargo run -p qryvanta-worker
 ```
 
-Scale horizontally by increasing worker replicas; each worker claims leased jobs with `x-qryvanta-worker-id` identity.
+Scale horizontally by increasing worker replicas; each worker claims leased jobs with `x-qryvanta-worker-id` identity. For deterministic tenant slices, assign `WORKER_PARTITION_COUNT` + `WORKER_PARTITION_INDEX` per worker group, tune per-process throughput with `WORKER_MAX_CONCURRENCY`, and optionally enforce distributed lease ownership with `WORKER_COORDINATION_BACKEND=redis`.
 
 For environment variables and health guidance, see `Configuration`, `Email Delivery`, and `Observability` in this section.

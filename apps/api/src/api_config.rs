@@ -21,6 +21,24 @@ pub enum EmailProviderConfig {
     Smtp(SmtpRuntimeConfig),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RateLimitStoreConfig {
+    Postgres,
+    Redis,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkflowQueueStatsCacheBackend {
+    InMemory,
+    Redis,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionStoreBackend {
+    Postgres,
+    Redis,
+}
+
 #[derive(Debug, Clone)]
 pub struct ApiConfig {
     pub migrate_only: bool,
@@ -30,6 +48,7 @@ pub struct ApiConfig {
     pub _session_secret: String,
     pub api_host: String,
     pub api_port: u16,
+    pub session_store_backend: SessionStoreBackend,
     pub webauthn_rp_id: String,
     pub webauthn_rp_origin: String,
     pub cookie_secure: bool,
@@ -38,8 +57,13 @@ pub struct ApiConfig {
     pub email_provider: EmailProviderConfig,
     pub workflow_execution_mode: WorkflowExecutionMode,
     pub worker_shared_secret: Option<String>,
+    pub redis_url: Option<String>,
+    pub rate_limit_store: RateLimitStoreConfig,
+    pub workflow_queue_stats_cache_backend: WorkflowQueueStatsCacheBackend,
     pub workflow_worker_default_lease_seconds: u32,
     pub workflow_worker_max_claim_limit: usize,
+    pub workflow_worker_max_partition_count: u32,
+    pub workflow_queue_stats_cache_ttl_seconds: u32,
 }
 
 impl ApiConfig {
@@ -62,6 +86,16 @@ impl ApiConfig {
             .ok()
             .and_then(|value| value.parse::<u16>().ok())
             .unwrap_or(3001);
+        let session_store_backend =
+            match env::var("SESSION_STORE").unwrap_or_else(|_| "postgres".to_owned()) {
+                value if value.eq_ignore_ascii_case("postgres") => SessionStoreBackend::Postgres,
+                value if value.eq_ignore_ascii_case("redis") => SessionStoreBackend::Redis,
+                other => {
+                    return Err(AppError::Validation(format!(
+                        "SESSION_STORE must be either 'postgres' or 'redis', got '{other}'"
+                    )));
+                }
+            };
 
         let webauthn_rp_id = env::var("WEBAUTHN_RP_ID").unwrap_or_else(|_| "localhost".to_owned());
         let webauthn_rp_origin =
@@ -124,6 +158,37 @@ impl ApiConfig {
             .ok()
             .map(|value| value.trim().to_owned())
             .filter(|value| !value.is_empty());
+        let redis_url = env::var("REDIS_URL")
+            .ok()
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty());
+
+        let rate_limit_store =
+            match env::var("RATE_LIMIT_STORE").unwrap_or_else(|_| "postgres".to_owned()) {
+                value if value.eq_ignore_ascii_case("postgres") => RateLimitStoreConfig::Postgres,
+                value if value.eq_ignore_ascii_case("redis") => RateLimitStoreConfig::Redis,
+                other => {
+                    return Err(AppError::Validation(format!(
+                        "RATE_LIMIT_STORE must be either 'postgres' or 'redis', got '{other}'"
+                    )));
+                }
+            };
+
+        let workflow_queue_stats_cache_backend = match env::var(
+            "WORKFLOW_QUEUE_STATS_CACHE_BACKEND",
+        )
+        .unwrap_or_else(|_| "in_memory".to_owned())
+        {
+            value if value.eq_ignore_ascii_case("in_memory") => {
+                WorkflowQueueStatsCacheBackend::InMemory
+            }
+            value if value.eq_ignore_ascii_case("redis") => WorkflowQueueStatsCacheBackend::Redis,
+            other => {
+                return Err(AppError::Validation(format!(
+                    "WORKFLOW_QUEUE_STATS_CACHE_BACKEND must be either 'in_memory' or 'redis', got '{other}'"
+                )));
+            }
+        };
 
         if matches!(workflow_execution_mode, WorkflowExecutionMode::Queued)
             && worker_shared_secret.is_none()
@@ -137,6 +202,29 @@ impl ApiConfig {
             parse_env_u32("WORKFLOW_WORKER_DEFAULT_LEASE_SECONDS", 30)?;
         let workflow_worker_max_claim_limit =
             parse_env_usize("WORKFLOW_WORKER_MAX_CLAIM_LIMIT", 25)?;
+        let workflow_worker_max_partition_count =
+            parse_env_u32("WORKFLOW_WORKER_MAX_PARTITION_COUNT", 128)?;
+        let workflow_queue_stats_cache_ttl_seconds =
+            parse_env_u32("WORKFLOW_QUEUE_STATS_CACHE_TTL_SECONDS", 0)?;
+
+        if workflow_worker_max_partition_count == 0 {
+            return Err(AppError::Validation(
+                "WORKFLOW_WORKER_MAX_PARTITION_COUNT must be greater than zero".to_owned(),
+            ));
+        }
+
+        let redis_required = matches!(rate_limit_store, RateLimitStoreConfig::Redis)
+            || matches!(
+                workflow_queue_stats_cache_backend,
+                WorkflowQueueStatsCacheBackend::Redis
+            )
+            || matches!(session_store_backend, SessionStoreBackend::Redis);
+        if redis_required && redis_url.is_none() {
+            return Err(AppError::Validation(
+                "REDIS_URL is required when RATE_LIMIT_STORE=redis or WORKFLOW_QUEUE_STATS_CACHE_BACKEND=redis"
+                    .to_owned(),
+            ));
+        }
 
         Ok(Self {
             migrate_only,
@@ -146,6 +234,7 @@ impl ApiConfig {
             _session_secret: session_secret,
             api_host,
             api_port,
+            session_store_backend,
             webauthn_rp_id,
             webauthn_rp_origin,
             cookie_secure,
@@ -154,9 +243,24 @@ impl ApiConfig {
             email_provider,
             workflow_execution_mode,
             worker_shared_secret,
+            redis_url,
+            rate_limit_store,
+            workflow_queue_stats_cache_backend,
             workflow_worker_default_lease_seconds,
             workflow_worker_max_claim_limit,
+            workflow_worker_max_partition_count,
+            workflow_queue_stats_cache_ttl_seconds,
         })
+    }
+
+    #[must_use]
+    pub fn requires_redis(&self) -> bool {
+        matches!(self.rate_limit_store, RateLimitStoreConfig::Redis)
+            || matches!(
+                self.workflow_queue_stats_cache_backend,
+                WorkflowQueueStatsCacheBackend::Redis
+            )
+            || matches!(self.session_store_backend, SessionStoreBackend::Redis)
     }
 
     pub fn socket_address(&self) -> Result<SocketAddr, AppError> {

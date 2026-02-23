@@ -7,16 +7,18 @@ description: Start local infrastructure required for API and web development.
 
 - Docker Desktop (or Docker Engine) with Compose support
 - Port `5432` available
+- Port `6379` available (for local Redis)
 
 ## Start Infrastructure
 
 ```bash
-docker compose up -d
+pnpm infra:up
 ```
 
 This starts:
 
 - PostgreSQL 16 on `127.0.0.1:5432`
+- Redis 7 on `127.0.0.1:6379`
 
 ## Bootstrap Local Env
 
@@ -37,10 +39,10 @@ Before using auth flows, set these values in `.env`:
 docker compose ps
 ```
 
-`qryvanta-postgres` should show healthy status before running API/web apps.
+`qryvanta-postgres` and `qryvanta-redis` should show healthy status before running API/web apps.
 
 ## Stop Infrastructure
 
 ```bash
-docker compose down
+pnpm infra:down
 ```

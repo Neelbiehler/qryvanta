@@ -5,6 +5,8 @@ description: Consistent transport patterns for predictable integration behavior.
 
 This page is the source of truth for externally callable API routes documented in this site.
 
+- `GET /health` returns API liveness/readiness and dependency health details (`postgres`, `redis`).
+
 ## Handler Contract
 
 Keep handlers focused on:
@@ -73,9 +75,9 @@ Keep handlers focused on:
 
 Internal worker APIs:
 
-- `POST /api/internal/worker/jobs/claim` claims queued workflow jobs for one worker identity.
-- `POST /api/internal/worker/heartbeat` updates worker heartbeat and cycle counters.
-- `GET /api/internal/worker/jobs/stats` returns aggregate queue and active worker metrics.
+- `POST /api/internal/worker/jobs/claim` claims queued workflow jobs for one worker identity (`limit`, `lease_seconds`, optional `partition_count` + `partition_index`) and returns opaque per-job lease tokens for fenced completion.
+- `POST /api/internal/worker/heartbeat` updates worker heartbeat and cycle counters (optional `partition_count` + `partition_index` for partition-scoped worker activity).
+- `GET /api/internal/worker/jobs/stats` returns aggregate queue and active worker metrics (optional `partition_count` + `partition_index` filter).
 
 ## Security Administration
 

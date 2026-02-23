@@ -10,6 +10,16 @@ use ts_rs::TS;
 )]
 pub struct HealthResponse {
     pub status: &'static str,
+    pub ready: bool,
+    pub postgres: HealthDependencyStatus,
+    pub redis: HealthDependencyStatus,
+}
+
+/// One runtime dependency health status.
+#[derive(Debug, Serialize, TS)]
+pub struct HealthDependencyStatus {
+    pub status: &'static str,
+    pub detail: Option<String>,
 }
 
 /// Generic message response for auth flows.
