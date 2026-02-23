@@ -8,7 +8,8 @@ use qryvanta_application::{
 };
 use qryvanta_core::{AppError, AppResult, TenantId};
 use qryvanta_domain::{
-    EntityDefinition, EntityFieldDefinition, FieldType, PublishedEntitySchema, RuntimeRecord,
+    EntityDefinition, EntityFieldDefinition, FieldType, FormDefinition, OptionSetDefinition,
+    PublishedEntitySchema, RuntimeRecord, ViewDefinition,
 };
 use serde_json::Value;
 use sqlx::{FromRow, PgPool, Postgres, QueryBuilder};
@@ -32,6 +33,9 @@ impl PostgresMetadataRepository {
 struct EntityRow {
     logical_name: String,
     display_name: String,
+    description: Option<String>,
+    plural_display_name: Option<String>,
+    icon: Option<String>,
 }
 
 #[derive(Debug, FromRow)]
@@ -44,12 +48,35 @@ struct FieldRow {
     is_unique: bool,
     default_value: Option<Value>,
     relation_target_entity: Option<String>,
+    option_set_logical_name: Option<String>,
+    description: Option<String>,
+    max_length: Option<i32>,
+    min_value: Option<f64>,
+    max_value: Option<f64>,
 }
 
 #[derive(Debug, FromRow)]
 struct PublishedSchemaRow {
     version: i32,
     schema_json: Value,
+}
+
+#[derive(Debug, FromRow)]
+struct OptionSetRow {
+    entity_logical_name: String,
+    logical_name: String,
+    display_name: String,
+    items_json: Value,
+}
+
+#[derive(Debug, FromRow)]
+struct FormRow {
+    definition_json: Value,
+}
+
+#[derive(Debug, FromRow)]
+struct ViewRow {
+    definition_json: Value,
 }
 
 #[derive(Debug, FromRow)]
@@ -69,13 +96,23 @@ impl MetadataRepository for PostgresMetadataRepository {
     async fn save_entity(&self, tenant_id: TenantId, entity: EntityDefinition) -> AppResult<()> {
         let result = sqlx::query(
             r#"
-            INSERT INTO entity_definitions (tenant_id, logical_name, display_name)
-            VALUES ($1, $2, $3)
+            INSERT INTO entity_definitions (
+                tenant_id,
+                logical_name,
+                display_name,
+                description,
+                plural_display_name,
+                icon
+            )
+            VALUES ($1, $2, $3, $4, $5, $6)
             "#,
         )
         .bind(tenant_id.as_uuid())
         .bind(entity.logical_name().as_str())
         .bind(entity.display_name().as_str())
+        .bind(entity.description())
+        .bind(entity.plural_display_name().map(|value| value.as_str()))
+        .bind(entity.icon())
         .execute(&self.pool)
         .await;
 
@@ -102,7 +139,7 @@ impl MetadataRepository for PostgresMetadataRepository {
     async fn list_entities(&self, tenant_id: TenantId) -> AppResult<Vec<EntityDefinition>> {
         let rows = sqlx::query_as::<_, EntityRow>(
             r#"
-            SELECT logical_name, display_name
+            SELECT logical_name, display_name, description, plural_display_name, icon
             FROM entity_definitions
             WHERE tenant_id = $1
             ORDER BY logical_name
@@ -117,7 +154,14 @@ impl MetadataRepository for PostgresMetadataRepository {
 
         rows.into_iter()
             .map(|row| {
-                EntityDefinition::new(row.logical_name, row.display_name).map_err(|error| {
+                EntityDefinition::new_with_details(
+                    row.logical_name,
+                    row.display_name,
+                    row.description,
+                    row.plural_display_name,
+                    row.icon,
+                )
+                .map_err(|error| {
                     AppError::Internal(format!(
                         "persisted entity definition is invalid for tenant '{}': {error}",
                         tenant_id
@@ -134,7 +178,7 @@ impl MetadataRepository for PostgresMetadataRepository {
     ) -> AppResult<Option<EntityDefinition>> {
         let row = sqlx::query_as::<_, EntityRow>(
             r#"
-            SELECT logical_name, display_name
+            SELECT logical_name, display_name, description, plural_display_name, icon
             FROM entity_definitions
             WHERE tenant_id = $1 AND logical_name = $2
             "#,
@@ -150,8 +194,16 @@ impl MetadataRepository for PostgresMetadataRepository {
             ))
         })?;
 
-        row.map(|row| EntityDefinition::new(row.logical_name, row.display_name))
-            .transpose()
+        row.map(|row| {
+            EntityDefinition::new_with_details(
+                row.logical_name,
+                row.display_name,
+                row.description,
+                row.plural_display_name,
+                row.icon,
+            )
+        })
+        .transpose()
     }
 
     async fn save_field(&self, tenant_id: TenantId, field: EntityFieldDefinition) -> AppResult<()> {
@@ -167,9 +219,14 @@ impl MetadataRepository for PostgresMetadataRepository {
                 is_unique,
                 default_value,
                 relation_target_entity,
+                option_set_logical_name,
+                description,
+                max_length,
+                min_value,
+                max_value,
                 updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now())
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, now())
             ON CONFLICT (tenant_id, entity_logical_name, logical_name)
             DO UPDATE SET
                 display_name = EXCLUDED.display_name,
@@ -178,6 +235,11 @@ impl MetadataRepository for PostgresMetadataRepository {
                 is_unique = EXCLUDED.is_unique,
                 default_value = EXCLUDED.default_value,
                 relation_target_entity = EXCLUDED.relation_target_entity,
+                option_set_logical_name = EXCLUDED.option_set_logical_name,
+                description = EXCLUDED.description,
+                max_length = EXCLUDED.max_length,
+                min_value = EXCLUDED.min_value,
+                max_value = EXCLUDED.max_value,
                 updated_at = now()
             "#,
         )
@@ -190,6 +252,11 @@ impl MetadataRepository for PostgresMetadataRepository {
         .bind(field.is_unique())
         .bind(field.default_value())
         .bind(field.relation_target_entity().map(|value| value.as_str()))
+        .bind(field.option_set_logical_name().map(|value| value.as_str()))
+        .bind(field.description())
+        .bind(field.max_length())
+        .bind(field.min_value())
+        .bind(field.max_value())
         .execute(&self.pool)
         .await
         .map_err(|error| {
@@ -219,7 +286,12 @@ impl MetadataRepository for PostgresMetadataRepository {
                 is_required,
                 is_unique,
                 default_value,
-                relation_target_entity
+                relation_target_entity,
+                option_set_logical_name,
+                description,
+                max_length,
+                min_value,
+                max_value
             FROM entity_fields
             WHERE tenant_id = $1 AND entity_logical_name = $2
             ORDER BY logical_name
@@ -239,7 +311,7 @@ impl MetadataRepository for PostgresMetadataRepository {
         rows.into_iter()
             .map(|row| {
                 let field_type = FieldType::from_str(row.field_type.as_str())?;
-                EntityFieldDefinition::new(
+                EntityFieldDefinition::new_with_details(
                     row.entity_logical_name,
                     row.logical_name,
                     row.display_name,
@@ -248,9 +320,621 @@ impl MetadataRepository for PostgresMetadataRepository {
                     row.is_unique,
                     row.default_value,
                     row.relation_target_entity,
+                    row.option_set_logical_name,
+                    row.description,
+                    row.max_length,
+                    row.min_value,
+                    row.max_value,
                 )
             })
             .collect()
+    }
+
+    async fn find_field(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        field_logical_name: &str,
+    ) -> AppResult<Option<EntityFieldDefinition>> {
+        let row = sqlx::query_as::<_, FieldRow>(
+            r#"
+            SELECT
+                entity_logical_name,
+                logical_name,
+                display_name,
+                field_type,
+                is_required,
+                is_unique,
+                default_value,
+                relation_target_entity,
+                option_set_logical_name,
+                description,
+                max_length,
+                min_value,
+                max_value
+            FROM entity_fields
+            WHERE tenant_id = $1 AND entity_logical_name = $2 AND logical_name = $3
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(entity_logical_name)
+        .bind(field_logical_name)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to find field '{}.{}' in tenant '{}': {error}",
+                entity_logical_name, field_logical_name, tenant_id
+            ))
+        })?;
+
+        row.map(|row| {
+            let field_type = FieldType::from_str(row.field_type.as_str())?;
+            EntityFieldDefinition::new_with_details(
+                row.entity_logical_name,
+                row.logical_name,
+                row.display_name,
+                field_type,
+                row.is_required,
+                row.is_unique,
+                row.default_value,
+                row.relation_target_entity,
+                row.option_set_logical_name,
+                row.description,
+                row.max_length,
+                row.min_value,
+                row.max_value,
+            )
+        })
+        .transpose()
+    }
+
+    async fn delete_field(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        field_logical_name: &str,
+    ) -> AppResult<()> {
+        let result = sqlx::query(
+            r#"
+            DELETE FROM entity_fields
+            WHERE tenant_id = $1 AND entity_logical_name = $2 AND logical_name = $3
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(entity_logical_name)
+        .bind(field_logical_name)
+        .execute(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to delete field '{}.{}' in tenant '{}': {error}",
+                entity_logical_name, field_logical_name, tenant_id
+            ))
+        })?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!(
+                "field '{}.{}' does not exist for tenant '{}'",
+                entity_logical_name, field_logical_name, tenant_id
+            )));
+        }
+
+        Ok(())
+    }
+
+    async fn field_exists_in_published_schema(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        field_logical_name: &str,
+    ) -> AppResult<bool> {
+        sqlx::query_scalar(
+            r#"
+            SELECT EXISTS (
+                SELECT 1
+                FROM entity_published_versions
+                WHERE tenant_id = $1
+                  AND entity_logical_name = $2
+                  AND schema_json @> jsonb_build_object(
+                    'fields',
+                    jsonb_build_array(jsonb_build_object('logical_name', $3))
+                  )
+            )
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(entity_logical_name)
+        .bind(field_logical_name)
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to evaluate published-field usage for '{}.{}' in tenant '{}': {error}",
+                entity_logical_name, field_logical_name, tenant_id
+            ))
+        })
+    }
+
+    async fn save_option_set(
+        &self,
+        tenant_id: TenantId,
+        option_set: OptionSetDefinition,
+    ) -> AppResult<()> {
+        let items_json = serde_json::to_value(option_set.options()).map_err(|error| {
+            AppError::Internal(format!(
+                "failed to serialize option set '{}.{}' items: {error}",
+                option_set.entity_logical_name().as_str(),
+                option_set.logical_name().as_str()
+            ))
+        })?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO entity_option_sets (
+                tenant_id,
+                entity_logical_name,
+                logical_name,
+                display_name,
+                items_json,
+                updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, now())
+            ON CONFLICT (tenant_id, entity_logical_name, logical_name)
+            DO UPDATE SET
+                display_name = EXCLUDED.display_name,
+                items_json = EXCLUDED.items_json,
+                updated_at = now()
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(option_set.entity_logical_name().as_str())
+        .bind(option_set.logical_name().as_str())
+        .bind(option_set.display_name().as_str())
+        .bind(items_json)
+        .execute(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to save option set '{}.{}' in tenant '{}': {error}",
+                option_set.entity_logical_name().as_str(),
+                option_set.logical_name().as_str(),
+                tenant_id
+            ))
+        })?;
+
+        Ok(())
+    }
+
+    async fn list_option_sets(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+    ) -> AppResult<Vec<OptionSetDefinition>> {
+        let rows = sqlx::query_as::<_, OptionSetRow>(
+            r#"
+            SELECT entity_logical_name, logical_name, display_name, items_json
+            FROM entity_option_sets
+            WHERE tenant_id = $1 AND entity_logical_name = $2
+            ORDER BY logical_name
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(entity_logical_name)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to list option sets for entity '{}' in tenant '{}': {error}",
+                entity_logical_name, tenant_id
+            ))
+        })?;
+
+        rows.into_iter()
+            .map(|row| {
+                let options = serde_json::from_value(row.items_json).map_err(|error| {
+                    AppError::Internal(format!(
+                        "persisted option set '{}.{}' items are invalid: {error}",
+                        row.entity_logical_name, row.logical_name
+                    ))
+                })?;
+                OptionSetDefinition::new(
+                    row.entity_logical_name,
+                    row.logical_name,
+                    row.display_name,
+                    options,
+                )
+            })
+            .collect()
+    }
+
+    async fn find_option_set(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        option_set_logical_name: &str,
+    ) -> AppResult<Option<OptionSetDefinition>> {
+        let row = sqlx::query_as::<_, OptionSetRow>(
+            r#"
+            SELECT entity_logical_name, logical_name, display_name, items_json
+            FROM entity_option_sets
+            WHERE tenant_id = $1 AND entity_logical_name = $2 AND logical_name = $3
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(entity_logical_name)
+        .bind(option_set_logical_name)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to find option set '{}.{}' in tenant '{}': {error}",
+                entity_logical_name, option_set_logical_name, tenant_id
+            ))
+        })?;
+
+        row.map(|row| {
+            let options = serde_json::from_value(row.items_json).map_err(|error| {
+                AppError::Internal(format!(
+                    "persisted option set '{}.{}' items are invalid: {error}",
+                    row.entity_logical_name, row.logical_name
+                ))
+            })?;
+            OptionSetDefinition::new(
+                row.entity_logical_name,
+                row.logical_name,
+                row.display_name,
+                options,
+            )
+        })
+        .transpose()
+    }
+
+    async fn delete_option_set(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        option_set_logical_name: &str,
+    ) -> AppResult<()> {
+        let result = sqlx::query(
+            r#"
+            DELETE FROM entity_option_sets
+            WHERE tenant_id = $1 AND entity_logical_name = $2 AND logical_name = $3
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(entity_logical_name)
+        .bind(option_set_logical_name)
+        .execute(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to delete option set '{}.{}' in tenant '{}': {error}",
+                entity_logical_name, option_set_logical_name, tenant_id
+            ))
+        })?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!(
+                "option set '{}.{}' does not exist for tenant '{}'",
+                entity_logical_name, option_set_logical_name, tenant_id
+            )));
+        }
+
+        Ok(())
+    }
+
+    async fn save_form(&self, tenant_id: TenantId, form: FormDefinition) -> AppResult<()> {
+        let definition_json = serde_json::to_value(&form).map_err(|error| {
+            AppError::Internal(format!(
+                "failed to serialize form '{}.{}': {error}",
+                form.entity_logical_name().as_str(),
+                form.logical_name().as_str()
+            ))
+        })?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO entity_forms (
+                tenant_id,
+                entity_logical_name,
+                logical_name,
+                display_name,
+                form_type,
+                definition_json,
+                updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, now())
+            ON CONFLICT (tenant_id, entity_logical_name, logical_name)
+            DO UPDATE SET
+                display_name = EXCLUDED.display_name,
+                form_type = EXCLUDED.form_type,
+                definition_json = EXCLUDED.definition_json,
+                updated_at = now()
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(form.entity_logical_name().as_str())
+        .bind(form.logical_name().as_str())
+        .bind(form.display_name().as_str())
+        .bind(form.form_type().as_str())
+        .bind(definition_json)
+        .execute(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to save form '{}.{}' in tenant '{}': {error}",
+                form.entity_logical_name().as_str(),
+                form.logical_name().as_str(),
+                tenant_id
+            ))
+        })?;
+
+        Ok(())
+    }
+
+    async fn list_forms(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+    ) -> AppResult<Vec<FormDefinition>> {
+        let rows = sqlx::query_as::<_, FormRow>(
+            r#"
+            SELECT definition_json
+            FROM entity_forms
+            WHERE tenant_id = $1 AND entity_logical_name = $2
+            ORDER BY logical_name
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(entity_logical_name)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to list forms for entity '{}' in tenant '{}': {error}",
+                entity_logical_name, tenant_id
+            ))
+        })?;
+
+        rows.into_iter()
+            .map(|row| {
+                serde_json::from_value::<FormDefinition>(row.definition_json).map_err(|error| {
+                    AppError::Internal(format!(
+                        "persisted form definition is invalid for entity '{}' in tenant '{}': {error}",
+                        entity_logical_name, tenant_id
+                    ))
+                })
+            })
+            .collect()
+    }
+
+    async fn find_form(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        form_logical_name: &str,
+    ) -> AppResult<Option<FormDefinition>> {
+        let row = sqlx::query_as::<_, FormRow>(
+            r#"
+            SELECT definition_json
+            FROM entity_forms
+            WHERE tenant_id = $1 AND entity_logical_name = $2 AND logical_name = $3
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(entity_logical_name)
+        .bind(form_logical_name)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to find form '{}.{}' in tenant '{}': {error}",
+                entity_logical_name, form_logical_name, tenant_id
+            ))
+        })?;
+
+        row.map(|row| {
+            serde_json::from_value::<FormDefinition>(row.definition_json).map_err(|error| {
+                AppError::Internal(format!(
+                    "persisted form definition '{}.{}' is invalid in tenant '{}': {error}",
+                    entity_logical_name, form_logical_name, tenant_id
+                ))
+            })
+        })
+        .transpose()
+    }
+
+    async fn delete_form(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        form_logical_name: &str,
+    ) -> AppResult<()> {
+        let result = sqlx::query(
+            r#"
+            DELETE FROM entity_forms
+            WHERE tenant_id = $1 AND entity_logical_name = $2 AND logical_name = $3
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(entity_logical_name)
+        .bind(form_logical_name)
+        .execute(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to delete form '{}.{}' in tenant '{}': {error}",
+                entity_logical_name, form_logical_name, tenant_id
+            ))
+        })?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!(
+                "form '{}.{}' does not exist for tenant '{}'",
+                entity_logical_name, form_logical_name, tenant_id
+            )));
+        }
+
+        Ok(())
+    }
+
+    async fn save_view(&self, tenant_id: TenantId, view: ViewDefinition) -> AppResult<()> {
+        let definition_json = serde_json::to_value(&view).map_err(|error| {
+            AppError::Internal(format!(
+                "failed to serialize view '{}.{}': {error}",
+                view.entity_logical_name().as_str(),
+                view.logical_name().as_str()
+            ))
+        })?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO entity_views (
+                tenant_id,
+                entity_logical_name,
+                logical_name,
+                display_name,
+                view_type,
+                is_default,
+                definition_json,
+                updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+            ON CONFLICT (tenant_id, entity_logical_name, logical_name)
+            DO UPDATE SET
+                display_name = EXCLUDED.display_name,
+                view_type = EXCLUDED.view_type,
+                is_default = EXCLUDED.is_default,
+                definition_json = EXCLUDED.definition_json,
+                updated_at = now()
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(view.entity_logical_name().as_str())
+        .bind(view.logical_name().as_str())
+        .bind(view.display_name().as_str())
+        .bind(view.view_type().as_str())
+        .bind(view.is_default())
+        .bind(definition_json)
+        .execute(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to save view '{}.{}' in tenant '{}': {error}",
+                view.entity_logical_name().as_str(),
+                view.logical_name().as_str(),
+                tenant_id
+            ))
+        })?;
+
+        Ok(())
+    }
+
+    async fn list_views(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+    ) -> AppResult<Vec<ViewDefinition>> {
+        let rows = sqlx::query_as::<_, ViewRow>(
+            r#"
+            SELECT definition_json
+            FROM entity_views
+            WHERE tenant_id = $1 AND entity_logical_name = $2
+            ORDER BY logical_name
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(entity_logical_name)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to list views for entity '{}' in tenant '{}': {error}",
+                entity_logical_name, tenant_id
+            ))
+        })?;
+
+        rows.into_iter()
+            .map(|row| {
+                serde_json::from_value::<ViewDefinition>(row.definition_json).map_err(|error| {
+                    AppError::Internal(format!(
+                        "persisted view definition is invalid for entity '{}' in tenant '{}': {error}",
+                        entity_logical_name, tenant_id
+                    ))
+                })
+            })
+            .collect()
+    }
+
+    async fn find_view(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        view_logical_name: &str,
+    ) -> AppResult<Option<ViewDefinition>> {
+        let row = sqlx::query_as::<_, ViewRow>(
+            r#"
+            SELECT definition_json
+            FROM entity_views
+            WHERE tenant_id = $1 AND entity_logical_name = $2 AND logical_name = $3
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(entity_logical_name)
+        .bind(view_logical_name)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to find view '{}.{}' in tenant '{}': {error}",
+                entity_logical_name, view_logical_name, tenant_id
+            ))
+        })?;
+
+        row.map(|row| {
+            serde_json::from_value::<ViewDefinition>(row.definition_json).map_err(|error| {
+                AppError::Internal(format!(
+                    "persisted view definition '{}.{}' is invalid in tenant '{}': {error}",
+                    entity_logical_name, view_logical_name, tenant_id
+                ))
+            })
+        })
+        .transpose()
+    }
+
+    async fn delete_view(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        view_logical_name: &str,
+    ) -> AppResult<()> {
+        let result = sqlx::query(
+            r#"
+            DELETE FROM entity_views
+            WHERE tenant_id = $1 AND entity_logical_name = $2 AND logical_name = $3
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(entity_logical_name)
+        .bind(view_logical_name)
+        .execute(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to delete view '{}.{}' in tenant '{}': {error}",
+                entity_logical_name, view_logical_name, tenant_id
+            ))
+        })?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound(format!(
+                "view '{}.{}' does not exist for tenant '{}'",
+                entity_logical_name, view_logical_name, tenant_id
+            )));
+        }
+
+        Ok(())
     }
 
     async fn publish_entity_schema(
@@ -258,6 +942,7 @@ impl MetadataRepository for PostgresMetadataRepository {
         tenant_id: TenantId,
         entity: EntityDefinition,
         fields: Vec<EntityFieldDefinition>,
+        option_sets: Vec<OptionSetDefinition>,
         published_by: &str,
     ) -> AppResult<PublishedEntitySchema> {
         let mut transaction = self.pool.begin().await.map_err(|error| {
@@ -286,7 +971,7 @@ impl MetadataRepository for PostgresMetadataRepository {
             ))
         })?;
 
-        let schema = PublishedEntitySchema::new(entity.clone(), next_version, fields)?;
+        let schema = PublishedEntitySchema::new(entity.clone(), next_version, fields, option_sets)?;
         let schema_json = serde_json::to_value(&schema).map_err(|error| {
             AppError::Internal(format!(
                 "failed to serialize published schema for entity '{}' in tenant '{}': {error}",

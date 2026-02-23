@@ -10,7 +10,8 @@ use qryvanta_application::{
 use qryvanta_core::TenantId;
 use qryvanta_core::{AppError, AppResult};
 use qryvanta_domain::{
-    EntityDefinition, EntityFieldDefinition, FieldType, PublishedEntitySchema, RuntimeRecord,
+    EntityDefinition, EntityFieldDefinition, FieldType, FormDefinition, OptionSetDefinition,
+    PublishedEntitySchema, RuntimeRecord, ViewDefinition,
 };
 use serde_json::Value;
 use tokio::sync::RwLock;
@@ -21,6 +22,9 @@ use uuid::Uuid;
 pub struct InMemoryMetadataRepository {
     entities: RwLock<HashMap<(TenantId, String), EntityDefinition>>,
     fields: RwLock<HashMap<(TenantId, String, String), EntityFieldDefinition>>,
+    option_sets: RwLock<HashMap<(TenantId, String, String), OptionSetDefinition>>,
+    forms: RwLock<HashMap<(TenantId, String, String), FormDefinition>>,
+    views: RwLock<HashMap<(TenantId, String, String), ViewDefinition>>,
     published_schemas: RwLock<HashMap<(TenantId, String), Vec<PublishedEntitySchema>>>,
     runtime_records: RwLock<HashMap<(TenantId, String, String), RuntimeRecord>>,
     record_owners: RwLock<HashMap<(TenantId, String, String), String>>,
@@ -34,6 +38,9 @@ impl InMemoryMetadataRepository {
         Self {
             entities: RwLock::new(HashMap::new()),
             fields: RwLock::new(HashMap::new()),
+            option_sets: RwLock::new(HashMap::new()),
+            forms: RwLock::new(HashMap::new()),
+            views: RwLock::new(HashMap::new()),
             published_schemas: RwLock::new(HashMap::new()),
             runtime_records: RwLock::new(HashMap::new()),
             record_owners: RwLock::new(HashMap::new()),
@@ -124,11 +131,288 @@ impl MetadataRepository for InMemoryMetadataRepository {
         Ok(listed)
     }
 
+    async fn find_field(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        field_logical_name: &str,
+    ) -> AppResult<Option<EntityFieldDefinition>> {
+        Ok(self
+            .fields
+            .read()
+            .await
+            .get(&(
+                tenant_id,
+                entity_logical_name.to_owned(),
+                field_logical_name.to_owned(),
+            ))
+            .cloned())
+    }
+
+    async fn delete_field(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        field_logical_name: &str,
+    ) -> AppResult<()> {
+        let removed = self.fields.write().await.remove(&(
+            tenant_id,
+            entity_logical_name.to_owned(),
+            field_logical_name.to_owned(),
+        ));
+
+        if removed.is_none() {
+            return Err(AppError::NotFound(format!(
+                "field '{}.{}' does not exist for tenant '{}'",
+                entity_logical_name, field_logical_name, tenant_id
+            )));
+        }
+
+        Ok(())
+    }
+
+    async fn field_exists_in_published_schema(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        field_logical_name: &str,
+    ) -> AppResult<bool> {
+        let published = self.published_schemas.read().await;
+        let Some(versions) = published.get(&(tenant_id, entity_logical_name.to_owned())) else {
+            return Ok(false);
+        };
+
+        Ok(versions.iter().any(|schema| {
+            schema
+                .fields()
+                .iter()
+                .any(|field| field.logical_name().as_str() == field_logical_name)
+        }))
+    }
+
+    async fn save_option_set(
+        &self,
+        tenant_id: TenantId,
+        option_set: OptionSetDefinition,
+    ) -> AppResult<()> {
+        self.option_sets.write().await.insert(
+            (
+                tenant_id,
+                option_set.entity_logical_name().as_str().to_owned(),
+                option_set.logical_name().as_str().to_owned(),
+            ),
+            option_set,
+        );
+        Ok(())
+    }
+
+    async fn list_option_sets(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+    ) -> AppResult<Vec<OptionSetDefinition>> {
+        let option_sets = self.option_sets.read().await;
+        let mut listed: Vec<OptionSetDefinition> = option_sets
+            .iter()
+            .filter_map(|((stored_tenant_id, stored_entity_name, _), option_set)| {
+                (stored_tenant_id == &tenant_id && stored_entity_name == entity_logical_name)
+                    .then_some(option_set.clone())
+            })
+            .collect();
+        listed.sort_by(|left, right| {
+            left.logical_name()
+                .as_str()
+                .cmp(right.logical_name().as_str())
+        });
+        Ok(listed)
+    }
+
+    async fn find_option_set(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        option_set_logical_name: &str,
+    ) -> AppResult<Option<OptionSetDefinition>> {
+        Ok(self
+            .option_sets
+            .read()
+            .await
+            .get(&(
+                tenant_id,
+                entity_logical_name.to_owned(),
+                option_set_logical_name.to_owned(),
+            ))
+            .cloned())
+    }
+
+    async fn delete_option_set(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        option_set_logical_name: &str,
+    ) -> AppResult<()> {
+        let removed = self.option_sets.write().await.remove(&(
+            tenant_id,
+            entity_logical_name.to_owned(),
+            option_set_logical_name.to_owned(),
+        ));
+        if removed.is_none() {
+            return Err(AppError::NotFound(format!(
+                "option set '{}.{}' does not exist for tenant '{}'",
+                entity_logical_name, option_set_logical_name, tenant_id
+            )));
+        }
+        Ok(())
+    }
+
+    async fn save_form(&self, tenant_id: TenantId, form: FormDefinition) -> AppResult<()> {
+        self.forms.write().await.insert(
+            (
+                tenant_id,
+                form.entity_logical_name().as_str().to_owned(),
+                form.logical_name().as_str().to_owned(),
+            ),
+            form,
+        );
+        Ok(())
+    }
+
+    async fn list_forms(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+    ) -> AppResult<Vec<FormDefinition>> {
+        let forms = self.forms.read().await;
+        let mut listed: Vec<FormDefinition> = forms
+            .iter()
+            .filter_map(|((stored_tenant_id, stored_entity_name, _), form)| {
+                (stored_tenant_id == &tenant_id && stored_entity_name == entity_logical_name)
+                    .then_some(form.clone())
+            })
+            .collect();
+        listed.sort_by(|left, right| {
+            left.logical_name()
+                .as_str()
+                .cmp(right.logical_name().as_str())
+        });
+        Ok(listed)
+    }
+
+    async fn find_form(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        form_logical_name: &str,
+    ) -> AppResult<Option<FormDefinition>> {
+        Ok(self
+            .forms
+            .read()
+            .await
+            .get(&(
+                tenant_id,
+                entity_logical_name.to_owned(),
+                form_logical_name.to_owned(),
+            ))
+            .cloned())
+    }
+
+    async fn delete_form(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        form_logical_name: &str,
+    ) -> AppResult<()> {
+        let removed = self.forms.write().await.remove(&(
+            tenant_id,
+            entity_logical_name.to_owned(),
+            form_logical_name.to_owned(),
+        ));
+        if removed.is_none() {
+            return Err(AppError::NotFound(format!(
+                "form '{}.{}' does not exist for tenant '{}'",
+                entity_logical_name, form_logical_name, tenant_id
+            )));
+        }
+        Ok(())
+    }
+
+    async fn save_view(&self, tenant_id: TenantId, view: ViewDefinition) -> AppResult<()> {
+        self.views.write().await.insert(
+            (
+                tenant_id,
+                view.entity_logical_name().as_str().to_owned(),
+                view.logical_name().as_str().to_owned(),
+            ),
+            view,
+        );
+        Ok(())
+    }
+
+    async fn list_views(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+    ) -> AppResult<Vec<ViewDefinition>> {
+        let views = self.views.read().await;
+        let mut listed: Vec<ViewDefinition> = views
+            .iter()
+            .filter_map(|((stored_tenant_id, stored_entity_name, _), view)| {
+                (stored_tenant_id == &tenant_id && stored_entity_name == entity_logical_name)
+                    .then_some(view.clone())
+            })
+            .collect();
+        listed.sort_by(|left, right| {
+            left.logical_name()
+                .as_str()
+                .cmp(right.logical_name().as_str())
+        });
+        Ok(listed)
+    }
+
+    async fn find_view(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        view_logical_name: &str,
+    ) -> AppResult<Option<ViewDefinition>> {
+        Ok(self
+            .views
+            .read()
+            .await
+            .get(&(
+                tenant_id,
+                entity_logical_name.to_owned(),
+                view_logical_name.to_owned(),
+            ))
+            .cloned())
+    }
+
+    async fn delete_view(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        view_logical_name: &str,
+    ) -> AppResult<()> {
+        let removed = self.views.write().await.remove(&(
+            tenant_id,
+            entity_logical_name.to_owned(),
+            view_logical_name.to_owned(),
+        ));
+        if removed.is_none() {
+            return Err(AppError::NotFound(format!(
+                "view '{}.{}' does not exist for tenant '{}'",
+                entity_logical_name, view_logical_name, tenant_id
+            )));
+        }
+        Ok(())
+    }
+
     async fn publish_entity_schema(
         &self,
         tenant_id: TenantId,
         entity: EntityDefinition,
         fields: Vec<EntityFieldDefinition>,
+        option_sets: Vec<OptionSetDefinition>,
         _published_by: &str,
     ) -> AppResult<PublishedEntitySchema> {
         let mut published_schemas = self.published_schemas.write().await;
@@ -140,7 +424,7 @@ impl MetadataRepository for InMemoryMetadataRepository {
             .last()
             .map(|schema| schema.version() + 1)
             .unwrap_or(1);
-        let schema = PublishedEntitySchema::new(entity, version, fields)?;
+        let schema = PublishedEntitySchema::new(entity, version, fields, option_sets)?;
         versions.push(schema.clone());
 
         Ok(schema)
@@ -742,6 +1026,12 @@ fn compare_filter_values(
             .zip(expected.as_f64())
             .and_then(|(left, right)| left.partial_cmp(&right))
             .unwrap_or(Ordering::Equal),
+        FieldType::Choice => stored
+            .as_i64()
+            .zip(expected.as_i64())
+            .map(|(left, right)| left.cmp(&right))
+            .unwrap_or(Ordering::Equal),
+        FieldType::MultiChoice => Ordering::Equal,
         FieldType::Date | FieldType::DateTime | FieldType::Text | FieldType::Relation => stored
             .as_str()
             .zip(expected.as_str())
@@ -779,6 +1069,12 @@ fn compare_values_for_sort(
                 .zip(right.as_f64())
                 .and_then(|(left, right)| left.partial_cmp(&right))
                 .unwrap_or(Ordering::Equal),
+            FieldType::Choice => left
+                .as_i64()
+                .zip(right.as_i64())
+                .map(|(left, right)| left.cmp(&right))
+                .unwrap_or(Ordering::Equal),
+            FieldType::MultiChoice => Ordering::Equal,
             FieldType::Boolean => left
                 .as_bool()
                 .zip(right.as_bool())

@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use qryvanta_core::{AppResult, TenantId, UserIdentity};
 use qryvanta_domain::{
     AppDefinition, AppEntityAction, AppEntityBinding, AppEntityRolePermission, AppEntityViewMode,
-    PublishedEntitySchema, RuntimeRecord,
+    AppSitemap, PublishedEntitySchema, RuntimeRecord,
 };
 use serde_json::Value;
 
@@ -30,12 +30,42 @@ pub struct BindAppEntityInput {
     pub navigation_label: Option<String>,
     /// Display ordering value.
     pub navigation_order: i32,
+    /// Optional model-driven forms for this app entity.
+    pub forms: Option<Vec<AppEntityFormInput>>,
+    /// Optional model-driven list views for this app entity.
+    pub list_views: Option<Vec<AppEntityViewInput>>,
+    /// Optional default form logical name.
+    pub default_form_logical_name: Option<String>,
+    /// Optional default list view logical name.
+    pub default_list_view_logical_name: Option<String>,
     /// Optional app-specific form field order override.
     pub form_field_logical_names: Option<Vec<String>>,
     /// Optional app-specific list field order override.
     pub list_field_logical_names: Option<Vec<String>>,
     /// Optional default worker view mode override.
     pub default_view_mode: Option<AppEntityViewMode>,
+}
+
+/// Input payload for one app-scoped form definition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppEntityFormInput {
+    /// Stable form logical name.
+    pub logical_name: String,
+    /// Human-readable form display name.
+    pub display_name: String,
+    /// Ordered field logical names rendered in this form.
+    pub field_logical_names: Vec<String>,
+}
+
+/// Input payload for one app-scoped list view definition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppEntityViewInput {
+    /// Stable list view logical name.
+    pub logical_name: String,
+    /// Human-readable list view display name.
+    pub display_name: String,
+    /// Ordered field logical names rendered as columns.
+    pub field_logical_names: Vec<String>,
 }
 
 /// Input payload for app role entity permissions.
@@ -55,6 +85,15 @@ pub struct SaveAppRoleEntityPermissionInput {
     pub can_update: bool,
     /// Whether delete access is granted.
     pub can_delete: bool,
+}
+
+/// Input payload for saving an app sitemap.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SaveAppSitemapInput {
+    /// Parent app logical name.
+    pub app_logical_name: String,
+    /// Full sitemap definition.
+    pub sitemap: AppSitemap,
 }
 
 /// Effective subject permissions for an entity in an app.
@@ -114,6 +153,16 @@ pub trait AppRepository: Send + Sync {
         tenant_id: TenantId,
         app_logical_name: &str,
     ) -> AppResult<Vec<AppEntityBinding>>;
+
+    /// Saves app sitemap definition.
+    async fn save_sitemap(&self, tenant_id: TenantId, sitemap: AppSitemap) -> AppResult<()>;
+
+    /// Returns app sitemap definition when configured.
+    async fn get_sitemap(
+        &self,
+        tenant_id: TenantId,
+        app_logical_name: &str,
+    ) -> AppResult<Option<AppSitemap>>;
 
     /// Saves app-scoped role permissions for an entity.
     async fn save_app_role_entity_permission(

@@ -8,14 +8,7 @@ import {
   CardDescription,
   CardHeader,
   CardTitle,
-  PageHeader,
   StatusBadge,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
   buttonVariants,
 } from "@qryvanta/ui";
 
@@ -60,86 +53,108 @@ export default async function WorkerAppHomePage({
   const navigation =
     (await navigationResponse.json()) as AppEntityBindingResponse[];
 
+  const sortedNavigation = [...navigation].sort(
+    (left, right) => left.navigation_order - right.navigation_order,
+  );
+
   return (
     <div className="space-y-4">
-      <PageHeader
-        eyebrow="Worker Apps"
-        title={appLogicalName}
-        description="Select an entity area to view records and execute tasks."
-        actions={
-          <Link
-            href="/worker/apps"
-            className={cn(buttonVariants({ variant: "outline" }))}
-          >
-            Back to apps
-          </Link>
-        }
-      />
+      <Card>
+        <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+              Worker Apps
+            </p>
+            <CardTitle className="font-serif text-3xl">{appLogicalName}</CardTitle>
+            <CardDescription>
+              Model-driven sitemap for this business app. Pick an entity workspace to begin operations.
+            </CardDescription>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusBadge tone="neutral">Areas {sortedNavigation.length}</StatusBadge>
+            <Link
+              href="/worker/apps"
+              className={cn(buttonVariants({ variant: "outline" }))}
+            >
+              Back to apps
+            </Link>
+          </div>
+        </CardHeader>
+      </Card>
 
       <div className="grid gap-4 xl:grid-cols-[300px_1fr]">
-        <Card>
+        <Card className="h-fit border-zinc-200 bg-zinc-50">
           <CardHeader>
-            <CardTitle>App Queue</CardTitle>
-            <CardDescription>
-              Entity work areas available to your role.
-            </CardDescription>
+            <CardTitle className="text-base">Sitemap</CardTitle>
+            <CardDescription>Entity areas ordered for operator workflow.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <StatusBadge tone="neutral">
-              Entities {navigation.length}
-            </StatusBadge>
-            <p className="text-sm text-zinc-600">
-              Open an entity workspace to create, update, or inspect runtime
-              records.
-            </p>
+          <CardContent className="space-y-2">
+            {sortedNavigation.length > 0 ? (
+              sortedNavigation.map((item) => (
+                <Link
+                  key={`${item.app_logical_name}.${item.entity_logical_name}`}
+                  href={`/worker/apps/${appLogicalName}/${item.entity_logical_name}`}
+                  className="block rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm transition hover:border-emerald-300"
+                >
+                  <p className="font-medium text-zinc-900">
+                    {item.navigation_label ?? item.entity_logical_name}
+                  </p>
+                  <p className="font-mono text-[11px] text-zinc-500">
+                    {item.entity_logical_name}
+                  </p>
+                </Link>
+              ))
+            ) : (
+              <p className="text-xs text-zinc-500">No entities configured yet.</p>
+            )}
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="pt-6">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Entity</TableHead>
-                  <TableHead>Label</TableHead>
-                  <TableHead>Open</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {navigation.length > 0 ? (
-                  navigation.map((item) => (
-                    <TableRow
-                      key={`${item.app_logical_name}.${item.entity_logical_name}`}
-                    >
-                      <TableCell className="font-mono text-xs">
-                        {item.entity_logical_name}
-                      </TableCell>
-                      <TableCell>
-                        {item.navigation_label ?? item.entity_logical_name}
-                      </TableCell>
-                      <TableCell>
-                        <Link
-                          className={cn(
-                            buttonVariants({ size: "sm", variant: "outline" }),
-                          )}
-                          href={`/worker/apps/${appLogicalName}/${item.entity_logical_name}`}
-                        >
-                          Open
-                        </Link>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell className="text-zinc-500" colSpan={3}>
-                      No entities are configured for this app yet.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
+        <Card className="border-zinc-200 bg-white">
+          <CardHeader>
+            <CardTitle>Entity Work Areas</CardTitle>
+            <CardDescription>
+              Open a workspace to view records, create data, and run daily business processes.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-2">
+            {sortedNavigation.length > 0 ? (
+              sortedNavigation.map((item) => (
+                <div
+                  key={`${item.app_logical_name}.${item.entity_logical_name}.card`}
+                  className="rounded-md border border-zinc-200 p-3"
+                >
+                  <p className="text-sm font-semibold text-zinc-900">
+                    {item.navigation_label ?? item.entity_logical_name}
+                  </p>
+                  <p className="font-mono text-[11px] text-zinc-500">
+                    {item.entity_logical_name}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-600">
+                    Order {item.navigation_order} - default {item.default_view_mode.toUpperCase()} view
+                  </p>
+                  <Link
+                    href={`/worker/apps/${appLogicalName}/${item.entity_logical_name}`}
+                    className={cn(buttonVariants({ size: "sm", variant: "outline" }), "mt-3")}
+                  >
+                    Open Workspace
+                  </Link>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-zinc-500">No entities are configured for this app yet.</p>
+            )}
           </CardContent>
         </Card>
+      </div>
+
+      <div className="flex justify-end">
+        <Link
+          href="/worker/apps"
+          className={cn(buttonVariants({ variant: "outline" }))}
+        >
+          Return to app catalog
+        </Link>
       </div>
     </div>
   );

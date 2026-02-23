@@ -7,8 +7,8 @@ use tokio::sync::Mutex;
 
 use qryvanta_core::{AppError, AppResult, TenantId, UserIdentity};
 use qryvanta_domain::{
-    AppDefinition, AppEntityBinding, AppEntityRolePermission, AppEntityViewMode, Permission,
-    RuntimeRecord,
+    AppDefinition, AppEntityBinding, AppEntityForm, AppEntityRolePermission, AppEntityView,
+    AppEntityViewMode, AppSitemap, Permission, RuntimeRecord,
 };
 
 use crate::{
@@ -72,6 +72,7 @@ impl AuthorizationRepository for FakeAuthorizationRepository {
 #[derive(Default)]
 struct FakeAppRepository {
     bindings: Mutex<HashMap<(TenantId, String), Vec<AppEntityBinding>>>,
+    sitemaps: Mutex<HashMap<(TenantId, String), AppSitemap>>,
     subject_permissions: Mutex<HashMap<(TenantId, String, String), Vec<SubjectEntityPermission>>>,
     subject_access: Mutex<HashMap<(TenantId, String, String), bool>>,
 }
@@ -114,6 +115,27 @@ impl AppRepository for FakeAppRepository {
             .get(&(tenant_id, app_logical_name.to_owned()))
             .cloned()
             .unwrap_or_default())
+    }
+
+    async fn save_sitemap(&self, tenant_id: TenantId, sitemap: AppSitemap) -> AppResult<()> {
+        self.sitemaps.lock().await.insert(
+            (tenant_id, sitemap.app_logical_name().as_str().to_owned()),
+            sitemap,
+        );
+        Ok(())
+    }
+
+    async fn get_sitemap(
+        &self,
+        tenant_id: TenantId,
+        app_logical_name: &str,
+    ) -> AppResult<Option<AppSitemap>> {
+        Ok(self
+            .sitemaps
+            .lock()
+            .await
+            .get(&(tenant_id, app_logical_name.to_owned()))
+            .cloned())
     }
 
     async fn save_app_role_entity_permission(
@@ -343,8 +365,16 @@ async fn app_navigation_only_includes_readable_entities() {
                 "account",
                 None,
                 0,
-                Vec::new(),
-                Vec::new(),
+                vec![
+                    AppEntityForm::new("main_form", "Main Form", Vec::new())
+                        .unwrap_or_else(|_| unreachable!()),
+                ],
+                vec![
+                    AppEntityView::new("main_view", "Main View", Vec::new())
+                        .unwrap_or_else(|_| unreachable!()),
+                ],
+                "main_form",
+                "main_view",
                 AppEntityViewMode::Grid,
             )
             .unwrap_or_else(|_| unreachable!()),
@@ -353,8 +383,16 @@ async fn app_navigation_only_includes_readable_entities() {
                 "invoice",
                 None,
                 1,
-                Vec::new(),
-                Vec::new(),
+                vec![
+                    AppEntityForm::new("main_form", "Main Form", Vec::new())
+                        .unwrap_or_else(|_| unreachable!()),
+                ],
+                vec![
+                    AppEntityView::new("main_view", "Main View", Vec::new())
+                        .unwrap_or_else(|_| unreachable!()),
+                ],
+                "main_form",
+                "main_view",
                 AppEntityViewMode::Grid,
             )
             .unwrap_or_else(|_| unreachable!()),
@@ -384,9 +422,10 @@ async fn app_navigation_only_includes_readable_entities() {
     let navigation = service.app_navigation_for_subject(&actor, "sales").await;
 
     assert!(navigation.is_ok());
-    let navigation = navigation.unwrap_or_default();
-    assert_eq!(navigation.len(), 1);
-    assert_eq!(navigation[0].entity_logical_name().as_str(), "account");
+    let navigation = navigation.unwrap_or_else(|_| unreachable!());
+    assert_eq!(navigation.areas().len(), 1);
+    assert_eq!(navigation.areas()[0].groups().len(), 1);
+    assert_eq!(navigation.areas()[0].groups()[0].sub_areas().len(), 1);
 }
 
 #[tokio::test]

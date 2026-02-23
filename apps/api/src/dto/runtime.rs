@@ -9,7 +9,7 @@ use ts_rs::TS;
 #[derive(Debug, Deserialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/create-runtime-record-request.ts"
+    export_to = "../../../packages/api-types/src/generated/create-runtime-record-request.ts"
 )]
 pub struct CreateRuntimeRecordRequest {
     #[ts(type = "Record<string, unknown>")]
@@ -20,7 +20,7 @@ pub struct CreateRuntimeRecordRequest {
 #[derive(Debug, Deserialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/update-runtime-record-request.ts"
+    export_to = "../../../packages/api-types/src/generated/update-runtime-record-request.ts"
 )]
 pub struct UpdateRuntimeRecordRequest {
     #[ts(type = "Record<string, unknown>")]
@@ -31,7 +31,7 @@ pub struct UpdateRuntimeRecordRequest {
 #[derive(Debug, Deserialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/runtime-record-query-filter-request.ts"
+    export_to = "../../../packages/api-types/src/generated/runtime-record-query-filter-request.ts"
 )]
 pub struct RuntimeRecordQueryFilterRequest {
     #[ts(type = "string | null")]
@@ -47,14 +47,12 @@ pub struct RuntimeRecordQueryFilterRequest {
 #[derive(Debug, Deserialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/runtime-record-query-group-request.ts"
+    export_to = "../../../packages/api-types/src/generated/runtime-record-query-group-request.ts"
 )]
 pub struct RuntimeRecordQueryGroupRequest {
     #[ts(type = "\"and\" | \"or\" | null")]
     pub logical_mode: Option<String>,
-    #[ts(type = "Array<RuntimeRecordQueryFilterRequest> | null")]
     pub conditions: Option<Vec<RuntimeRecordQueryFilterRequest>>,
-    #[ts(type = "Array<RuntimeRecordQueryGroupRequest> | null")]
     pub groups: Option<Vec<RuntimeRecordQueryGroupRequest>>,
 }
 
@@ -62,7 +60,7 @@ pub struct RuntimeRecordQueryGroupRequest {
 #[derive(Debug, Deserialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/runtime-record-query-link-entity-request.ts"
+    export_to = "../../../packages/api-types/src/generated/runtime-record-query-link-entity-request.ts"
 )]
 pub struct RuntimeRecordQueryLinkEntityRequest {
     pub alias: String,
@@ -77,7 +75,7 @@ pub struct RuntimeRecordQueryLinkEntityRequest {
 #[derive(Debug, Deserialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/runtime-record-query-sort-request.ts"
+    export_to = "../../../packages/api-types/src/generated/runtime-record-query-sort-request.ts"
 )]
 pub struct RuntimeRecordQuerySortRequest {
     #[ts(type = "string | null")]
@@ -91,7 +89,7 @@ pub struct RuntimeRecordQuerySortRequest {
 #[derive(Debug, Deserialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/query-runtime-records-request.ts"
+    export_to = "../../../packages/api-types/src/generated/query-runtime-records-request.ts"
 )]
 pub struct QueryRuntimeRecordsRequest {
     pub limit: Option<usize>,
@@ -99,13 +97,9 @@ pub struct QueryRuntimeRecordsRequest {
     #[ts(type = "\"and\" | \"or\" | null")]
     pub logical_mode: Option<String>,
     #[serde(rename = "where")]
-    #[ts(type = "RuntimeRecordQueryGroupRequest | null")]
     pub where_clause: Option<RuntimeRecordQueryGroupRequest>,
-    #[ts(type = "Array<RuntimeRecordQueryFilterRequest> | null")]
     pub conditions: Option<Vec<RuntimeRecordQueryFilterRequest>>,
-    #[ts(type = "Array<RuntimeRecordQueryLinkEntityRequest> | null")]
     pub link_entities: Option<Vec<RuntimeRecordQueryLinkEntityRequest>>,
-    #[ts(type = "Array<RuntimeRecordQuerySortRequest> | null")]
     pub sort: Option<Vec<RuntimeRecordQuerySortRequest>>,
     /// Legacy exact-match map; converted to `eq` conditions when present.
     #[ts(type = "Record<string, unknown> | null")]
@@ -116,7 +110,7 @@ pub struct QueryRuntimeRecordsRequest {
 #[derive(Debug, Serialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/runtime-record-response.ts"
+    export_to = "../../../packages/api-types/src/generated/runtime-record-response.ts"
 )]
 pub struct RuntimeRecordResponse {
     pub record_id: String,

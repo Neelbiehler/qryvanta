@@ -11,7 +11,12 @@ Metadata runtime defines business data as tenant-scoped metadata, then executes 
 
 - Entity metadata (`/api/entities`) remains the root definition for logical and display names.
 - Field metadata is managed per entity (`/api/entities/:entity_logical_name/fields`).
+- Draft field metadata can be updated and deleted with explicit endpoints:
+  - `PUT /api/entities/:entity_logical_name/fields/:field_logical_name`
+  - `DELETE /api/entities/:entity_logical_name/fields/:field_logical_name`
 - Publish lifecycle is versioned and immutable (`/api/entities/:entity_logical_name/publish`).
+- Standalone forms are managed with dedicated endpoints (`/api/entities/:entity_logical_name/forms`).
+- Standalone views are managed with dedicated endpoints (`/api/entities/:entity_logical_name/views`).
 - Runtime record APIs read only the latest published schema (`/api/runtime/:entity_logical_name/records`).
 - Tenant identity bootstrap ensures a default published `contact` entity and subject-to-contact runtime mapping.
 
@@ -25,6 +30,8 @@ Supported field types:
 - `date`
 - `datetime`
 - `json`
+- `choice` (single-select, backed by entity option sets)
+- `multichoice` (multi-select, backed by entity option sets)
 - `relation` (many-to-one by target entity logical name)
 
 Per-field constraints:
@@ -33,6 +40,53 @@ Per-field constraints:
 - `is_unique` (excluding `json` fields)
 - `default_value`
 - `relation_target_entity` (required for `relation` fields)
+- `option_set_logical_name` (required for `choice` and `multichoice` fields)
+- `description` (optional freeform metadata)
+- `max_length` (optional, `text` fields only)
+- `min_value` / `max_value` (optional, `number` fields only)
+
+Field mutation rules:
+
+- Published fields keep stable identity/type semantics: `logical_name` and `field_type` are immutable.
+- Draft fields can be deleted only when they do not exist in any published schema version.
+- Validation rejects invalid constraint combinations (for example `max_length` on `number` fields).
+
+## Option Sets
+
+Option sets are first-class metadata objects scoped to an entity and used by `choice`/`multichoice` fields.
+
+- List/create: `GET/POST /api/entities/:entity_logical_name/option-sets`
+- Read/update/delete: `GET/PUT/DELETE /api/entities/:entity_logical_name/option-sets/:option_set_logical_name`
+- Published schema snapshots include resolved option set definitions.
+- Runtime validation enforces that choice values exist in the referenced option set.
+
+## Entity Metadata Enrichment
+
+Entity definitions support optional descriptive fields in addition to logical and display names:
+
+- `description`
+- `plural_display_name`
+- `icon`
+
+## Form and View Definitions
+
+Forms and views are standalone metadata definitions (not embedded inside app bindings) and are scoped per entity.
+
+- Forms:
+  - List/create: `GET/POST /api/entities/:entity_logical_name/forms`
+  - Read/update/delete: `GET/PUT/DELETE /api/entities/:entity_logical_name/forms/:form_logical_name`
+  - Saved definitions validate referenced field names against the latest published schema.
+- Views:
+  - List/create: `GET/POST /api/entities/:entity_logical_name/views`
+  - Read/update/delete: `GET/PUT/DELETE /api/entities/:entity_logical_name/views/:view_logical_name`
+  - Column, default sort, and filter field references validate against the latest published schema.
+
+Current invariants:
+
+- Forms require at least one tab; each tab requires at least one section.
+- `quick_create` forms must contain exactly one tab and one section.
+- Forms reject duplicate field placements.
+- Views require at least one column and reject duplicate columns.
 
 ## Publish Lifecycle
 

@@ -426,6 +426,7 @@ export function useEntityWorkbenchPanel({
         default_value: parsedDefaultValue,
         relation_target_entity:
           relationTargetEntity.trim().length > 0 ? relationTargetEntity : null,
+        option_set_logical_name: null,
       };
 
       const response = await apiFetch(`/api/entities/${entityLogicalName}/fields`, {

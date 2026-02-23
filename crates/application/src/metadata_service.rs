@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use qryvanta_core::{AppError, AppResult, TenantId, UserIdentity};
 use qryvanta_domain::{
-    AuditAction, EntityDefinition, EntityFieldDefinition, FieldType, Permission,
-    PublishedEntitySchema, RuntimeRecord,
+    AuditAction, EntityDefinition, EntityFieldDefinition, FieldType, FormDefinition,
+    OptionSetDefinition, Permission, PublishedEntitySchema, RuntimeRecord, ViewDefinition,
 };
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -13,7 +13,8 @@ use crate::AuthorizationService;
 use crate::metadata_ports::{
     AuditEvent, AuditRepository, MetadataRepository, RecordListQuery, RuntimeRecordConditionGroup,
     RuntimeRecordConditionNode, RuntimeRecordFilter, RuntimeRecordOperator, RuntimeRecordQuery,
-    RuntimeRecordSort, SaveFieldInput, UniqueFieldValue,
+    RuntimeRecordSort, SaveFieldInput, SaveFormInput, SaveOptionSetInput, SaveViewInput,
+    UniqueFieldValue, UpdateFieldInput,
 };
 
 /// Application service for metadata and runtime record operations.
@@ -52,6 +53,20 @@ impl MetadataService {
         logical_name: impl Into<String>,
         display_name: impl Into<String>,
     ) -> AppResult<EntityDefinition> {
+        self.register_entity_with_details(actor, logical_name, display_name, None, None, None)
+            .await
+    }
+
+    /// Registers a new entity definition with optional enriched metadata.
+    pub async fn register_entity_with_details(
+        &self,
+        actor: &UserIdentity,
+        logical_name: impl Into<String>,
+        display_name: impl Into<String>,
+        description: Option<String>,
+        plural_display_name: Option<String>,
+        icon: Option<String>,
+    ) -> AppResult<EntityDefinition> {
         self.authorization_service
             .require_permission(
                 actor.tenant_id(),
@@ -68,7 +83,13 @@ impl MetadataService {
             )
             .await?;
 
-        let entity = EntityDefinition::new(logical_name, display_name)?;
+        let entity = EntityDefinition::new_with_details(
+            logical_name,
+            display_name,
+            description,
+            plural_display_name,
+            icon,
+        )?;
         self.repository
             .save_entity(actor.tenant_id(), entity.clone())
             .await?;
@@ -125,7 +146,27 @@ impl MetadataService {
                 .await?;
         }
 
-        let field = EntityFieldDefinition::new(
+        if let Some(option_set_logical_name) = input.option_set_logical_name.as_deref() {
+            let option_set_exists = self
+                .repository
+                .find_option_set(
+                    actor.tenant_id(),
+                    input.entity_logical_name.as_str(),
+                    option_set_logical_name,
+                )
+                .await?
+                .is_some();
+            if !option_set_exists {
+                return Err(AppError::NotFound(format!(
+                    "option set '{}.{}' does not exist for tenant '{}'",
+                    input.entity_logical_name,
+                    option_set_logical_name,
+                    actor.tenant_id()
+                )));
+            }
+        }
+
+        let field = EntityFieldDefinition::new_with_details(
             input.entity_logical_name,
             input.logical_name,
             input.display_name,
@@ -134,7 +175,50 @@ impl MetadataService {
             input.is_unique,
             input.default_value,
             input.relation_target_entity,
+            input.option_set_logical_name,
+            None,
+            None,
+            None,
+            None,
         )?;
+
+        if let Some(existing) = self
+            .repository
+            .find_field(
+                actor.tenant_id(),
+                field.entity_logical_name().as_str(),
+                field.logical_name().as_str(),
+            )
+            .await?
+            && self
+                .repository
+                .field_exists_in_published_schema(
+                    actor.tenant_id(),
+                    field.entity_logical_name().as_str(),
+                    field.logical_name().as_str(),
+                )
+                .await?
+        {
+            if existing.field_type() != field.field_type() {
+                return Err(AppError::Validation(format!(
+                    "field type cannot be changed for published field '{}.{}'",
+                    field.entity_logical_name().as_str(),
+                    field.logical_name().as_str()
+                )));
+            }
+
+            if existing
+                .relation_target_entity()
+                .map(|value| value.as_str())
+                != field.relation_target_entity().map(|value| value.as_str())
+            {
+                return Err(AppError::Validation(format!(
+                    "relation target cannot be changed for published field '{}.{}'",
+                    field.entity_logical_name().as_str(),
+                    field.logical_name().as_str()
+                )));
+            }
+        }
 
         self.repository
             .save_field(actor.tenant_id(), field.clone())
@@ -160,6 +244,558 @@ impl MetadataService {
             .await?;
 
         Ok(field)
+    }
+
+    /// Saves or updates an entity option set definition.
+    pub async fn save_option_set(
+        &self,
+        actor: &UserIdentity,
+        input: SaveOptionSetInput,
+    ) -> AppResult<OptionSetDefinition> {
+        self.authorization_service
+            .require_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::MetadataFieldWrite,
+            )
+            .await?;
+
+        self.require_entity_exists(actor.tenant_id(), input.entity_logical_name.as_str())
+            .await?;
+
+        let option_set = OptionSetDefinition::new(
+            input.entity_logical_name,
+            input.logical_name,
+            input.display_name,
+            input.options,
+        )?;
+
+        self.repository
+            .save_option_set(actor.tenant_id(), option_set.clone())
+            .await?;
+
+        self.audit_repository
+            .append_event(AuditEvent {
+                tenant_id: actor.tenant_id(),
+                subject: actor.subject().to_owned(),
+                action: AuditAction::MetadataFieldSaved,
+                resource_type: "entity_option_set_definition".to_owned(),
+                resource_id: format!(
+                    "{}.{}",
+                    option_set.entity_logical_name().as_str(),
+                    option_set.logical_name().as_str()
+                ),
+                detail: Some(format!(
+                    "saved option set '{}' on entity '{}'",
+                    option_set.logical_name().as_str(),
+                    option_set.entity_logical_name().as_str()
+                )),
+            })
+            .await?;
+
+        Ok(option_set)
+    }
+
+    /// Lists option sets for an entity.
+    pub async fn list_option_sets(
+        &self,
+        actor: &UserIdentity,
+        entity_logical_name: &str,
+    ) -> AppResult<Vec<OptionSetDefinition>> {
+        self.authorization_service
+            .require_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::MetadataFieldRead,
+            )
+            .await?;
+
+        self.repository
+            .list_option_sets(actor.tenant_id(), entity_logical_name)
+            .await
+    }
+
+    /// Finds a single option set by logical name.
+    pub async fn find_option_set(
+        &self,
+        actor: &UserIdentity,
+        entity_logical_name: &str,
+        option_set_logical_name: &str,
+    ) -> AppResult<Option<OptionSetDefinition>> {
+        self.authorization_service
+            .require_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::MetadataFieldRead,
+            )
+            .await?;
+
+        self.repository
+            .find_option_set(
+                actor.tenant_id(),
+                entity_logical_name,
+                option_set_logical_name,
+            )
+            .await
+    }
+
+    /// Deletes an option set definition.
+    pub async fn delete_option_set(
+        &self,
+        actor: &UserIdentity,
+        entity_logical_name: &str,
+        option_set_logical_name: &str,
+    ) -> AppResult<()> {
+        self.authorization_service
+            .require_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::MetadataFieldWrite,
+            )
+            .await?;
+
+        let fields = self
+            .repository
+            .list_fields(actor.tenant_id(), entity_logical_name)
+            .await?;
+        let in_use = fields.iter().any(|field| {
+            field
+                .option_set_logical_name()
+                .map(|name| name.as_str() == option_set_logical_name)
+                .unwrap_or(false)
+        });
+        if in_use {
+            return Err(AppError::Conflict(format!(
+                "option set '{}.{}' cannot be deleted because fields reference it",
+                entity_logical_name, option_set_logical_name
+            )));
+        }
+
+        self.repository
+            .delete_option_set(
+                actor.tenant_id(),
+                entity_logical_name,
+                option_set_logical_name,
+            )
+            .await?;
+
+        self.audit_repository
+            .append_event(AuditEvent {
+                tenant_id: actor.tenant_id(),
+                subject: actor.subject().to_owned(),
+                action: AuditAction::MetadataFieldSaved,
+                resource_type: "entity_option_set_definition".to_owned(),
+                resource_id: format!("{entity_logical_name}.{option_set_logical_name}"),
+                detail: Some(format!(
+                    "deleted option set '{}' on entity '{}'",
+                    option_set_logical_name, entity_logical_name
+                )),
+            })
+            .await?;
+
+        Ok(())
+    }
+
+    /// Saves or updates a standalone form definition.
+    pub async fn save_form(
+        &self,
+        actor: &UserIdentity,
+        input: SaveFormInput,
+    ) -> AppResult<FormDefinition> {
+        self.authorization_service
+            .require_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::MetadataFieldWrite,
+            )
+            .await?;
+        self.require_entity_exists(actor.tenant_id(), input.entity_logical_name.as_str())
+            .await?;
+
+        let form = FormDefinition::new(
+            input.entity_logical_name,
+            input.logical_name,
+            input.display_name,
+            input.form_type,
+            input.tabs,
+            input.header_fields,
+        )?;
+
+        let schema = self
+            .published_schema_for_runtime(actor.tenant_id(), form.entity_logical_name().as_str())
+            .await?;
+        Self::validate_form_definition(&schema, &form)?;
+
+        self.repository
+            .save_form(actor.tenant_id(), form.clone())
+            .await?;
+        self.audit_repository
+            .append_event(AuditEvent {
+                tenant_id: actor.tenant_id(),
+                subject: actor.subject().to_owned(),
+                action: AuditAction::MetadataFieldSaved,
+                resource_type: "entity_form_definition".to_owned(),
+                resource_id: format!(
+                    "{}.{}",
+                    form.entity_logical_name().as_str(),
+                    form.logical_name().as_str()
+                ),
+                detail: Some(format!(
+                    "saved form '{}' on entity '{}'",
+                    form.logical_name().as_str(),
+                    form.entity_logical_name().as_str()
+                )),
+            })
+            .await?;
+        Ok(form)
+    }
+
+    /// Lists standalone forms for an entity.
+    pub async fn list_forms(
+        &self,
+        actor: &UserIdentity,
+        entity_logical_name: &str,
+    ) -> AppResult<Vec<FormDefinition>> {
+        self.authorization_service
+            .require_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::MetadataFieldRead,
+            )
+            .await?;
+        self.repository
+            .list_forms(actor.tenant_id(), entity_logical_name)
+            .await
+    }
+
+    /// Finds a standalone form by logical name.
+    pub async fn find_form(
+        &self,
+        actor: &UserIdentity,
+        entity_logical_name: &str,
+        form_logical_name: &str,
+    ) -> AppResult<Option<FormDefinition>> {
+        self.authorization_service
+            .require_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::MetadataFieldRead,
+            )
+            .await?;
+        self.repository
+            .find_form(actor.tenant_id(), entity_logical_name, form_logical_name)
+            .await
+    }
+
+    /// Deletes a standalone form definition.
+    pub async fn delete_form(
+        &self,
+        actor: &UserIdentity,
+        entity_logical_name: &str,
+        form_logical_name: &str,
+    ) -> AppResult<()> {
+        self.authorization_service
+            .require_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::MetadataFieldWrite,
+            )
+            .await?;
+        self.repository
+            .delete_form(actor.tenant_id(), entity_logical_name, form_logical_name)
+            .await?;
+        self.audit_repository
+            .append_event(AuditEvent {
+                tenant_id: actor.tenant_id(),
+                subject: actor.subject().to_owned(),
+                action: AuditAction::MetadataFieldSaved,
+                resource_type: "entity_form_definition".to_owned(),
+                resource_id: format!("{entity_logical_name}.{form_logical_name}"),
+                detail: Some(format!(
+                    "deleted form '{}' on entity '{}'",
+                    form_logical_name, entity_logical_name
+                )),
+            })
+            .await?;
+        Ok(())
+    }
+
+    /// Saves or updates a standalone view definition.
+    pub async fn save_view(
+        &self,
+        actor: &UserIdentity,
+        input: SaveViewInput,
+    ) -> AppResult<ViewDefinition> {
+        self.authorization_service
+            .require_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::MetadataFieldWrite,
+            )
+            .await?;
+        self.require_entity_exists(actor.tenant_id(), input.entity_logical_name.as_str())
+            .await?;
+
+        let view = ViewDefinition::new(
+            input.entity_logical_name,
+            input.logical_name,
+            input.display_name,
+            input.view_type,
+            input.columns,
+            input.default_sort,
+            input.filter_criteria,
+            input.is_default,
+        )?;
+        let schema = self
+            .published_schema_for_runtime(actor.tenant_id(), view.entity_logical_name().as_str())
+            .await?;
+        Self::validate_view_definition(&schema, &view)?;
+
+        if view.is_default() {
+            let existing = self
+                .repository
+                .list_views(actor.tenant_id(), view.entity_logical_name().as_str())
+                .await?;
+            if existing.iter().any(|existing_view| {
+                existing_view.is_default()
+                    && existing_view.logical_name().as_str() != view.logical_name().as_str()
+            }) {
+                return Err(AppError::Conflict(format!(
+                    "entity '{}' already has a default view",
+                    view.entity_logical_name().as_str()
+                )));
+            }
+        }
+
+        self.repository
+            .save_view(actor.tenant_id(), view.clone())
+            .await?;
+        self.audit_repository
+            .append_event(AuditEvent {
+                tenant_id: actor.tenant_id(),
+                subject: actor.subject().to_owned(),
+                action: AuditAction::MetadataFieldSaved,
+                resource_type: "entity_view_definition".to_owned(),
+                resource_id: format!(
+                    "{}.{}",
+                    view.entity_logical_name().as_str(),
+                    view.logical_name().as_str()
+                ),
+                detail: Some(format!(
+                    "saved view '{}' on entity '{}'",
+                    view.logical_name().as_str(),
+                    view.entity_logical_name().as_str()
+                )),
+            })
+            .await?;
+        Ok(view)
+    }
+
+    /// Lists standalone views for an entity.
+    pub async fn list_views(
+        &self,
+        actor: &UserIdentity,
+        entity_logical_name: &str,
+    ) -> AppResult<Vec<ViewDefinition>> {
+        self.authorization_service
+            .require_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::MetadataFieldRead,
+            )
+            .await?;
+        self.repository
+            .list_views(actor.tenant_id(), entity_logical_name)
+            .await
+    }
+
+    /// Finds a standalone view by logical name.
+    pub async fn find_view(
+        &self,
+        actor: &UserIdentity,
+        entity_logical_name: &str,
+        view_logical_name: &str,
+    ) -> AppResult<Option<ViewDefinition>> {
+        self.authorization_service
+            .require_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::MetadataFieldRead,
+            )
+            .await?;
+        self.repository
+            .find_view(actor.tenant_id(), entity_logical_name, view_logical_name)
+            .await
+    }
+
+    /// Deletes a standalone view definition.
+    pub async fn delete_view(
+        &self,
+        actor: &UserIdentity,
+        entity_logical_name: &str,
+        view_logical_name: &str,
+    ) -> AppResult<()> {
+        self.authorization_service
+            .require_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::MetadataFieldWrite,
+            )
+            .await?;
+        self.repository
+            .delete_view(actor.tenant_id(), entity_logical_name, view_logical_name)
+            .await?;
+        self.audit_repository
+            .append_event(AuditEvent {
+                tenant_id: actor.tenant_id(),
+                subject: actor.subject().to_owned(),
+                action: AuditAction::MetadataFieldSaved,
+                resource_type: "entity_view_definition".to_owned(),
+                resource_id: format!("{entity_logical_name}.{view_logical_name}"),
+                detail: Some(format!(
+                    "deleted view '{}' on entity '{}'",
+                    view_logical_name, entity_logical_name
+                )),
+            })
+            .await?;
+        Ok(())
+    }
+
+    /// Updates mutable metadata attributes for an existing field.
+    pub async fn update_field(
+        &self,
+        actor: &UserIdentity,
+        input: UpdateFieldInput,
+    ) -> AppResult<EntityFieldDefinition> {
+        self.authorization_service
+            .require_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::MetadataFieldWrite,
+            )
+            .await?;
+
+        self.require_entity_exists(actor.tenant_id(), input.entity_logical_name.as_str())
+            .await?;
+
+        let existing = self
+            .repository
+            .find_field(
+                actor.tenant_id(),
+                input.entity_logical_name.as_str(),
+                input.logical_name.as_str(),
+            )
+            .await?
+            .ok_or_else(|| {
+                AppError::NotFound(format!(
+                    "field '{}.{}' does not exist for tenant '{}'",
+                    input.entity_logical_name,
+                    input.logical_name,
+                    actor.tenant_id()
+                ))
+            })?;
+
+        let updated = existing.with_mutable_updates(
+            input.display_name,
+            input.description,
+            input.default_value,
+            input.max_length,
+            input.min_value,
+            input.max_value,
+        )?;
+
+        self.repository
+            .save_field(actor.tenant_id(), updated.clone())
+            .await?;
+
+        self.audit_repository
+            .append_event(AuditEvent {
+                tenant_id: actor.tenant_id(),
+                subject: actor.subject().to_owned(),
+                action: AuditAction::MetadataFieldSaved,
+                resource_type: "entity_field_definition".to_owned(),
+                resource_id: format!(
+                    "{}.{}",
+                    updated.entity_logical_name().as_str(),
+                    updated.logical_name().as_str()
+                ),
+                detail: Some(format!(
+                    "updated metadata field '{}' on entity '{}'",
+                    updated.logical_name().as_str(),
+                    updated.entity_logical_name().as_str()
+                )),
+            })
+            .await?;
+
+        Ok(updated)
+    }
+
+    /// Deletes a draft field that has never been published.
+    pub async fn delete_field(
+        &self,
+        actor: &UserIdentity,
+        entity_logical_name: &str,
+        field_logical_name: &str,
+    ) -> AppResult<()> {
+        self.authorization_service
+            .require_permission(
+                actor.tenant_id(),
+                actor.subject(),
+                Permission::MetadataFieldWrite,
+            )
+            .await?;
+
+        self.require_entity_exists(actor.tenant_id(), entity_logical_name)
+            .await?;
+
+        let field_exists = self
+            .repository
+            .find_field(actor.tenant_id(), entity_logical_name, field_logical_name)
+            .await?
+            .is_some();
+        if !field_exists {
+            return Err(AppError::NotFound(format!(
+                "field '{}.{}' does not exist for tenant '{}'",
+                entity_logical_name,
+                field_logical_name,
+                actor.tenant_id()
+            )));
+        }
+
+        let published = self
+            .repository
+            .field_exists_in_published_schema(
+                actor.tenant_id(),
+                entity_logical_name,
+                field_logical_name,
+            )
+            .await?;
+        if published {
+            return Err(AppError::Conflict(format!(
+                "field '{}.{}' cannot be deleted because it exists in a published schema",
+                entity_logical_name, field_logical_name
+            )));
+        }
+
+        self.repository
+            .delete_field(actor.tenant_id(), entity_logical_name, field_logical_name)
+            .await?;
+
+        self.audit_repository
+            .append_event(AuditEvent {
+                tenant_id: actor.tenant_id(),
+                subject: actor.subject().to_owned(),
+                action: AuditAction::MetadataFieldSaved,
+                resource_type: "entity_field_definition".to_owned(),
+                resource_id: format!("{entity_logical_name}.{field_logical_name}"),
+                detail: Some(format!(
+                    "deleted draft metadata field '{}' from entity '{}'",
+                    field_logical_name, entity_logical_name
+                )),
+            })
+            .await?;
+
+        Ok(())
     }
 
     /// Lists metadata fields for an entity.
@@ -219,6 +855,10 @@ impl MetadataService {
             .repository
             .list_fields(actor.tenant_id(), entity_logical_name)
             .await?;
+        let option_sets = self
+            .repository
+            .list_option_sets(actor.tenant_id(), entity_logical_name)
+            .await?;
 
         if fields.is_empty() {
             return Err(AppError::Validation(format!(
@@ -229,7 +869,13 @@ impl MetadataService {
 
         let published_schema = self
             .repository
-            .publish_entity_schema(actor.tenant_id(), entity, fields, actor.subject())
+            .publish_entity_schema(
+                actor.tenant_id(),
+                entity,
+                fields,
+                option_sets,
+                actor.subject(),
+            )
             .await?;
 
         self.audit_repository
@@ -1587,10 +2233,12 @@ impl MetadataService {
             let field_name = field.logical_name().as_str();
             if let Some(value) = object.get(field_name) {
                 field.validate_runtime_value(value)?;
+                Self::validate_choice_value_against_option_set(schema, field, value)?;
                 continue;
             }
 
             if let Some(default_value) = field.default_value() {
+                Self::validate_choice_value_against_option_set(schema, field, default_value)?;
                 object.insert(field_name.to_owned(), default_value.clone());
                 continue;
             }
@@ -1604,6 +2252,159 @@ impl MetadataService {
         }
 
         Ok(Value::Object(object))
+    }
+
+    fn validate_choice_value_against_option_set(
+        schema: &PublishedEntitySchema,
+        field: &EntityFieldDefinition,
+        value: &Value,
+    ) -> AppResult<()> {
+        let Some(option_set_logical_name) = field.option_set_logical_name() else {
+            return Ok(());
+        };
+        let Some(option_set) = schema
+            .option_sets()
+            .iter()
+            .find(|set| set.logical_name().as_str() == option_set_logical_name.as_str())
+        else {
+            return Err(AppError::Validation(format!(
+                "field '{}.{}' references unknown option set '{}'",
+                field.entity_logical_name().as_str(),
+                field.logical_name().as_str(),
+                option_set_logical_name.as_str()
+            )));
+        };
+
+        match field.field_type() {
+            FieldType::Choice => {
+                let selected = value.as_i64().ok_or_else(|| {
+                    AppError::Validation(format!(
+                        "choice field '{}' requires integer value",
+                        field.logical_name().as_str()
+                    ))
+                })?;
+                let selected = i32::try_from(selected).map_err(|_| {
+                    AppError::Validation(format!(
+                        "choice field '{}' value is out of supported range",
+                        field.logical_name().as_str()
+                    ))
+                })?;
+                if !option_set.contains_value(selected) {
+                    return Err(AppError::Validation(format!(
+                        "choice field '{}' includes unknown option value '{}'",
+                        field.logical_name().as_str(),
+                        selected
+                    )));
+                }
+            }
+            FieldType::MultiChoice => {
+                let selected_values = value.as_array().ok_or_else(|| {
+                    AppError::Validation(format!(
+                        "multichoice field '{}' requires array value",
+                        field.logical_name().as_str()
+                    ))
+                })?;
+                for selected in selected_values {
+                    let selected = selected.as_i64().ok_or_else(|| {
+                        AppError::Validation(format!(
+                            "multichoice field '{}' values must be integers",
+                            field.logical_name().as_str()
+                        ))
+                    })?;
+                    let selected = i32::try_from(selected).map_err(|_| {
+                        AppError::Validation(format!(
+                            "multichoice field '{}' value is out of supported range",
+                            field.logical_name().as_str()
+                        ))
+                    })?;
+                    if !option_set.contains_value(selected) {
+                        return Err(AppError::Validation(format!(
+                            "multichoice field '{}' includes unknown option value '{}'",
+                            field.logical_name().as_str(),
+                            selected
+                        )));
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+
+    fn published_field_names(schema: &PublishedEntitySchema) -> BTreeSet<String> {
+        schema
+            .fields()
+            .iter()
+            .map(|field| field.logical_name().as_str().to_owned())
+            .collect()
+    }
+
+    fn validate_form_definition(
+        schema: &PublishedEntitySchema,
+        form: &FormDefinition,
+    ) -> AppResult<()> {
+        let field_names = Self::published_field_names(schema);
+        for header_field in form.header_fields() {
+            if !field_names.contains(header_field) {
+                return Err(AppError::Validation(format!(
+                    "form header field '{}' does not exist in published schema for entity '{}'",
+                    header_field,
+                    form.entity_logical_name().as_str()
+                )));
+            }
+        }
+        for tab in form.tabs() {
+            for section in tab.sections() {
+                for field in section.fields() {
+                    if !field_names.contains(field.field_logical_name().as_str()) {
+                        return Err(AppError::Validation(format!(
+                            "form field '{}' does not exist in published schema for entity '{}'",
+                            field.field_logical_name().as_str(),
+                            form.entity_logical_name().as_str()
+                        )));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_view_definition(
+        schema: &PublishedEntitySchema,
+        view: &ViewDefinition,
+    ) -> AppResult<()> {
+        let field_names = Self::published_field_names(schema);
+        for column in view.columns() {
+            if !field_names.contains(column.field_logical_name().as_str()) {
+                return Err(AppError::Validation(format!(
+                    "view column '{}' does not exist in published schema for entity '{}'",
+                    column.field_logical_name().as_str(),
+                    view.entity_logical_name().as_str()
+                )));
+            }
+        }
+        if let Some(default_sort) = view.default_sort()
+            && !field_names.contains(default_sort.field_logical_name().as_str())
+        {
+            return Err(AppError::Validation(format!(
+                "view default sort field '{}' does not exist in published schema for entity '{}'",
+                default_sort.field_logical_name().as_str(),
+                view.entity_logical_name().as_str()
+            )));
+        }
+        if let Some(filter_group) = view.filter_criteria() {
+            for condition in filter_group.conditions() {
+                if !field_names.contains(condition.field_logical_name().as_str()) {
+                    return Err(AppError::Validation(format!(
+                        "view filter field '{}' does not exist in published schema for entity '{}'",
+                        condition.field_logical_name().as_str(),
+                        view.entity_logical_name().as_str()
+                    )));
+                }
+            }
+        }
+        Ok(())
     }
 
     fn unique_values_for_record(

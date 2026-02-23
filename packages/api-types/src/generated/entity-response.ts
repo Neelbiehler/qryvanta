@@ -3,4 +3,4 @@
 /**
  * API representation of an entity.
  */
-export type EntityResponse = { logical_name: string, display_name: string, };
+export type EntityResponse = { logical_name: string, display_name: string, description: string | null, plural_display_name: string | null, icon: string | null, };

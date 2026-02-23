@@ -5,9 +5,9 @@ use qryvanta_core::UserIdentity;
 use tracing::warn;
 
 use crate::dto::{
-    AppEntityBindingResponse, AppEntityCapabilitiesResponse, AppResponse,
-    CreateRuntimeRecordRequest, PublishedSchemaResponse, QueryRuntimeRecordsRequest,
-    RuntimeRecordResponse, UpdateRuntimeRecordRequest,
+    AppEntityCapabilitiesResponse, AppResponse, AppSitemapResponse, CreateRuntimeRecordRequest,
+    PublishedSchemaResponse, QueryRuntimeRecordsRequest, RuntimeRecordResponse,
+    UpdateRuntimeRecordRequest,
 };
 use crate::error::ApiResult;
 use crate::handlers::runtime::runtime_record_query_from_request;
@@ -38,16 +38,13 @@ pub async fn app_navigation_handler(
     State(state): State<AppState>,
     Extension(user): Extension<UserIdentity>,
     Path(app_logical_name): Path<String>,
-) -> ApiResult<Json<Vec<AppEntityBindingResponse>>> {
-    let entities = state
+) -> ApiResult<Json<AppSitemapResponse>> {
+    let sitemap = state
         .app_service
         .app_navigation_for_subject(&user, app_logical_name.as_str())
-        .await?
-        .into_iter()
-        .map(AppEntityBindingResponse::from)
-        .collect();
+        .await?;
 
-    Ok(Json(entities))
+    Ok(Json(AppSitemapResponse::from(sitemap)))
 }
 
 pub async fn workspace_entity_schema_handler(

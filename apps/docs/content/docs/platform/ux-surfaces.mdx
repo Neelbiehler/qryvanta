@@ -20,8 +20,8 @@ This removes mixed control-plane/runtime navigation from a single shell.
 | Surface | Persona | URL Prefix | Primary Navigation |
 | --- | --- | --- | --- |
 | Admin Center | Tenant admins, security operators | `/admin` | Overview, Roles, Audit Log, Security Settings |
-| Maker Center | Builders, solution engineers | `/maker` | Overview, Entities, App Studio |
-| Worker Apps | End users, operators | `/worker` | Overview, My Apps |
+| Maker Center | Builders, solution engineers | `/maker` | Overview, Entity Library, Model-driven App Designer |
+| Worker Apps | End users, operators | `/worker` | Overview, App Hub, Entity Workspaces |
 
 Each surface has:
 
@@ -37,6 +37,8 @@ Each surface has:
 - Header command-jump input (`/`) for route navigation.
 - Active-state sidebar navigation.
 - Surface status chips for workspace mode.
+- Library-first navigation for maker/worker hubs with dedicated deep-link workspaces for editing and operations.
+- Model-driven app designer workflow where entity bindings can define multiple named forms and list views with default runtime selection.
 
 These patterns are shared across all three surfaces to reduce context switching while preserving route and permission boundaries.
 

@@ -8,8 +8,9 @@ mod workflows;
 
 pub use apps::{
     AppEntityBindingResponse, AppEntityCapabilitiesResponse, AppResponse,
-    AppRoleEntityPermissionResponse, BindAppEntityRequest, CreateAppRequest,
-    SaveAppRoleEntityPermissionRequest,
+    AppRoleEntityPermissionResponse, AppSitemapAreaDto, AppSitemapGroupDto, AppSitemapResponse,
+    AppSitemapSubAreaDto, AppSitemapTargetDto, BindAppEntityRequest, CreateAppRequest,
+    SaveAppRoleEntityPermissionRequest, SaveAppSitemapRequest,
 };
 pub use auth::{
     AcceptInviteRequest, AuthLoginRequest, AuthLoginResponse, AuthMfaVerifyRequest,
@@ -19,7 +20,9 @@ pub use common::{
     GenericMessageResponse, HealthDependencyStatus, HealthResponse, UserIdentityResponse,
 };
 pub use entities::{
-    CreateEntityRequest, CreateFieldRequest, EntityResponse, FieldResponse, PublishedSchemaResponse,
+    CreateEntityRequest, CreateFieldRequest, CreateFormRequest, CreateOptionSetRequest,
+    CreateViewRequest, EntityResponse, FieldResponse, FormResponse, OptionSetResponse,
+    PublishedSchemaResponse, UpdateFieldRequest, ViewResponse,
 };
 pub use runtime::{
     CreateRuntimeRecordRequest, QueryRuntimeRecordsRequest, RuntimeRecordQueryFilterRequest,
@@ -41,22 +44,26 @@ pub use workflows::{
 
 #[cfg(test)]
 mod tests {
+    use super::apps::{AppEntityFormDto, AppEntityViewDto};
+    use super::common::HealthDependencyStatus;
     use super::{
         AcceptInviteRequest, AppEntityBindingResponse, AppEntityCapabilitiesResponse, AppResponse,
-        AppRoleEntityPermissionResponse, AssignRoleRequest, AuditLogEntryResponse,
+        AppRoleEntityPermissionResponse, AppSitemapAreaDto, AppSitemapGroupDto, AppSitemapResponse,
+        AppSitemapSubAreaDto, AppSitemapTargetDto, AssignRoleRequest, AuditLogEntryResponse,
         AuditPurgeResultResponse, AuditRetentionPolicyResponse, AuthLoginRequest,
         AuthLoginResponse, AuthMfaVerifyRequest, AuthRegisterRequest, BindAppEntityRequest,
-        CreateAppRequest, CreateEntityRequest, CreateFieldRequest, CreateRoleRequest,
-        CreateRuntimeRecordRequest, CreateTemporaryAccessGrantRequest, EntityResponse,
-        ExecuteWorkflowRequest, FieldResponse, GenericMessageResponse, HealthResponse,
-        InviteRequest, PublishedSchemaResponse, QueryRuntimeRecordsRequest,
-        RemoveRoleAssignmentRequest, RevokeTemporaryAccessGrantRequest, RoleAssignmentResponse,
-        RoleResponse, RuntimeFieldPermissionResponse, RuntimeRecordResponse,
-        SaveAppRoleEntityPermissionRequest, SaveRuntimeFieldPermissionsRequest,
-        SaveWorkflowRequest, TemporaryAccessGrantResponse, TenantRegistrationModeResponse,
-        UpdateAuditRetentionPolicyRequest, UpdateRuntimeRecordRequest,
-        UpdateTenantRegistrationModeRequest, UserIdentityResponse, WorkflowResponse,
-        WorkflowRunAttemptResponse, WorkflowRunResponse,
+        CreateAppRequest, CreateEntityRequest, CreateFieldRequest, CreateFormRequest,
+        CreateOptionSetRequest, CreateRoleRequest, CreateRuntimeRecordRequest,
+        CreateTemporaryAccessGrantRequest, CreateViewRequest, EntityResponse,
+        ExecuteWorkflowRequest, FieldResponse, FormResponse, GenericMessageResponse,
+        HealthResponse, InviteRequest, OptionSetResponse, PublishedSchemaResponse,
+        QueryRuntimeRecordsRequest, RemoveRoleAssignmentRequest, RevokeTemporaryAccessGrantRequest,
+        RoleAssignmentResponse, RoleResponse, RuntimeFieldPermissionResponse,
+        RuntimeRecordResponse, SaveAppRoleEntityPermissionRequest, SaveAppSitemapRequest,
+        SaveRuntimeFieldPermissionsRequest, SaveWorkflowRequest, TemporaryAccessGrantResponse,
+        TenantRegistrationModeResponse, UpdateAuditRetentionPolicyRequest, UpdateFieldRequest,
+        UpdateRuntimeRecordRequest, UpdateTenantRegistrationModeRequest, UserIdentityResponse,
+        ViewResponse, WorkflowResponse, WorkflowRunAttemptResponse, WorkflowRunResponse,
     };
 
     use crate::error::ErrorResponse;
@@ -69,6 +76,7 @@ mod tests {
 
         CreateEntityRequest::export(&config)?;
         CreateAppRequest::export(&config)?;
+        SaveAppSitemapRequest::export(&config)?;
         BindAppEntityRequest::export(&config)?;
         SaveAppRoleEntityPermissionRequest::export(&config)?;
         SaveWorkflowRequest::export(&config)?;
@@ -76,6 +84,12 @@ mod tests {
         super::workflows::WorkflowStepDto::export(&config)?;
         ExecuteWorkflowRequest::export(&config)?;
         CreateFieldRequest::export(&config)?;
+        CreateFormRequest::export(&config)?;
+        CreateOptionSetRequest::export(&config)?;
+        CreateViewRequest::export(&config)?;
+        super::entities::OptionSetItemDto::export(&config)?;
+        OptionSetResponse::export(&config)?;
+        UpdateFieldRequest::export(&config)?;
         CreateRoleRequest::export(&config)?;
         CreateRuntimeRecordRequest::export(&config)?;
         AssignRoleRequest::export(&config)?;
@@ -95,11 +109,20 @@ mod tests {
         EntityResponse::export(&config)?;
         AppResponse::export(&config)?;
         AppEntityBindingResponse::export(&config)?;
+        AppSitemapResponse::export(&config)?;
+        AppSitemapAreaDto::export(&config)?;
+        AppSitemapGroupDto::export(&config)?;
+        AppSitemapSubAreaDto::export(&config)?;
+        AppSitemapTargetDto::export(&config)?;
+        AppEntityFormDto::export(&config)?;
+        AppEntityViewDto::export(&config)?;
         AppEntityCapabilitiesResponse::export(&config)?;
         super::apps::AppEntityViewModeDto::export(&config)?;
         AppRoleEntityPermissionResponse::export(&config)?;
         FieldResponse::export(&config)?;
+        FormResponse::export(&config)?;
         PublishedSchemaResponse::export(&config)?;
+        ViewResponse::export(&config)?;
         RuntimeRecordResponse::export(&config)?;
         WorkflowResponse::export(&config)?;
         WorkflowRunResponse::export(&config)?;
@@ -113,6 +136,7 @@ mod tests {
         AuditRetentionPolicyResponse::export(&config)?;
         AuditPurgeResultResponse::export(&config)?;
         ErrorResponse::export(&config)?;
+        HealthDependencyStatus::export(&config)?;
         HealthResponse::export(&config)?;
         UserIdentityResponse::export(&config)?;
         AuthRegisterRequest::export(&config)?;

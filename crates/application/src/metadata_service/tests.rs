@@ -4,8 +4,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use qryvanta_core::{AppError, AppResult, TenantId, UserIdentity};
 use qryvanta_domain::{
-    AuditAction, EntityDefinition, EntityFieldDefinition, FieldType, Permission,
-    PublishedEntitySchema, RuntimeRecord,
+    AuditAction, EntityDefinition, EntityFieldDefinition, FieldType, FormDefinition,
+    OptionSetDefinition, Permission, PublishedEntitySchema, RuntimeRecord, ViewDefinition,
 };
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
@@ -15,7 +15,7 @@ use crate::{
     AuditEvent, AuditRepository, AuthorizationRepository, AuthorizationService, MetadataRepository,
     RecordListQuery, RuntimeFieldGrant, RuntimeRecordFilter, RuntimeRecordLogicalMode,
     RuntimeRecordOperator, RuntimeRecordQuery, RuntimeRecordSortDirection, SaveFieldInput,
-    TemporaryPermissionGrant, UniqueFieldValue,
+    TemporaryPermissionGrant, UniqueFieldValue, UpdateFieldInput,
 };
 
 use super::MetadataService;
@@ -23,6 +23,9 @@ use super::MetadataService;
 struct FakeRepository {
     entities: Mutex<HashMap<(TenantId, String), EntityDefinition>>,
     fields: Mutex<HashMap<(TenantId, String, String), EntityFieldDefinition>>,
+    option_sets: Mutex<HashMap<(TenantId, String, String), OptionSetDefinition>>,
+    forms: Mutex<HashMap<(TenantId, String, String), FormDefinition>>,
+    views: Mutex<HashMap<(TenantId, String, String), ViewDefinition>>,
     published_schemas: Mutex<HashMap<(TenantId, String), Vec<PublishedEntitySchema>>>,
     runtime_records: Mutex<HashMap<(TenantId, String, String), RuntimeRecord>>,
     record_owners: Mutex<HashMap<(TenantId, String, String), String>>,
@@ -34,6 +37,9 @@ impl FakeRepository {
         Self {
             entities: Mutex::new(HashMap::new()),
             fields: Mutex::new(HashMap::new()),
+            option_sets: Mutex::new(HashMap::new()),
+            forms: Mutex::new(HashMap::new()),
+            views: Mutex::new(HashMap::new()),
             published_schemas: Mutex::new(HashMap::new()),
             runtime_records: Mutex::new(HashMap::new()),
             record_owners: Mutex::new(HashMap::new()),
@@ -121,11 +127,287 @@ impl MetadataRepository for FakeRepository {
         Ok(listed)
     }
 
+    async fn find_field(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        field_logical_name: &str,
+    ) -> AppResult<Option<EntityFieldDefinition>> {
+        Ok(self
+            .fields
+            .lock()
+            .await
+            .get(&(
+                tenant_id,
+                entity_logical_name.to_owned(),
+                field_logical_name.to_owned(),
+            ))
+            .cloned())
+    }
+
+    async fn delete_field(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        field_logical_name: &str,
+    ) -> AppResult<()> {
+        let removed = self.fields.lock().await.remove(&(
+            tenant_id,
+            entity_logical_name.to_owned(),
+            field_logical_name.to_owned(),
+        ));
+        if removed.is_none() {
+            return Err(AppError::NotFound(format!(
+                "field '{}.{}' does not exist for tenant '{}'",
+                entity_logical_name, field_logical_name, tenant_id
+            )));
+        }
+
+        Ok(())
+    }
+
+    async fn field_exists_in_published_schema(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        field_logical_name: &str,
+    ) -> AppResult<bool> {
+        let published = self.published_schemas.lock().await;
+        let Some(versions) = published.get(&(tenant_id, entity_logical_name.to_owned())) else {
+            return Ok(false);
+        };
+
+        Ok(versions.iter().any(|schema| {
+            schema
+                .fields()
+                .iter()
+                .any(|field| field.logical_name().as_str() == field_logical_name)
+        }))
+    }
+
+    async fn save_option_set(
+        &self,
+        tenant_id: TenantId,
+        option_set: OptionSetDefinition,
+    ) -> AppResult<()> {
+        self.option_sets.lock().await.insert(
+            (
+                tenant_id,
+                option_set.entity_logical_name().as_str().to_owned(),
+                option_set.logical_name().as_str().to_owned(),
+            ),
+            option_set,
+        );
+        Ok(())
+    }
+
+    async fn list_option_sets(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+    ) -> AppResult<Vec<OptionSetDefinition>> {
+        let option_sets = self.option_sets.lock().await;
+        let mut listed: Vec<OptionSetDefinition> = option_sets
+            .iter()
+            .filter_map(|((stored_tenant_id, stored_entity, _), option_set)| {
+                (stored_tenant_id == &tenant_id && stored_entity == entity_logical_name)
+                    .then_some(option_set.clone())
+            })
+            .collect();
+        listed.sort_by(|left, right| {
+            left.logical_name()
+                .as_str()
+                .cmp(right.logical_name().as_str())
+        });
+        Ok(listed)
+    }
+
+    async fn find_option_set(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        option_set_logical_name: &str,
+    ) -> AppResult<Option<OptionSetDefinition>> {
+        Ok(self
+            .option_sets
+            .lock()
+            .await
+            .get(&(
+                tenant_id,
+                entity_logical_name.to_owned(),
+                option_set_logical_name.to_owned(),
+            ))
+            .cloned())
+    }
+
+    async fn delete_option_set(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        option_set_logical_name: &str,
+    ) -> AppResult<()> {
+        let removed = self.option_sets.lock().await.remove(&(
+            tenant_id,
+            entity_logical_name.to_owned(),
+            option_set_logical_name.to_owned(),
+        ));
+        if removed.is_none() {
+            return Err(AppError::NotFound(format!(
+                "option set '{}.{}' does not exist for tenant '{}'",
+                entity_logical_name, option_set_logical_name, tenant_id
+            )));
+        }
+        Ok(())
+    }
+
+    async fn save_form(&self, tenant_id: TenantId, form: FormDefinition) -> AppResult<()> {
+        self.forms.lock().await.insert(
+            (
+                tenant_id,
+                form.entity_logical_name().as_str().to_owned(),
+                form.logical_name().as_str().to_owned(),
+            ),
+            form,
+        );
+        Ok(())
+    }
+
+    async fn list_forms(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+    ) -> AppResult<Vec<FormDefinition>> {
+        let forms = self.forms.lock().await;
+        let mut listed: Vec<FormDefinition> = forms
+            .iter()
+            .filter_map(|((stored_tenant_id, stored_entity, _), form)| {
+                (stored_tenant_id == &tenant_id && stored_entity == entity_logical_name)
+                    .then_some(form.clone())
+            })
+            .collect();
+        listed.sort_by(|left, right| {
+            left.logical_name()
+                .as_str()
+                .cmp(right.logical_name().as_str())
+        });
+        Ok(listed)
+    }
+
+    async fn find_form(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        form_logical_name: &str,
+    ) -> AppResult<Option<FormDefinition>> {
+        Ok(self
+            .forms
+            .lock()
+            .await
+            .get(&(
+                tenant_id,
+                entity_logical_name.to_owned(),
+                form_logical_name.to_owned(),
+            ))
+            .cloned())
+    }
+
+    async fn delete_form(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        form_logical_name: &str,
+    ) -> AppResult<()> {
+        let removed = self.forms.lock().await.remove(&(
+            tenant_id,
+            entity_logical_name.to_owned(),
+            form_logical_name.to_owned(),
+        ));
+        if removed.is_none() {
+            return Err(AppError::NotFound(format!(
+                "form '{}.{}' does not exist for tenant '{}'",
+                entity_logical_name, form_logical_name, tenant_id
+            )));
+        }
+        Ok(())
+    }
+
+    async fn save_view(&self, tenant_id: TenantId, view: ViewDefinition) -> AppResult<()> {
+        self.views.lock().await.insert(
+            (
+                tenant_id,
+                view.entity_logical_name().as_str().to_owned(),
+                view.logical_name().as_str().to_owned(),
+            ),
+            view,
+        );
+        Ok(())
+    }
+
+    async fn list_views(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+    ) -> AppResult<Vec<ViewDefinition>> {
+        let views = self.views.lock().await;
+        let mut listed: Vec<ViewDefinition> = views
+            .iter()
+            .filter_map(|((stored_tenant_id, stored_entity, _), view)| {
+                (stored_tenant_id == &tenant_id && stored_entity == entity_logical_name)
+                    .then_some(view.clone())
+            })
+            .collect();
+        listed.sort_by(|left, right| {
+            left.logical_name()
+                .as_str()
+                .cmp(right.logical_name().as_str())
+        });
+        Ok(listed)
+    }
+
+    async fn find_view(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        view_logical_name: &str,
+    ) -> AppResult<Option<ViewDefinition>> {
+        Ok(self
+            .views
+            .lock()
+            .await
+            .get(&(
+                tenant_id,
+                entity_logical_name.to_owned(),
+                view_logical_name.to_owned(),
+            ))
+            .cloned())
+    }
+
+    async fn delete_view(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        view_logical_name: &str,
+    ) -> AppResult<()> {
+        let removed = self.views.lock().await.remove(&(
+            tenant_id,
+            entity_logical_name.to_owned(),
+            view_logical_name.to_owned(),
+        ));
+        if removed.is_none() {
+            return Err(AppError::NotFound(format!(
+                "view '{}.{}' does not exist for tenant '{}'",
+                entity_logical_name, view_logical_name, tenant_id
+            )));
+        }
+        Ok(())
+    }
+
     async fn publish_entity_schema(
         &self,
         tenant_id: TenantId,
         entity: EntityDefinition,
         fields: Vec<EntityFieldDefinition>,
+        option_sets: Vec<OptionSetDefinition>,
         _published_by: &str,
     ) -> AppResult<PublishedEntitySchema> {
         let key = (tenant_id, entity.logical_name().as_str().to_owned());
@@ -135,7 +417,7 @@ impl MetadataRepository for FakeRepository {
             .last()
             .map(|schema| schema.version() + 1)
             .unwrap_or(1);
-        let schema = PublishedEntitySchema::new(entity, version, fields)?;
+        let schema = PublishedEntitySchema::new(entity, version, fields, option_sets)?;
         existing.push(schema.clone());
         Ok(schema)
     }
@@ -778,6 +1060,7 @@ async fn create_runtime_record_applies_defaults_and_writes_audit_event() {
                 is_unique: true,
                 default_value: None,
                 relation_target_entity: None,
+                option_set_logical_name: None,
             },
         )
         .await;
@@ -795,6 +1078,7 @@ async fn create_runtime_record_applies_defaults_and_writes_audit_event() {
                 is_unique: false,
                 default_value: Some(json!(true)),
                 relation_target_entity: None,
+                option_set_logical_name: None,
             },
         )
         .await;
@@ -872,6 +1156,7 @@ async fn query_runtime_records_filters_and_paginates() {
                     is_unique: false,
                     default_value: None,
                     relation_target_entity: None,
+                    option_set_logical_name: None,
                 },
             )
             .await
@@ -890,6 +1175,7 @@ async fn query_runtime_records_filters_and_paginates() {
                     is_unique: false,
                     default_value: None,
                     relation_target_entity: None,
+                    option_set_logical_name: None,
                 },
             )
             .await
@@ -985,6 +1271,7 @@ async fn query_runtime_records_requires_runtime_read_permission() {
                     is_unique: false,
                     default_value: None,
                     relation_target_entity: None,
+                    option_set_logical_name: None,
                 },
             )
             .await
@@ -1051,6 +1338,7 @@ async fn delete_runtime_record_blocks_when_relation_exists() {
                 is_unique: false,
                 default_value: None,
                 relation_target_entity: None,
+                option_set_logical_name: None,
             },
         )
         .await;
@@ -1068,6 +1356,7 @@ async fn delete_runtime_record_blocks_when_relation_exists() {
                 is_unique: false,
                 default_value: None,
                 relation_target_entity: Some("contact".to_owned()),
+                option_set_logical_name: None,
             },
         )
         .await;
@@ -1129,6 +1418,7 @@ async fn get_and_delete_runtime_record_succeed_when_unreferenced() {
                 is_unique: false,
                 default_value: None,
                 relation_target_entity: None,
+                option_set_logical_name: None,
             },
         )
         .await;
@@ -1200,6 +1490,7 @@ async fn list_runtime_records_unchecked_honors_own_read_scope_when_configured() 
                     is_unique: false,
                     default_value: None,
                     relation_target_entity: None,
+                    option_set_logical_name: None,
                 },
             )
             .await
@@ -1275,6 +1566,7 @@ async fn query_runtime_records_unchecked_honors_own_read_scope_when_configured()
                     is_unique: false,
                     default_value: None,
                     relation_target_entity: None,
+                    option_set_logical_name: None,
                 },
             )
             .await
@@ -1353,6 +1645,7 @@ async fn update_runtime_record_unchecked_blocks_non_owned_records_for_own_write_
                     is_unique: false,
                     default_value: None,
                     relation_target_entity: None,
+                    option_set_logical_name: None,
                 },
             )
             .await
@@ -1420,6 +1713,7 @@ async fn get_runtime_record_unchecked_redacts_using_runtime_field_permissions() 
                     is_unique: false,
                     default_value: None,
                     relation_target_entity: None,
+                    option_set_logical_name: None,
                 },
             )
             .await
@@ -1438,6 +1732,7 @@ async fn get_runtime_record_unchecked_redacts_using_runtime_field_permissions() 
                     is_unique: false,
                     default_value: None,
                     relation_target_entity: None,
+                    option_set_logical_name: None,
                 },
             )
             .await
@@ -1466,4 +1761,169 @@ async fn get_runtime_record_unchecked_redacts_using_runtime_field_permissions() 
     let data = data.unwrap_or_else(|| unreachable!());
     assert_eq!(data.get("email"), Some(&json!("a@qryvanta.dev")));
     assert!(data.get("secret").is_none());
+}
+
+#[tokio::test]
+async fn update_field_updates_mutable_metadata_properties() {
+    let tenant_id = TenantId::new();
+    let subject = "ivy";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+            Permission::MetadataFieldRead,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    assert!(
+        service
+            .register_entity(&actor, "contact", "Contact")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "name".to_owned(),
+                    display_name: "Name".to_owned(),
+                    field_type: FieldType::Text,
+                    is_required: true,
+                    is_unique: false,
+                    default_value: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+
+    let updated = service
+        .update_field(
+            &actor,
+            UpdateFieldInput {
+                entity_logical_name: "contact".to_owned(),
+                logical_name: "name".to_owned(),
+                display_name: "Full Name".to_owned(),
+                description: Some("Primary full name".to_owned()),
+                default_value: Some(json!("Anonymous")),
+                max_length: Some(255),
+                min_value: None,
+                max_value: None,
+            },
+        )
+        .await;
+    assert!(updated.is_ok());
+    let updated = updated.unwrap_or_else(|_| unreachable!());
+    assert_eq!(updated.display_name().as_str(), "Full Name");
+    assert_eq!(updated.description(), Some("Primary full name"));
+    assert_eq!(updated.max_length(), Some(255));
+    assert_eq!(updated.default_value(), Some(&json!("Anonymous")));
+}
+
+#[tokio::test]
+async fn delete_field_rejects_published_fields() {
+    let tenant_id = TenantId::new();
+    let subject = "judy";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    assert!(
+        service
+            .register_entity(&actor, "contact", "Contact")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "name".to_owned(),
+                    display_name: "Name".to_owned(),
+                    field_type: FieldType::Text,
+                    is_required: true,
+                    is_unique: false,
+                    default_value: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(service.publish_entity(&actor, "contact").await.is_ok());
+
+    let deleted = service.delete_field(&actor, "contact", "name").await;
+    assert!(matches!(deleted, Err(AppError::Conflict(_))));
+}
+
+#[tokio::test]
+async fn delete_field_allows_unpublished_draft_fields() {
+    let tenant_id = TenantId::new();
+    let subject = "kate";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+            Permission::MetadataFieldRead,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    assert!(
+        service
+            .register_entity(&actor, "contact", "Contact")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "temporary_note".to_owned(),
+                    display_name: "Temporary Note".to_owned(),
+                    field_type: FieldType::Text,
+                    is_required: false,
+                    is_unique: false,
+                    default_value: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+
+    let deleted = service
+        .delete_field(&actor, "contact", "temporary_note")
+        .await;
+    assert!(deleted.is_ok());
+
+    let listed = service.list_fields(&actor, "contact").await;
+    assert!(listed.is_ok());
+    assert!(
+        listed
+            .unwrap_or_default()
+            .iter()
+            .all(|field| field.logical_name().as_str() != "temporary_note")
+    );
 }

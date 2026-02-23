@@ -198,6 +198,10 @@ impl ContactBootstrapService {
             .metadata_repository
             .list_fields(tenant_id, CONTACT_ENTITY_LOGICAL_NAME)
             .await?;
+        let option_sets = self
+            .metadata_repository
+            .list_option_sets(tenant_id, CONTACT_ENTITY_LOGICAL_NAME)
+            .await?;
 
         if fields.is_empty() {
             return Err(AppError::Validation(
@@ -206,7 +210,7 @@ impl ContactBootstrapService {
         }
 
         self.metadata_repository
-            .publish_entity_schema(tenant_id, entity, fields, published_by_subject)
+            .publish_entity_schema(tenant_id, entity, fields, option_sets, published_by_subject)
             .await?;
 
         Ok(())

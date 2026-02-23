@@ -18,8 +18,9 @@ mod workflow_ports;
 mod workflow_service;
 
 pub use app_ports::{
-    AppRepository, BindAppEntityInput, CreateAppInput, RuntimeRecordService,
-    SaveAppRoleEntityPermissionInput, SubjectEntityPermission,
+    AppEntityFormInput, AppEntityViewInput, AppRepository, BindAppEntityInput, CreateAppInput,
+    RuntimeRecordService, SaveAppRoleEntityPermissionInput, SaveAppSitemapInput,
+    SubjectEntityPermission,
 };
 pub use app_service::AppService;
 pub use auth_event_service::{AuthEvent, AuthEventRepository, AuthEventService};
@@ -35,7 +36,8 @@ pub use metadata_ports::{
     AuditEvent, AuditRepository, MetadataRepository, RecordListQuery, RuntimeRecordConditionGroup,
     RuntimeRecordConditionNode, RuntimeRecordFilter, RuntimeRecordJoinType, RuntimeRecordLink,
     RuntimeRecordLogicalMode, RuntimeRecordOperator, RuntimeRecordQuery, RuntimeRecordSort,
-    RuntimeRecordSortDirection, SaveFieldInput, TenantRepository, UniqueFieldValue,
+    RuntimeRecordSortDirection, SaveFieldInput, SaveFormInput, SaveOptionSetInput, SaveViewInput,
+    TenantRepository, UniqueFieldValue, UpdateFieldInput,
 };
 pub use metadata_service::MetadataService;
 pub use mfa_service::{MfaService, SecretEncryptor, TotpEnrollment, TotpProvider};

@@ -4,16 +4,19 @@ import { useRouter } from "next/navigation";
 import {
   apiFetch,
   type AppEntityBindingResponse,
+  type AppEntityFormDto,
   type AppResponse,
   type AppRoleEntityPermissionResponse,
+  type AppEntityViewDto,
   type BindAppEntityRequest,
   type CreateAppRequest,
   type EntityResponse,
+  type FieldResponse,
   type RoleResponse,
   type SaveAppRoleEntityPermissionRequest,
 } from "@/lib/api";
-import { parseLogicalNameList } from "@/components/apps/app-studio/helpers";
 import type {
+  AppSurfaceDraft,
   AppStudioSection,
   BindingDraft,
   NewAppDraft,
@@ -55,6 +58,7 @@ export function useAppStudioPanel({
     activeSection: apps.length > 0 ? "navigation" : "apps",
   });
   const [bindings, setBindings] = useState<AppEntityBindingResponse[]>([]);
+  const [selectedEntityFields, setSelectedEntityFields] = useState<FieldResponse[]>([]);
   const [permissions, setPermissions] = useState<
     AppRoleEntityPermissionResponse[]
   >([]);
@@ -71,8 +75,22 @@ export function useAppStudioPanel({
     entityToBind: entities.at(0)?.logical_name ?? "",
     navigationLabel: "",
     navigationOrder: 0,
-    formFieldLogicalNames: "",
-    listFieldLogicalNames: "",
+    forms: [
+      {
+        logicalName: "main_form",
+        displayName: "Main Form",
+        fieldLogicalNames: [],
+      },
+    ],
+    listViews: [
+      {
+        logicalName: "main_view",
+        displayName: "Main View",
+        fieldLogicalNames: [],
+      },
+    ],
+    defaultFormLogicalName: "main_form",
+    defaultListViewLogicalName: "main_view",
     defaultViewMode: "grid",
   });
   const [permissionDraft, setPermissionDraft] = useState<PermissionDraft>({
@@ -89,6 +107,7 @@ export function useAppStudioPanel({
     isSavingPermission: false,
     isLoadingAppData: false,
   });
+  const [isLoadingEntityFields, setIsLoadingEntityFields] = useState(false);
 
   const selectedApp = selectionState.selectedApp;
   const activeSection = selectionState.activeSection;
@@ -158,6 +177,30 @@ export function useAppStudioPanel({
     }
   }, []);
 
+  const refreshSelectedEntityFields = useCallback(async (entityLogicalName: string) => {
+    if (!entityLogicalName) {
+      setSelectedEntityFields([]);
+      return;
+    }
+
+    setIsLoadingEntityFields(true);
+    try {
+      const response = await apiFetch(`/api/entities/${entityLogicalName}/fields`);
+      if (!response.ok) {
+        setSelectedEntityFields([]);
+        setErrorMessage("Unable to load entity field catalog.");
+        return;
+      }
+
+      setSelectedEntityFields((await response.json()) as FieldResponse[]);
+    } catch {
+      setSelectedEntityFields([]);
+      setErrorMessage("Unable to load entity field catalog.");
+    } finally {
+      setIsLoadingEntityFields(false);
+    }
+  }, []);
+
   useEffect(() => {
     void refreshSelectedAppData(selectedApp);
   }, [refreshSelectedAppData, selectedApp]);
@@ -168,26 +211,60 @@ export function useAppStudioPanel({
     );
 
     if (!existingBinding) {
+        setBindingDraft((current) => ({
+          ...current,
+          navigationLabel: "",
+          navigationOrder: 0,
+          forms: [
+            {
+              logicalName: "main_form",
+              displayName: "Main Form",
+              fieldLogicalNames: [],
+            },
+          ],
+          listViews: [
+            {
+              logicalName: "main_view",
+              displayName: "Main View",
+              fieldLogicalNames: [],
+            },
+          ],
+          defaultFormLogicalName: "main_form",
+          defaultListViewLogicalName: "main_view",
+          defaultViewMode: "grid",
+        }));
+        return;
+      }
+
+      const forms = mapSurfaceDtos(existingBinding.forms);
+      const listViews = mapSurfaceDtos(existingBinding.list_views);
+
+      const defaultFormLogicalName = forms.some(
+        (form) => form.logicalName === existingBinding.default_form_logical_name,
+      )
+        ? existingBinding.default_form_logical_name
+        : forms[0]?.logicalName ?? "main_form";
+      const defaultListViewLogicalName = listViews.some(
+        (view) => view.logicalName === existingBinding.default_list_view_logical_name,
+      )
+        ? existingBinding.default_list_view_logical_name
+        : listViews[0]?.logicalName ?? "main_view";
+
       setBindingDraft((current) => ({
         ...current,
-        navigationLabel: "",
-        navigationOrder: 0,
-        formFieldLogicalNames: "",
-        listFieldLogicalNames: "",
-        defaultViewMode: "grid",
+        navigationLabel: existingBinding.navigation_label ?? "",
+        navigationOrder: existingBinding.navigation_order,
+        forms,
+        listViews,
+        defaultFormLogicalName,
+        defaultListViewLogicalName,
+        defaultViewMode: existingBinding.default_view_mode,
       }));
-      return;
-    }
-
-    setBindingDraft((current) => ({
-      ...current,
-      navigationLabel: existingBinding.navigation_label ?? "",
-      navigationOrder: existingBinding.navigation_order,
-      formFieldLogicalNames: existingBinding.form_field_logical_names.join(", "),
-      listFieldLogicalNames: existingBinding.list_field_logical_names.join(", "),
-      defaultViewMode: existingBinding.default_view_mode,
-    }));
   }, [bindings, bindingDraft.entityToBind]);
+
+  useEffect(() => {
+    void refreshSelectedEntityFields(bindingDraft.entityToBind);
+  }, [bindingDraft.entityToBind, refreshSelectedEntityFields]);
 
   async function handleCreateApp(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -231,6 +308,23 @@ export function useAppStudioPanel({
       return;
     }
 
+    if (bindingDraft.forms.length === 0 || bindingDraft.listViews.length === 0) {
+      setErrorMessage("At least one form and one list view are required.");
+      return;
+    }
+
+    if (
+      !bindingDraft.forms.some(
+        (form) => form.logicalName === bindingDraft.defaultFormLogicalName,
+      ) ||
+      !bindingDraft.listViews.some(
+        (view) => view.logicalName === bindingDraft.defaultListViewLogicalName,
+      )
+    ) {
+      setErrorMessage("Default form and default list view must be selected.");
+      return;
+    }
+
     resetMessages();
     setPendingState((current) => ({ ...current, isBindingEntity: true }));
 
@@ -242,11 +336,25 @@ export function useAppStudioPanel({
             ? bindingDraft.navigationLabel
             : null,
         navigation_order: bindingDraft.navigationOrder,
-        form_field_logical_names: parseLogicalNameList(
-          bindingDraft.formFieldLogicalNames,
+        forms: bindingDraft.forms.map((form) => ({
+          logical_name: form.logicalName,
+          display_name: form.displayName,
+          field_logical_names: form.fieldLogicalNames,
+        })),
+        list_views: bindingDraft.listViews.map((view) => ({
+          logical_name: view.logicalName,
+          display_name: view.displayName,
+          field_logical_names: view.fieldLogicalNames,
+        })),
+        default_form_logical_name: bindingDraft.defaultFormLogicalName,
+        default_list_view_logical_name: bindingDraft.defaultListViewLogicalName,
+        form_field_logical_names: resolveFallbackFieldMapping(
+          bindingDraft.forms,
+          bindingDraft.defaultFormLogicalName,
         ),
-        list_field_logical_names: parseLogicalNameList(
-          bindingDraft.listFieldLogicalNames,
+        list_field_logical_names: resolveFallbackFieldMapping(
+          bindingDraft.listViews,
+          bindingDraft.defaultListViewLogicalName,
         ),
         default_view_mode: bindingDraft.defaultViewMode,
       };
@@ -323,12 +431,38 @@ export function useAppStudioPanel({
     pendingState,
     permissionDraft,
     permissions,
+    selectedEntityFields,
     selectedApp,
     selectedAppDisplayName,
+    isLoadingEntityFields,
     setActiveSection,
     setBindingDraft,
     setNewAppDraft,
     setPermissionDraft,
     setSelectedApp,
   };
+}
+
+function mapSurfaceDtos(
+  surfaces: AppEntityFormDto[] | AppEntityViewDto[],
+): AppSurfaceDraft[] {
+  if (surfaces.length === 0) {
+    return [];
+  }
+
+  return surfaces.map((surface) => ({
+    logicalName: surface.logical_name,
+    displayName: surface.display_name,
+    fieldLogicalNames: surface.field_logical_names,
+  }));
+}
+
+function resolveFallbackFieldMapping(
+  surfaces: AppSurfaceDraft[],
+  defaultLogicalName: string,
+): string[] {
+  return (
+    surfaces.find((surface) => surface.logicalName === defaultLogicalName)
+      ?.fieldLogicalNames ?? []
+  );
 }

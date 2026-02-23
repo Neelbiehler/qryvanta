@@ -57,9 +57,27 @@ pub struct AppEntityBinding {
     entity_logical_name: NonEmptyString,
     navigation_label: Option<String>,
     navigation_order: i32,
-    form_field_logical_names: Vec<String>,
-    list_field_logical_names: Vec<String>,
+    forms: Vec<AppEntityForm>,
+    list_views: Vec<AppEntityView>,
+    default_form_logical_name: NonEmptyString,
+    default_list_view_logical_name: NonEmptyString,
     default_view_mode: AppEntityViewMode,
+}
+
+/// App-scoped model-driven form definition.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AppEntityForm {
+    logical_name: NonEmptyString,
+    display_name: NonEmptyString,
+    field_logical_names: Vec<String>,
+}
+
+/// App-scoped model-driven list view definition.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AppEntityView {
+    logical_name: NonEmptyString,
+    display_name: NonEmptyString,
+    field_logical_names: Vec<String>,
 }
 
 /// Default worker view mode for an app entity binding.
@@ -109,8 +127,10 @@ impl AppEntityBinding {
         entity_logical_name: impl Into<String>,
         navigation_label: Option<String>,
         navigation_order: i32,
-        form_field_logical_names: Vec<String>,
-        list_field_logical_names: Vec<String>,
+        forms: Vec<AppEntityForm>,
+        list_views: Vec<AppEntityView>,
+        default_form_logical_name: impl Into<String>,
+        default_list_view_logical_name: impl Into<String>,
         default_view_mode: AppEntityViewMode,
     ) -> AppResult<Self> {
         if navigation_order < 0 {
@@ -124,18 +144,59 @@ impl AppEntityBinding {
             (!trimmed.is_empty()).then_some(trimmed)
         });
 
-        let form_field_logical_names =
-            normalize_field_logical_names(form_field_logical_names, "form_field_logical_names")?;
-        let list_field_logical_names =
-            normalize_field_logical_names(list_field_logical_names, "list_field_logical_names")?;
+        if forms.is_empty() {
+            return Err(AppError::Validation(
+                "forms must include at least one app-scoped form".to_owned(),
+            ));
+        }
+
+        if list_views.is_empty() {
+            return Err(AppError::Validation(
+                "list_views must include at least one app-scoped list view".to_owned(),
+            ));
+        }
+
+        validate_unique_surface_logical_names(
+            forms.iter().map(AppEntityForm::logical_name),
+            "forms",
+        )?;
+        validate_unique_surface_logical_names(
+            list_views.iter().map(AppEntityView::logical_name),
+            "list_views",
+        )?;
+
+        let default_form_logical_name = NonEmptyString::new(default_form_logical_name)?;
+        let default_list_view_logical_name = NonEmptyString::new(default_list_view_logical_name)?;
+
+        if !forms
+            .iter()
+            .any(|form| form.logical_name().as_str() == default_form_logical_name.as_str())
+        {
+            return Err(AppError::Validation(format!(
+                "default form '{}' is not present in forms",
+                default_form_logical_name.as_str()
+            )));
+        }
+
+        if !list_views
+            .iter()
+            .any(|view| view.logical_name().as_str() == default_list_view_logical_name.as_str())
+        {
+            return Err(AppError::Validation(format!(
+                "default list view '{}' is not present in list_views",
+                default_list_view_logical_name.as_str()
+            )));
+        }
 
         Ok(Self {
             app_logical_name: NonEmptyString::new(app_logical_name)?,
             entity_logical_name: NonEmptyString::new(entity_logical_name)?,
             navigation_label,
             navigation_order,
-            form_field_logical_names,
-            list_field_logical_names,
+            forms,
+            list_views,
+            default_form_logical_name,
+            default_list_view_logical_name,
             default_view_mode,
         })
     }
@@ -164,22 +225,106 @@ impl AppEntityBinding {
         self.navigation_order
     }
 
-    /// Returns app-scoped form field order overrides.
+    /// Returns app-scoped model-driven forms.
     #[must_use]
-    pub fn form_field_logical_names(&self) -> &[String] {
-        &self.form_field_logical_names
+    pub fn forms(&self) -> &[AppEntityForm] {
+        &self.forms
     }
 
-    /// Returns app-scoped list/grid field order overrides.
+    /// Returns app-scoped model-driven list views.
     #[must_use]
-    pub fn list_field_logical_names(&self) -> &[String] {
-        &self.list_field_logical_names
+    pub fn list_views(&self) -> &[AppEntityView] {
+        &self.list_views
+    }
+
+    /// Returns the default form logical name used by worker create/edit surfaces.
+    #[must_use]
+    pub fn default_form_logical_name(&self) -> &NonEmptyString {
+        &self.default_form_logical_name
+    }
+
+    /// Returns the default list view logical name used by worker list surfaces.
+    #[must_use]
+    pub fn default_list_view_logical_name(&self) -> &NonEmptyString {
+        &self.default_list_view_logical_name
     }
 
     /// Returns default worker view mode for this entity binding.
     #[must_use]
     pub fn default_view_mode(&self) -> AppEntityViewMode {
         self.default_view_mode
+    }
+}
+
+impl AppEntityForm {
+    /// Creates a validated app-scoped form definition.
+    pub fn new(
+        logical_name: impl Into<String>,
+        display_name: impl Into<String>,
+        field_logical_names: Vec<String>,
+    ) -> AppResult<Self> {
+        Ok(Self {
+            logical_name: NonEmptyString::new(logical_name)?,
+            display_name: NonEmptyString::new(display_name)?,
+            field_logical_names: normalize_field_logical_names(
+                field_logical_names,
+                "field_logical_names",
+            )?,
+        })
+    }
+
+    /// Returns stable form logical name.
+    #[must_use]
+    pub fn logical_name(&self) -> &NonEmptyString {
+        &self.logical_name
+    }
+
+    /// Returns display name.
+    #[must_use]
+    pub fn display_name(&self) -> &NonEmptyString {
+        &self.display_name
+    }
+
+    /// Returns ordered field logical names.
+    #[must_use]
+    pub fn field_logical_names(&self) -> &[String] {
+        &self.field_logical_names
+    }
+}
+
+impl AppEntityView {
+    /// Creates a validated app-scoped list view definition.
+    pub fn new(
+        logical_name: impl Into<String>,
+        display_name: impl Into<String>,
+        field_logical_names: Vec<String>,
+    ) -> AppResult<Self> {
+        Ok(Self {
+            logical_name: NonEmptyString::new(logical_name)?,
+            display_name: NonEmptyString::new(display_name)?,
+            field_logical_names: normalize_field_logical_names(
+                field_logical_names,
+                "field_logical_names",
+            )?,
+        })
+    }
+
+    /// Returns stable list view logical name.
+    #[must_use]
+    pub fn logical_name(&self) -> &NonEmptyString {
+        &self.logical_name
+    }
+
+    /// Returns display name.
+    #[must_use]
+    pub fn display_name(&self) -> &NonEmptyString {
+        &self.display_name
+    }
+
+    /// Returns ordered column logical names.
+    #[must_use]
+    pub fn field_logical_names(&self) -> &[String] {
+        &self.field_logical_names
     }
 }
 
@@ -205,6 +350,245 @@ fn normalize_field_logical_names(values: Vec<String>, field_name: &str) -> AppRe
     }
 
     Ok(normalized)
+}
+
+fn validate_unique_surface_logical_names<'a>(
+    values: impl Iterator<Item = &'a NonEmptyString>,
+    field_name: &str,
+) -> AppResult<()> {
+    let mut seen = HashSet::new();
+    for value in values {
+        if !seen.insert(value.as_str().to_owned()) {
+            return Err(AppError::Validation(format!(
+                "{field_name} contains duplicate logical name '{}'",
+                value.as_str()
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+/// Hierarchical app navigation sitemap.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AppSitemap {
+    app_logical_name: NonEmptyString,
+    areas: Vec<SitemapArea>,
+}
+
+impl AppSitemap {
+    /// Creates a validated sitemap.
+    pub fn new(app_logical_name: impl Into<String>, areas: Vec<SitemapArea>) -> AppResult<Self> {
+        Ok(Self {
+            app_logical_name: NonEmptyString::new(app_logical_name)?,
+            areas,
+        })
+    }
+
+    /// Returns app logical name.
+    #[must_use]
+    pub fn app_logical_name(&self) -> &NonEmptyString {
+        &self.app_logical_name
+    }
+
+    /// Returns top-level areas.
+    #[must_use]
+    pub fn areas(&self) -> &[SitemapArea] {
+        &self.areas
+    }
+}
+
+/// Top-level area in an app sitemap.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SitemapArea {
+    logical_name: NonEmptyString,
+    display_name: NonEmptyString,
+    position: i32,
+    icon: Option<String>,
+    groups: Vec<SitemapGroup>,
+}
+
+impl SitemapArea {
+    /// Creates a validated sitemap area.
+    pub fn new(
+        logical_name: impl Into<String>,
+        display_name: impl Into<String>,
+        position: i32,
+        icon: Option<String>,
+        groups: Vec<SitemapGroup>,
+    ) -> AppResult<Self> {
+        Ok(Self {
+            logical_name: NonEmptyString::new(logical_name)?,
+            display_name: NonEmptyString::new(display_name)?,
+            position,
+            icon,
+            groups,
+        })
+    }
+
+    /// Returns logical name.
+    #[must_use]
+    pub fn logical_name(&self) -> &NonEmptyString {
+        &self.logical_name
+    }
+
+    /// Returns display name.
+    #[must_use]
+    pub fn display_name(&self) -> &NonEmptyString {
+        &self.display_name
+    }
+
+    /// Returns display position.
+    #[must_use]
+    pub fn position(&self) -> i32 {
+        self.position
+    }
+
+    /// Returns optional icon identifier.
+    #[must_use]
+    pub fn icon(&self) -> Option<&str> {
+        self.icon.as_deref()
+    }
+
+    /// Returns area groups.
+    #[must_use]
+    pub fn groups(&self) -> &[SitemapGroup] {
+        &self.groups
+    }
+}
+
+/// Mid-level group in an app sitemap area.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SitemapGroup {
+    logical_name: NonEmptyString,
+    display_name: NonEmptyString,
+    position: i32,
+    sub_areas: Vec<SitemapSubArea>,
+}
+
+impl SitemapGroup {
+    /// Creates a validated sitemap group.
+    pub fn new(
+        logical_name: impl Into<String>,
+        display_name: impl Into<String>,
+        position: i32,
+        sub_areas: Vec<SitemapSubArea>,
+    ) -> AppResult<Self> {
+        Ok(Self {
+            logical_name: NonEmptyString::new(logical_name)?,
+            display_name: NonEmptyString::new(display_name)?,
+            position,
+            sub_areas,
+        })
+    }
+
+    /// Returns logical name.
+    #[must_use]
+    pub fn logical_name(&self) -> &NonEmptyString {
+        &self.logical_name
+    }
+
+    /// Returns display name.
+    #[must_use]
+    pub fn display_name(&self) -> &NonEmptyString {
+        &self.display_name
+    }
+
+    /// Returns display position.
+    #[must_use]
+    pub fn position(&self) -> i32 {
+        self.position
+    }
+
+    /// Returns sub areas.
+    #[must_use]
+    pub fn sub_areas(&self) -> &[SitemapSubArea] {
+        &self.sub_areas
+    }
+}
+
+/// Leaf node in an app sitemap.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SitemapSubArea {
+    logical_name: NonEmptyString,
+    display_name: NonEmptyString,
+    position: i32,
+    target: SitemapTarget,
+    icon: Option<String>,
+}
+
+impl SitemapSubArea {
+    /// Creates a validated sub area.
+    pub fn new(
+        logical_name: impl Into<String>,
+        display_name: impl Into<String>,
+        position: i32,
+        target: SitemapTarget,
+        icon: Option<String>,
+    ) -> AppResult<Self> {
+        Ok(Self {
+            logical_name: NonEmptyString::new(logical_name)?,
+            display_name: NonEmptyString::new(display_name)?,
+            position,
+            target,
+            icon,
+        })
+    }
+
+    /// Returns logical name.
+    #[must_use]
+    pub fn logical_name(&self) -> &NonEmptyString {
+        &self.logical_name
+    }
+
+    /// Returns display name.
+    #[must_use]
+    pub fn display_name(&self) -> &NonEmptyString {
+        &self.display_name
+    }
+
+    /// Returns display position.
+    #[must_use]
+    pub fn position(&self) -> i32 {
+        self.position
+    }
+
+    /// Returns target payload.
+    #[must_use]
+    pub fn target(&self) -> &SitemapTarget {
+        &self.target
+    }
+
+    /// Returns optional icon identifier.
+    #[must_use]
+    pub fn icon(&self) -> Option<&str> {
+        self.icon.as_deref()
+    }
+}
+
+/// Target destination for a sitemap sub area.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "type")]
+pub enum SitemapTarget {
+    /// Entity destination in runtime workspace.
+    Entity {
+        /// Entity logical name.
+        entity_logical_name: String,
+        /// Default form logical name.
+        default_form: Option<String>,
+        /// Default view logical name.
+        default_view: Option<String>,
+    },
+    /// Dashboard destination (future surface).
+    Dashboard {
+        /// Dashboard logical name.
+        dashboard_logical_name: String,
+    },
+    /// Custom page destination.
+    CustomPage {
+        /// Custom page URL.
+        url: String,
+    },
 }
 
 /// App-scoped entity action permissions assigned to a role.
@@ -312,7 +696,7 @@ impl AppEntityAction {
 
 #[cfg(test)]
 mod tests {
-    use super::{AppDefinition, AppEntityBinding, AppEntityViewMode};
+    use super::{AppDefinition, AppEntityBinding, AppEntityForm, AppEntityView, AppEntityViewMode};
 
     #[test]
     fn app_definition_requires_non_empty_values() {
@@ -327,8 +711,16 @@ mod tests {
             "account",
             None,
             -1,
-            Vec::new(),
-            Vec::new(),
+            vec![
+                AppEntityForm::new("main", "Main Form", Vec::new())
+                    .unwrap_or_else(|_| unreachable!()),
+            ],
+            vec![
+                AppEntityView::new("main", "Main View", Vec::new())
+                    .unwrap_or_else(|_| unreachable!()),
+            ],
+            "main",
+            "main",
             AppEntityViewMode::Grid,
         );
         assert!(binding.is_err());
@@ -336,13 +728,75 @@ mod tests {
 
     #[test]
     fn app_entity_binding_rejects_duplicate_form_fields() {
+        let form = AppEntityForm::new(
+            "main",
+            "Main Form",
+            vec!["name".to_owned(), "name".to_owned()],
+        );
+        assert!(form.is_err());
+    }
+
+    #[test]
+    fn app_entity_binding_rejects_unknown_default_form() {
         let binding = AppEntityBinding::new(
             "sales",
             "account",
             None,
             0,
-            vec!["name".to_owned(), "name".to_owned()],
-            Vec::new(),
+            vec![
+                AppEntityForm::new("main", "Main Form", Vec::new())
+                    .unwrap_or_else(|_| unreachable!()),
+            ],
+            vec![
+                AppEntityView::new("main", "Main View", Vec::new())
+                    .unwrap_or_else(|_| unreachable!()),
+            ],
+            "missing",
+            "main",
+            AppEntityViewMode::Grid,
+        );
+        assert!(binding.is_err());
+    }
+
+    #[test]
+    fn app_entity_binding_rejects_duplicate_form_logical_names() {
+        let binding = AppEntityBinding::new(
+            "sales",
+            "account",
+            None,
+            0,
+            vec![
+                AppEntityForm::new("main", "Main A", Vec::new()).unwrap_or_else(|_| unreachable!()),
+                AppEntityForm::new("main", "Main B", Vec::new()).unwrap_or_else(|_| unreachable!()),
+            ],
+            vec![
+                AppEntityView::new("main", "Main View", Vec::new())
+                    .unwrap_or_else(|_| unreachable!()),
+            ],
+            "main",
+            "main",
+            AppEntityViewMode::Grid,
+        );
+        assert!(binding.is_err());
+    }
+
+    #[test]
+    fn app_entity_binding_rejects_unknown_default_list_view() {
+        let binding = AppEntityBinding::new(
+            "sales",
+            "account",
+            None,
+            0,
+            vec![
+                AppEntityForm::new("main", "Main Form", Vec::new())
+                    .unwrap_or_else(|_| unreachable!()),
+            ],
+            vec![
+                AppEntityView::new("main", "Main View", Vec::new())
+                    .unwrap_or_else(|_| unreachable!()),
+            ],
+            "main",
+            "missing",
             AppEntityViewMode::Grid,
         );
         assert!(binding.is_err());

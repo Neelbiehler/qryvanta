@@ -3,4 +3,4 @@
 /**
  * Incoming runtime query link-entity payload.
  */
-export type RuntimeRecordQueryLinkEntityRequest = { alias: string, parent_alias: string | null, relation_field_logical_name: string, join_type: string | null, };
+export type RuntimeRecordQueryLinkEntityRequest = { alias: string, parent_alias: string | null, relation_field_logical_name: string, join_type: "inner" | "left" | null, };

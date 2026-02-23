@@ -3,8 +3,11 @@ use async_trait::async_trait;
 use qryvanta_application::{AppRepository, SubjectEntityPermission};
 use qryvanta_core::{AppError, AppResult, TenantId};
 use qryvanta_domain::{
-    AppDefinition, AppEntityBinding, AppEntityRolePermission, AppEntityViewMode,
+    AppDefinition, AppEntityBinding, AppEntityForm, AppEntityRolePermission, AppEntityView,
+    AppEntityViewMode, AppSitemap,
 };
+use serde::{Deserialize, Serialize};
+use sqlx::types::Json;
 use sqlx::{FromRow, PgPool};
 
 /// PostgreSQL-backed repository for app definitions and app-scoped permissions.
@@ -34,9 +37,25 @@ struct AppEntityBindingRow {
     entity_logical_name: String,
     navigation_label: Option<String>,
     navigation_order: i32,
-    form_field_logical_names: Vec<String>,
-    list_field_logical_names: Vec<String>,
+    forms: Json<Vec<AppEntityFormDocument>>,
+    list_views: Json<Vec<AppEntityViewDocument>>,
+    default_form_logical_name: String,
+    default_list_view_logical_name: String,
     default_view_mode: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AppEntityFormDocument {
+    logical_name: String,
+    display_name: String,
+    field_logical_names: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct AppEntityViewDocument {
+    logical_name: String,
+    display_name: String,
+    field_logical_names: Vec<String>,
 }
 
 #[derive(Debug, FromRow)]
@@ -66,6 +85,11 @@ struct SubjectEntityPermissionRow {
     can_create: bool,
     can_update: bool,
     can_delete: bool,
+}
+
+#[derive(Debug, FromRow)]
+struct AppSitemapRow {
+    definition_json: serde_json::Value,
 }
 
 #[async_trait]
@@ -164,8 +188,28 @@ impl AppRepository for PostgresAppRepository {
         tenant_id: TenantId,
         binding: AppEntityBinding,
     ) -> AppResult<()> {
-        let form_field_logical_names = binding.form_field_logical_names().to_vec();
-        let list_field_logical_names = binding.list_field_logical_names().to_vec();
+        let forms = Json(
+            binding
+                .forms()
+                .iter()
+                .map(|form| AppEntityFormDocument {
+                    logical_name: form.logical_name().as_str().to_owned(),
+                    display_name: form.display_name().as_str().to_owned(),
+                    field_logical_names: form.field_logical_names().to_vec(),
+                })
+                .collect::<Vec<_>>(),
+        );
+        let list_views = Json(
+            binding
+                .list_views()
+                .iter()
+                .map(|view| AppEntityViewDocument {
+                    logical_name: view.logical_name().as_str().to_owned(),
+                    display_name: view.display_name().as_str().to_owned(),
+                    field_logical_names: view.field_logical_names().to_vec(),
+                })
+                .collect::<Vec<_>>(),
+        );
         let default_view_mode = binding.default_view_mode().as_str();
 
         sqlx::query(
@@ -176,18 +220,22 @@ impl AppRepository for PostgresAppRepository {
                 entity_logical_name,
                 navigation_label,
                 navigation_order,
-                form_field_logical_names,
-                list_field_logical_names,
+                forms,
+                list_views,
+                default_form_logical_name,
+                default_list_view_logical_name,
                 default_view_mode,
                 updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
             ON CONFLICT (tenant_id, app_logical_name, entity_logical_name)
             DO UPDATE SET
                 navigation_label = EXCLUDED.navigation_label,
                 navigation_order = EXCLUDED.navigation_order,
-                form_field_logical_names = EXCLUDED.form_field_logical_names,
-                list_field_logical_names = EXCLUDED.list_field_logical_names,
+                forms = EXCLUDED.forms,
+                list_views = EXCLUDED.list_views,
+                default_form_logical_name = EXCLUDED.default_form_logical_name,
+                default_list_view_logical_name = EXCLUDED.default_list_view_logical_name,
                 default_view_mode = EXCLUDED.default_view_mode,
                 updated_at = now()
             "#,
@@ -197,8 +245,10 @@ impl AppRepository for PostgresAppRepository {
         .bind(binding.entity_logical_name().as_str())
         .bind(binding.navigation_label())
         .bind(binding.navigation_order())
-        .bind(form_field_logical_names)
-        .bind(list_field_logical_names)
+        .bind(forms)
+        .bind(list_views)
+        .bind(binding.default_form_logical_name().as_str())
+        .bind(binding.default_list_view_logical_name().as_str())
         .bind(default_view_mode)
         .execute(&self.pool)
         .await
@@ -226,8 +276,28 @@ impl AppRepository for PostgresAppRepository {
                 entity_logical_name,
                 navigation_label,
                 navigation_order,
-                form_field_logical_names,
-                list_field_logical_names,
+                COALESCE(
+                    NULLIF(forms, '[]'::jsonb),
+                    jsonb_build_array(
+                        jsonb_build_object(
+                            'logical_name', 'main_form',
+                            'display_name', 'Main Form',
+                            'field_logical_names', form_field_logical_names
+                        )
+                    )
+                ) AS forms,
+                COALESCE(
+                    NULLIF(list_views, '[]'::jsonb),
+                    jsonb_build_array(
+                        jsonb_build_object(
+                            'logical_name', 'main_view',
+                            'display_name', 'Main View',
+                            'field_logical_names', list_field_logical_names
+                        )
+                    )
+                ) AS list_views,
+                COALESCE(default_form_logical_name, 'main_form') AS default_form_logical_name,
+                COALESCE(default_list_view_logical_name, 'main_view') AS default_list_view_logical_name,
                 default_view_mode
             FROM app_entity_bindings
             WHERE tenant_id = $1 AND app_logical_name = $2
@@ -252,12 +322,103 @@ impl AppRepository for PostgresAppRepository {
                     row.entity_logical_name,
                     row.navigation_label,
                     row.navigation_order,
-                    row.form_field_logical_names,
-                    row.list_field_logical_names,
+                    row.forms
+                        .0
+                        .into_iter()
+                        .map(|form| {
+                            AppEntityForm::new(
+                                form.logical_name,
+                                form.display_name,
+                                form.field_logical_names,
+                            )
+                        })
+                        .collect::<AppResult<Vec<_>>>()?,
+                    row.list_views
+                        .0
+                        .into_iter()
+                        .map(|view| {
+                            AppEntityView::new(
+                                view.logical_name,
+                                view.display_name,
+                                view.field_logical_names,
+                            )
+                        })
+                        .collect::<AppResult<Vec<_>>>()?,
+                    row.default_form_logical_name,
+                    row.default_list_view_logical_name,
                     app_entity_view_mode_from_str(row.default_view_mode.as_str())?,
                 )
             })
             .collect()
+    }
+
+    async fn save_sitemap(&self, tenant_id: TenantId, sitemap: AppSitemap) -> AppResult<()> {
+        let definition_json = serde_json::to_value(&sitemap).map_err(|error| {
+            AppError::Internal(format!(
+                "failed to serialize sitemap for app '{}' in tenant '{}': {error}",
+                sitemap.app_logical_name().as_str(),
+                tenant_id
+            ))
+        })?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO app_sitemaps (tenant_id, app_logical_name, definition_json, updated_at)
+            VALUES ($1, $2, $3, now())
+            ON CONFLICT (tenant_id, app_logical_name)
+            DO UPDATE SET
+                definition_json = EXCLUDED.definition_json,
+                updated_at = now()
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(sitemap.app_logical_name().as_str())
+        .bind(definition_json)
+        .execute(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to save sitemap for app '{}' in tenant '{}': {error}",
+                sitemap.app_logical_name().as_str(),
+                tenant_id
+            ))
+        })?;
+
+        Ok(())
+    }
+
+    async fn get_sitemap(
+        &self,
+        tenant_id: TenantId,
+        app_logical_name: &str,
+    ) -> AppResult<Option<AppSitemap>> {
+        let row = sqlx::query_as::<_, AppSitemapRow>(
+            r#"
+            SELECT definition_json
+            FROM app_sitemaps
+            WHERE tenant_id = $1 AND app_logical_name = $2
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(app_logical_name)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to load sitemap for app '{}' in tenant '{}': {error}",
+                app_logical_name, tenant_id
+            ))
+        })?;
+
+        row.map(|value| {
+            serde_json::from_value::<AppSitemap>(value.definition_json).map_err(|error| {
+                AppError::Internal(format!(
+                    "persisted sitemap for app '{}' in tenant '{}' is invalid: {error}",
+                    app_logical_name, tenant_id
+                ))
+            })
+        })
+        .transpose()
     }
 
     async fn save_app_role_entity_permission(
@@ -592,3 +753,6 @@ impl AppRepository for PostgresAppRepository {
 fn app_entity_view_mode_from_str(value: &str) -> AppResult<AppEntityViewMode> {
     AppEntityViewMode::parse(value)
 }
+
+#[cfg(test)]
+mod tests;

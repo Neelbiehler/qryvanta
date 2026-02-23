@@ -6,7 +6,7 @@ use ts_rs::TS;
 #[derive(Debug, Deserialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/create-role-request.ts"
+    export_to = "../../../packages/api-types/src/generated/create-role-request.ts"
 )]
 pub struct CreateRoleRequest {
     pub name: String,
@@ -17,7 +17,7 @@ pub struct CreateRoleRequest {
 #[derive(Debug, Deserialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/assign-role-request.ts"
+    export_to = "../../../packages/api-types/src/generated/assign-role-request.ts"
 )]
 pub struct AssignRoleRequest {
     pub subject: String,
@@ -28,7 +28,7 @@ pub struct AssignRoleRequest {
 #[derive(Debug, Deserialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/remove-role-assignment-request.ts"
+    export_to = "../../../packages/api-types/src/generated/remove-role-assignment-request.ts"
 )]
 pub struct RemoveRoleAssignmentRequest {
     pub subject: String,
@@ -39,7 +39,7 @@ pub struct RemoveRoleAssignmentRequest {
 #[derive(Debug, Deserialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/update-tenant-registration-mode-request.ts"
+    export_to = "../../../packages/api-types/src/generated/update-tenant-registration-mode-request.ts"
 )]
 pub struct UpdateTenantRegistrationModeRequest {
     pub registration_mode: String,
@@ -49,7 +49,7 @@ pub struct UpdateTenantRegistrationModeRequest {
 #[derive(Debug, Deserialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/save-runtime-field-permissions-request.ts"
+    export_to = "../../../packages/api-types/src/generated/save-runtime-field-permissions-request.ts"
 )]
 pub struct SaveRuntimeFieldPermissionsRequest {
     pub subject: String,
@@ -61,7 +61,7 @@ pub struct SaveRuntimeFieldPermissionsRequest {
 #[derive(Debug, Deserialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/runtime-field-permission-input-request.ts"
+    export_to = "../../../packages/api-types/src/generated/runtime-field-permission-input-request.ts"
 )]
 pub struct RuntimeFieldPermissionInputRequest {
     pub field_logical_name: String,
@@ -73,7 +73,7 @@ pub struct RuntimeFieldPermissionInputRequest {
 #[derive(Debug, Deserialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/create-temporary-access-grant-request.ts"
+    export_to = "../../../packages/api-types/src/generated/create-temporary-access-grant-request.ts"
 )]
 pub struct CreateTemporaryAccessGrantRequest {
     pub subject: String,
@@ -86,7 +86,7 @@ pub struct CreateTemporaryAccessGrantRequest {
 #[derive(Debug, Deserialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/revoke-temporary-access-grant-request.ts"
+    export_to = "../../../packages/api-types/src/generated/revoke-temporary-access-grant-request.ts"
 )]
 pub struct RevokeTemporaryAccessGrantRequest {
     pub revoke_reason: Option<String>,
@@ -96,7 +96,7 @@ pub struct RevokeTemporaryAccessGrantRequest {
 #[derive(Debug, Deserialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/update-audit-retention-policy-request.ts"
+    export_to = "../../../packages/api-types/src/generated/update-audit-retention-policy-request.ts"
 )]
 pub struct UpdateAuditRetentionPolicyRequest {
     pub retention_days: u16,
@@ -106,7 +106,7 @@ pub struct UpdateAuditRetentionPolicyRequest {
 #[derive(Debug, Serialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/role-response.ts"
+    export_to = "../../../packages/api-types/src/generated/role-response.ts"
 )]
 pub struct RoleResponse {
     pub role_id: String,
@@ -119,7 +119,7 @@ pub struct RoleResponse {
 #[derive(Debug, Serialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/audit-log-entry-response.ts"
+    export_to = "../../../packages/api-types/src/generated/audit-log-entry-response.ts"
 )]
 pub struct AuditLogEntryResponse {
     pub event_id: String,
@@ -135,7 +135,7 @@ pub struct AuditLogEntryResponse {
 #[derive(Debug, Serialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/role-assignment-response.ts"
+    export_to = "../../../packages/api-types/src/generated/role-assignment-response.ts"
 )]
 pub struct RoleAssignmentResponse {
     pub subject: String,
@@ -148,7 +148,7 @@ pub struct RoleAssignmentResponse {
 #[derive(Debug, Serialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/tenant-registration-mode-response.ts"
+    export_to = "../../../packages/api-types/src/generated/tenant-registration-mode-response.ts"
 )]
 pub struct TenantRegistrationModeResponse {
     pub registration_mode: String,
@@ -158,7 +158,7 @@ pub struct TenantRegistrationModeResponse {
 #[derive(Debug, Serialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/runtime-field-permission-response.ts"
+    export_to = "../../../packages/api-types/src/generated/runtime-field-permission-response.ts"
 )]
 pub struct RuntimeFieldPermissionResponse {
     pub subject: String,
@@ -173,7 +173,7 @@ pub struct RuntimeFieldPermissionResponse {
 #[derive(Debug, Serialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/temporary-access-grant-response.ts"
+    export_to = "../../../packages/api-types/src/generated/temporary-access-grant-response.ts"
 )]
 pub struct TemporaryAccessGrantResponse {
     pub grant_id: String,
@@ -189,7 +189,7 @@ pub struct TemporaryAccessGrantResponse {
 #[derive(Debug, Serialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/audit-retention-policy-response.ts"
+    export_to = "../../../packages/api-types/src/generated/audit-retention-policy-response.ts"
 )]
 pub struct AuditRetentionPolicyResponse {
     pub retention_days: u16,
@@ -199,7 +199,7 @@ pub struct AuditRetentionPolicyResponse {
 #[derive(Debug, Serialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/audit-purge-result-response.ts"
+    export_to = "../../../packages/api-types/src/generated/audit-purge-result-response.ts"
 )]
 pub struct AuditPurgeResultResponse {
     pub deleted_count: u64,

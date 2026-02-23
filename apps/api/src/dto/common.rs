@@ -6,7 +6,7 @@ use ts_rs::TS;
 #[derive(Debug, Serialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/health-response.ts"
+    export_to = "../../../packages/api-types/src/generated/health-response.ts"
 )]
 pub struct HealthResponse {
     pub status: &'static str,
@@ -17,6 +17,10 @@ pub struct HealthResponse {
 
 /// One runtime dependency health status.
 #[derive(Debug, Serialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/health-dependency-status.ts"
+)]
 pub struct HealthDependencyStatus {
     pub status: &'static str,
     pub detail: Option<String>,
@@ -26,7 +30,7 @@ pub struct HealthDependencyStatus {
 #[derive(Debug, Serialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/generic-message-response.ts"
+    export_to = "../../../packages/api-types/src/generated/generic-message-response.ts"
 )]
 pub struct GenericMessageResponse {
     pub message: String,
@@ -36,7 +40,7 @@ pub struct GenericMessageResponse {
 #[derive(Debug, Serialize, TS)]
 #[ts(
     export,
-    export_to = "../../../../packages/api-types/src/generated/user-identity-response.ts"
+    export_to = "../../../packages/api-types/src/generated/user-identity-response.ts"
 )]
 pub struct UserIdentityResponse {
     pub subject: String,
