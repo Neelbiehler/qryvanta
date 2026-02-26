@@ -175,6 +175,8 @@ export function useEntityWorkbenchPanel({
     initialEntities,
     relationTargetEntity,
     relationAuthoringMode,
+    secondaryDisplayName,
+    secondaryLogicalName,
     secondaryRelationTargetEntity,
   ]);
 

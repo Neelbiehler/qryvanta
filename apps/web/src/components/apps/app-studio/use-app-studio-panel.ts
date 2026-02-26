@@ -6,9 +6,6 @@ import {
   type AppEntityBindingResponse,
   type AppEntityFormDto,
   type AppPublishChecksResponse,
-  type AppPublishDiffResponse,
-  type EntityPublishDiffResponse,
-  type PublishCheckIssueResponse,
   type AppResponse,
   type RunWorkspacePublishRequest,
   type RunWorkspacePublishResponse,
@@ -28,10 +25,11 @@ import {
 import type {
   AppSurfaceDraft,
   AppStudioSection,
-  BindingDraft,
-  NewAppDraft,
-  PermissionDraft,
 } from "@/components/apps/app-studio/sections";
+import { useAppCatalog } from "@/components/apps/app-studio/hooks/use-app-catalog";
+import { useBindingEditor } from "@/components/apps/app-studio/hooks/use-binding-editor";
+import { usePermissionMatrix } from "@/components/apps/app-studio/hooks/use-permission-matrix";
+import { useWorkspacePublish } from "@/components/apps/app-studio/hooks/use-workspace-publish";
 
 type PanelMessages = {
   errorMessage: string | null;
@@ -57,30 +55,6 @@ type UseAppStudioPanelInput = {
   roles: RoleResponse[];
 };
 
-type WorkspacePublishDraft = {
-  entityLogicalNames: string[];
-  appLogicalNames: string[];
-};
-
-type PublishRunHistoryEntry = {
-  runId: string;
-  runAt: string;
-  subject: string;
-  requestedEntities: number;
-  requestedApps: number;
-  requestedEntityLogicalNames: string[];
-  requestedAppLogicalNames: string[];
-  publishedEntities: string[];
-  validatedApps: string[];
-  issueCount: number;
-  isPublishable: boolean;
-};
-
-type SelectionValidationState = {
-  selectionKey: string | null;
-  isPublishable: boolean;
-};
-
 export function useAppStudioPanel({
   apps,
   entities,
@@ -93,9 +67,6 @@ export function useAppStudioPanel({
     activeSection: apps.length > 0 ? "navigation" : "apps",
   });
   const [bindings, setBindings] = useState<AppEntityBindingResponse[]>([]);
-  const [selectedEntityFields, setSelectedEntityFields] = useState<
-    FieldResponse[]
-  >([]);
   const [permissions, setPermissions] = useState<
     AppRoleEntityPermissionResponse[]
   >([]);
@@ -103,87 +74,49 @@ export function useAppStudioPanel({
     errorMessage: null,
     statusMessage: null,
   });
-  const [newAppDraft, setNewAppDraft] = useState<NewAppDraft>({
-    logicalName: "",
-    displayName: "",
-    description: "",
+  const { newAppDraft, setNewAppDraft } = useAppCatalog();
+  const {
+    bindingDraft,
+    setBindingDraft,
+    selectedEntityFields,
+    setSelectedEntityFields,
+    isLoadingEntityFields,
+    setIsLoadingEntityFields,
+  } = useBindingEditor({ entities });
+  const { permissionDraft, setPermissionDraft } = usePermissionMatrix({
+    roles,
+    entities,
   });
-  const [bindingDraft, setBindingDraft] = useState<BindingDraft>({
-    entityToBind: entities.at(0)?.logical_name ?? "",
-    navigationLabel: "",
-    navigationOrder: 0,
-    forms: [
-      {
-        logicalName: "main_form",
-        displayName: "Main Form",
-        fieldLogicalNames: [],
-      },
-    ],
-    listViews: [
-      {
-        logicalName: "main_view",
-        displayName: "Main View",
-        fieldLogicalNames: [],
-      },
-    ],
-    defaultFormLogicalName: "main_form",
-    defaultListViewLogicalName: "main_view",
-    defaultViewMode: "grid",
-  });
-  const [permissionDraft, setPermissionDraft] = useState<PermissionDraft>({
-    roleName: roles.at(0)?.name ?? "",
-    entityName: entities.at(0)?.logical_name ?? "",
-    canRead: true,
-    canCreate: false,
-    canUpdate: false,
-    canDelete: false,
-  });
+  const {
+    isRunningPublishChecks,
+    setIsRunningPublishChecks,
+    publishCheckErrors,
+    setPublishCheckErrors,
+    isRunningWorkspaceChecks,
+    setIsRunningWorkspaceChecks,
+    isRunningSelectionChecks,
+    setIsRunningSelectionChecks,
+    workspaceIssues,
+    setWorkspaceIssues,
+    workspaceCheckSummary,
+    setWorkspaceCheckSummary,
+    workspacePublishDraft,
+    setWorkspacePublishDraft,
+    isRunningSelectivePublish,
+    setIsRunningSelectivePublish,
+    selectionValidation,
+    setSelectionValidation,
+    publishHistory,
+    setPublishHistory,
+    publishDiff,
+    setPublishDiff,
+  } = useWorkspacePublish({ entities, apps });
   const [pendingState, setPendingState] = useState<PendingState>({
     isCreatingApp: false,
     isBindingEntity: false,
     isReorderingBinding: false,
     isSavingPermission: false,
     isLoadingAppData: false,
-  });
-  const [isLoadingEntityFields, setIsLoadingEntityFields] = useState(false);
-  const [isRunningPublishChecks, setIsRunningPublishChecks] = useState(false);
-  const [publishCheckErrors, setPublishCheckErrors] = useState<string[]>([]);
-  const [isRunningWorkspaceChecks, setIsRunningWorkspaceChecks] =
-    useState(false);
-  const [isRunningSelectionChecks, setIsRunningSelectionChecks] =
-    useState(false);
-  const [workspaceIssues, setWorkspaceIssues] = useState<
-    PublishCheckIssueResponse[]
-  >([]);
-  const [workspaceCheckSummary, setWorkspaceCheckSummary] = useState<{
-    checkedEntities: number;
-    checkedApps: number;
-  } | null>(null);
-  const [workspacePublishDraft, setWorkspacePublishDraft] =
-    useState<WorkspacePublishDraft>({
-      entityLogicalNames: entities.map((entity) => entity.logical_name),
-      appLogicalNames: apps.map((app) => app.logical_name),
-    });
-  const [isRunningSelectivePublish, setIsRunningSelectivePublish] =
-    useState(false);
-  const [selectionValidation, setSelectionValidation] =
-    useState<SelectionValidationState>({
-      selectionKey: null,
-      isPublishable: false,
-    });
-  const [publishHistory, setPublishHistory] = useState<
-    PublishRunHistoryEntry[]
-  >([]);
-  const [publishDiff, setPublishDiff] = useState<{
-    unknownEntityLogicalNames: string[];
-    unknownAppLogicalNames: string[];
-    entityDiffs: EntityPublishDiffResponse[];
-    appDiffs: AppPublishDiffResponse[];
-  }>({
-    unknownEntityLogicalNames: [],
-    unknownAppLogicalNames: [],
-    entityDiffs: [],
-    appDiffs: [],
   });
 
   const selectedApp = selectionState.selectedApp;
@@ -257,6 +190,7 @@ export function useAppStudioPanel({
       appDiffs: result.app_diffs,
     });
   }, [
+    setPublishDiff,
     workspacePublishDraft.appLogicalNames,
     workspacePublishDraft.entityLogicalNames,
   ]);
@@ -289,7 +223,7 @@ export function useAppStudioPanel({
     } catch {
       setPublishHistory([]);
     }
-  }, []);
+  }, [setPublishHistory]);
 
   const refreshSelectedAppData = useCallback(async (appLogicalName: string) => {
     if (!appLogicalName) {
@@ -349,7 +283,7 @@ export function useAppStudioPanel({
         setIsLoadingEntityFields(false);
       }
     },
-    [],
+    [setIsLoadingEntityFields, setSelectedEntityFields],
   );
 
   useEffect(() => {
@@ -367,7 +301,7 @@ export function useAppStudioPanel({
         apps.map((app) => app.logical_name),
       ),
     }));
-  }, [apps, entities]);
+  }, [apps, entities, setWorkspacePublishDraft]);
 
   useEffect(() => {
     setSelectionValidation((current) => {
@@ -380,7 +314,7 @@ export function useAppStudioPanel({
         isPublishable: false,
       };
     });
-  }, [workspaceSelectionKey]);
+  }, [setSelectionValidation, workspaceSelectionKey]);
 
   useEffect(() => {
     void refreshPublishHistory();
@@ -395,7 +329,7 @@ export function useAppStudioPanel({
         appDiffs: [],
       });
     });
-  }, [refreshPublishDiff]);
+  }, [refreshPublishDiff, setPublishDiff]);
 
   useEffect(() => {
     const existingBinding = bindings.find(
@@ -453,7 +387,7 @@ export function useAppStudioPanel({
       defaultListViewLogicalName,
       defaultViewMode: existingBinding.default_view_mode,
     }));
-  }, [bindings, bindingDraft.entityToBind]);
+  }, [bindings, bindingDraft.entityToBind, setBindingDraft]);
 
   useEffect(() => {
     void refreshSelectedEntityFields(bindingDraft.entityToBind);
@@ -956,7 +890,12 @@ export function useAppStudioPanel({
   };
 }
 
-function buildWorkspaceSelectionKey(selection: WorkspacePublishDraft): string {
+export type AppStudioPanelController = ReturnType<typeof useAppStudioPanel>;
+
+function buildWorkspaceSelectionKey(selection: {
+  entityLogicalNames: string[];
+  appLogicalNames: string[];
+}): string {
   const normalizedEntities = [...selection.entityLogicalNames].sort();
   const normalizedApps = [...selection.appLogicalNames].sort();
 

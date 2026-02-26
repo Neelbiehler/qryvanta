@@ -1,17 +1,29 @@
 "use client";
 
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 
 import {
   Button,
-  Checkbox,
-  Input,
+  CommandBar,
+  CommandBarAction,
   Label,
   Notice,
   Select,
-  Textarea,
 } from "@qryvanta/ui";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@qryvanta/ui/accordion";
 
 import {
   apiFetch,
@@ -26,7 +38,7 @@ import {
 import { buildFieldMap, formatFieldValue } from "@/components/apps/workspace-entity/helpers";
 import { evaluateRuleState } from "@/components/apps/workspace-entity/business-rules";
 import { RelatedRecordsSubgrid } from "@/components/apps/related-records-subgrid";
-import { RelationFieldSelect } from "@/components/apps/relation-field-select";
+import { FieldControl } from "@/components/shared/field-control";
 import type {
   FormFieldPlacement,
   FormSection,
@@ -49,6 +61,36 @@ type RecordDetailPanelProps = {
   record: RuntimeRecordResponse;
   schema: PublishedSchemaResponse;
 };
+
+type PanelState = {
+  errorMessage: string | null;
+  statusMessage: string | null;
+  isSaving: boolean;
+};
+
+type PanelAction =
+  | { type: "start_saving" }
+  | { type: "set_error"; message: string }
+  | { type: "set_success"; message: string }
+  | { type: "clear_messages" }
+  | { type: "finish_saving" };
+
+function panelStateReducer(state: PanelState, action: PanelAction): PanelState {
+  switch (action.type) {
+    case "start_saving":
+      return { ...state, isSaving: true, errorMessage: null, statusMessage: null };
+    case "set_error":
+      return { ...state, errorMessage: action.message, statusMessage: null };
+    case "set_success":
+      return { ...state, statusMessage: action.message, errorMessage: null };
+    case "clear_messages":
+      return { ...state, errorMessage: null, statusMessage: null };
+    case "finish_saving":
+      return { ...state, isSaving: false };
+    default:
+      return state;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -93,9 +135,11 @@ export function RecordDetailPanel({
     return values;
   });
 
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
+  const [panelState, dispatchPanel] = useReducer(panelStateReducer, {
+    errorMessage: null,
+    statusMessage: null,
+    isSaving: false,
+  });
 
   const evaluatedRuleState = useMemo(
     () => evaluateRuleState(businessRules, activeForm?.logical_name ?? null, formValues),
@@ -194,18 +238,22 @@ export function RecordDetailPanel({
     event.preventDefault();
 
     if (evaluatedRuleState.errorMessages.length > 0) {
-      setErrorMessage(evaluatedRuleState.errorMessages.join(" "));
+      dispatchPanel({
+        type: "set_error",
+        message: evaluatedRuleState.errorMessages.join(" "),
+      });
       return;
     }
 
     if (!capabilities.can_update) {
-      setErrorMessage("You do not have update permission for this entity.");
+      dispatchPanel({
+        type: "set_error",
+        message: "You do not have update permission for this entity.",
+      });
       return;
     }
 
-    setErrorMessage(null);
-    setStatusMessage(null);
-    setIsSaving(true);
+    dispatchPanel({ type: "start_saving" });
 
     try {
       const payload: UpdateRuntimeRecordRequest = {
@@ -221,16 +269,22 @@ export function RecordDetailPanel({
 
       if (!response.ok) {
         const body = (await response.json()) as { message?: string };
-        setErrorMessage(body.message ?? "Unable to update record.");
+        dispatchPanel({
+          type: "set_error",
+          message: body.message ?? "Unable to update record.",
+        });
         return;
       }
 
-      setStatusMessage("Record updated successfully.");
+      dispatchPanel({
+        type: "set_success",
+        message: "Record updated successfully.",
+      });
       router.refresh();
     } catch {
-      setErrorMessage("Unable to update record.");
+      dispatchPanel({ type: "set_error", message: "Unable to update record." });
     } finally {
-      setIsSaving(false);
+      dispatchPanel({ type: "finish_saving" });
     }
   }
 
@@ -242,13 +296,13 @@ export function RecordDetailPanel({
         canUpdate={capabilities.can_update}
         fields={schema.fields}
         formValues={formValues}
-        isSaving={isSaving}
+        isSaving={panelState.isSaving}
         optionSets={schema.option_sets}
         ruleState={evaluatedRuleState}
         onFieldValueChange={setFieldValue}
         onSubmit={handleUpdateRecord}
-        errorMessage={errorMessage}
-        statusMessage={statusMessage}
+        errorMessage={panelState.errorMessage}
+        statusMessage={panelState.statusMessage}
       />
     );
   }
@@ -257,8 +311,72 @@ export function RecordDetailPanel({
   const showTabHeaders = visibleTabs.length > 1;
 
   return (
+    <RecordDetailWorkspace
+      appLogicalName={appLogicalName}
+      capabilities={capabilities}
+      forms={forms}
+      activeForm={activeForm}
+      activeFormName={activeFormName}
+      onActiveFormNameChange={setActiveFormName}
+      fieldMap={fieldMap}
+      record={record}
+      optionSets={schema.option_sets}
+      visibleTabs={visibleTabs}
+      formValues={formValues}
+      onFieldValueChange={setFieldValue}
+      ruleState={evaluatedRuleState}
+      showTabHeaders={showTabHeaders}
+      onSubmit={handleUpdateRecord}
+      isSaving={panelState.isSaving}
+      errorMessage={panelState.errorMessage}
+      statusMessage={panelState.statusMessage}
+    />
+  );
+}
+
+type RecordDetailWorkspaceProps = {
+  appLogicalName: string;
+  capabilities: AppEntityCapabilitiesResponse;
+  forms: ParsedFormResponse[];
+  activeForm: ParsedFormResponse;
+  activeFormName: string | null;
+  onActiveFormNameChange: (value: string | null) => void;
+  fieldMap: Map<string, FieldResponse>;
+  record: RuntimeRecordResponse;
+  optionSets: OptionSetResponse[];
+  visibleTabs: FormTab[];
+  formValues: Record<string, unknown>;
+  onFieldValueChange: (fieldLogicalName: string, value: unknown) => void;
+  ruleState: ReturnType<typeof evaluateRuleState>;
+  showTabHeaders: boolean;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  isSaving: boolean;
+  errorMessage: string | null;
+  statusMessage: string | null;
+};
+
+function RecordDetailWorkspace({
+  appLogicalName,
+  capabilities,
+  forms,
+  activeForm,
+  activeFormName,
+  onActiveFormNameChange,
+  fieldMap,
+  record,
+  optionSets,
+  visibleTabs,
+  formValues,
+  onFieldValueChange,
+  ruleState,
+  showTabHeaders,
+  onSubmit,
+  isSaving,
+  errorMessage,
+  statusMessage,
+}: RecordDetailWorkspaceProps) {
+  return (
     <div className="space-y-6">
-      {/* Form selector when multiple forms exist */}
       {forms.length > 1 ? (
         <div className="flex items-end gap-4">
           <div className="space-y-1">
@@ -266,7 +384,7 @@ export function RecordDetailPanel({
             <Select
               id="record-form-selector"
               value={activeFormName ?? ""}
-              onChange={(event) => setActiveFormName(event.target.value)}
+              onChange={(event) => onActiveFormNameChange(event.target.value)}
             >
               {forms.map((form) => (
                 <option key={form.logical_name} value={form.logical_name}>
@@ -278,7 +396,6 @@ export function RecordDetailPanel({
         </div>
       ) : null}
 
-      {/* Header fields */}
       {activeForm.header_fields.length > 0 ? (
         <div className="flex flex-wrap gap-4 border-b border-zinc-200 pb-3">
           {activeForm.header_fields.map((headerFieldName) => {
@@ -290,7 +407,7 @@ export function RecordDetailPanel({
                   {field.display_name}
                 </p>
                 <p className="text-sm font-medium text-zinc-900">
-                  {formatFieldValue(record.data[headerFieldName], field, schema.option_sets)}
+                  {formatFieldValue(record.data[headerFieldName], field, optionSets)}
                 </p>
               </div>
             );
@@ -298,7 +415,7 @@ export function RecordDetailPanel({
         </div>
       ) : null}
 
-      <form className="space-y-6" onSubmit={handleUpdateRecord}>
+      <form className="space-y-6" onSubmit={onSubmit}>
         {visibleTabs.map((tab) => (
           <RecordTabRenderer
             key={tab.logical_name}
@@ -308,28 +425,30 @@ export function RecordDetailPanel({
             canUpdate={capabilities.can_update}
             fieldMap={fieldMap}
             formValues={formValues}
-            onFieldValueChange={setFieldValue}
-            optionSets={schema.option_sets}
-            ruleState={evaluatedRuleState}
+            onFieldValueChange={onFieldValueChange}
+            optionSets={optionSets}
+            ruleState={ruleState}
             showTabHeader={showTabHeaders}
           />
         ))}
 
-        {capabilities.can_update ? (
-          <Button disabled={isSaving} type="submit">
-            {isSaving ? "Saving..." : "Save Changes"}
-          </Button>
-        ) : (
-          <p className="text-sm text-zinc-500">
-            Read-only: you do not have update permission for this entity.
-          </p>
-        )}
+        <CommandBar className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2">
+          {capabilities.can_update ? (
+            <CommandBarAction disabled={isSaving} type="submit" variant="primary">
+              {isSaving ? "Saving..." : "Save Changes"}
+            </CommandBarAction>
+          ) : (
+            <p className="text-sm text-zinc-500">
+              Read-only: you do not have update permission for this entity.
+            </p>
+          )}
+        </CommandBar>
       </form>
 
       {errorMessage ? <Notice tone="error">{errorMessage}</Notice> : null}
       {statusMessage ? <Notice tone="success">{statusMessage}</Notice> : null}
-      {evaluatedRuleState.errorMessages.length > 0 ? (
-        <Notice tone="warning">{evaluatedRuleState.errorMessages.join(" ")}</Notice>
+      {ruleState.errorMessages.length > 0 ? (
+        <Notice tone="warning">{ruleState.errorMessages.join(" ")}</Notice>
       ) : null}
     </div>
   );
@@ -367,6 +486,9 @@ function RecordTabRenderer({
   const visibleSections = tab.sections
     .filter((section) => section.visible)
     .sort((a, b) => a.position - b.position);
+  const [openSectionValues, setOpenSectionValues] = useState<string[]>(() =>
+    visibleSections.length > 0 ? [visibleSections[0].logical_name] : [],
+  );
 
   return (
     <div className="space-y-4">
@@ -376,20 +498,38 @@ function RecordTabRenderer({
         </div>
       ) : null}
 
-      {visibleSections.map((section) => (
-        <RecordSectionRenderer
-          key={section.logical_name}
-          appLogicalName={appLogicalName}
-          currentRecordId={currentRecordId}
-          section={section}
-          canUpdate={canUpdate}
-          fieldMap={fieldMap}
-          formValues={formValues}
-          onFieldValueChange={onFieldValueChange}
-          optionSets={optionSets}
-          ruleState={ruleState}
-        />
-      ))}
+      <Accordion
+        type="multiple"
+        value={openSectionValues}
+        onValueChange={setOpenSectionValues}
+        className="space-y-2"
+      >
+        {visibleSections.map((section) => (
+          <AccordionItem
+            key={section.logical_name}
+            value={section.logical_name}
+            className="rounded-md border border-zinc-200 bg-white px-3"
+          >
+            <AccordionTrigger className="py-2 text-xs uppercase tracking-[0.12em] text-zinc-600">
+              {section.display_name}
+            </AccordionTrigger>
+            <AccordionContent className="pt-2">
+              <RecordSectionRenderer
+                appLogicalName={appLogicalName}
+                currentRecordId={currentRecordId}
+                section={section}
+                canUpdate={canUpdate}
+                fieldMap={fieldMap}
+                formValues={formValues}
+                onFieldValueChange={onFieldValueChange}
+                optionSets={optionSets}
+                ruleState={ruleState}
+                showSectionTitle={false}
+              />
+            </AccordionContent>
+          </AccordionItem>
+        ))}
+      </Accordion>
     </div>
   );
 }
@@ -408,6 +548,7 @@ type RecordSectionRendererProps = {
   onFieldValueChange: (fieldLogicalName: string, value: unknown) => void;
   optionSets: OptionSetResponse[];
   ruleState: ReturnType<typeof evaluateRuleState>;
+  showSectionTitle?: boolean;
 };
 
 function RecordSectionRenderer({
@@ -420,6 +561,7 @@ function RecordSectionRenderer({
   onFieldValueChange,
   optionSets,
   ruleState,
+  showSectionTitle = true,
 }: RecordSectionRendererProps) {
   const visibleFields = section.fields
     .filter((fp) => fp.visible && !ruleState.hiddenFieldNames.has(fp.field_logical_name))
@@ -448,23 +590,28 @@ function RecordSectionRenderer({
 
   return (
     <fieldset className="space-y-3">
-      <legend className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">
-        {section.display_name}
-      </legend>
+      {showSectionTitle ? (
+        <legend className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">
+          {section.display_name}
+        </legend>
+      ) : null}
       <div className={gridClass}>
         {columnGroups.map((columnFields, colIndex) => (
           <div key={`col-${String(colIndex)}`} className="space-y-4">
             {columnFields.map((fp) => (
-              <RecordFieldControl
+              <FieldControl
                 key={fp.field_logical_name}
                 appLogicalName={appLogicalName}
                 placement={fp}
-                canUpdate={canUpdate}
+                canEdit={canUpdate}
                 field={fieldMap.get(fp.field_logical_name) ?? null}
                 formValues={formValues}
                 onFieldValueChange={onFieldValueChange}
                 optionSets={optionSets}
                 ruleState={ruleState}
+                fieldIdPrefix="record_field"
+                prettyJsonObjects
+                jsonRows={4}
               />
             ))}
           </div>
@@ -520,189 +667,6 @@ function RecordSubgrid({ appLogicalName, currentRecordId, subgrid }: RecordSubgr
 }
 
 // ---------------------------------------------------------------------------
-// Individual field control for record detail
-// ---------------------------------------------------------------------------
-
-type RecordFieldControlProps = {
-  appLogicalName: string;
-  placement: FormFieldPlacement;
-  canUpdate: boolean;
-  field: FieldResponse | null;
-  formValues: Record<string, unknown>;
-  onFieldValueChange: (fieldLogicalName: string, value: unknown) => void;
-  optionSets: OptionSetResponse[];
-  ruleState: ReturnType<typeof evaluateRuleState>;
-};
-
-function RecordFieldControl({
-  appLogicalName,
-  placement,
-  canUpdate,
-  field,
-  formValues,
-  onFieldValueChange,
-  optionSets,
-  ruleState,
-}: RecordFieldControlProps) {
-  if (!field) {
-    return (
-      <div className="text-xs text-zinc-400">
-        Unknown field: {placement.field_logical_name}
-      </div>
-    );
-  }
-
-  const fieldId = `record_field_${field.logical_name}`;
-  const value = formValues[field.logical_name];
-  const displayLabel = placement.label_override ?? field.display_name;
-  const isRequired =
-    ruleState.requiredOverrides.get(field.logical_name) ??
-    (placement.required_override !== null
-      ? placement.required_override
-      : field.is_required);
-  const isReadOnly =
-    (ruleState.readOnlyOverrides.get(field.logical_name) ?? placement.read_only) ||
-    !canUpdate;
-
-  // Option set field
-  if (field.option_set_logical_name) {
-    const optionSet = optionSets.find(
-      (os) => os.logical_name === field.option_set_logical_name,
-    );
-    if (optionSet) {
-      return (
-        <div className="space-y-2">
-          <Label htmlFor={fieldId}>
-            {displayLabel}
-            {isRequired ? <span className="text-red-500"> *</span> : null}
-          </Label>
-          <Select
-            id={fieldId}
-            value={String(value ?? "")}
-            onChange={(event) => {
-              const numValue = Number(event.target.value);
-              onFieldValueChange(
-                field.logical_name,
-                Number.isNaN(numValue) ? event.target.value : numValue,
-              );
-            }}
-            disabled={isReadOnly}
-            required={isRequired}
-          >
-            <option value="">-- Select --</option>
-            {[...optionSet.options]
-              .sort((a, b) => a.position - b.position)
-              .map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-          </Select>
-        </div>
-      );
-    }
-  }
-
-  // Boolean field
-  if (field.field_type === "relation" && field.relation_target_entity) {
-    return (
-      <div className="space-y-2">
-        <Label htmlFor={fieldId}>
-          {displayLabel}
-          {isRequired ? <span className="text-red-500"> *</span> : null}
-        </Label>
-        <RelationFieldSelect
-          appLogicalName={appLogicalName}
-          entityLogicalName={field.relation_target_entity}
-          fieldId={fieldId}
-          value={value}
-          disabled={isReadOnly}
-          required={isRequired}
-          onChange={(nextValue) => onFieldValueChange(field.logical_name, nextValue)}
-        />
-      </div>
-    );
-  }
-
-  // Boolean field
-  if (field.field_type === "boolean") {
-    return (
-      <div className="space-y-2">
-        <Label htmlFor={fieldId}>{displayLabel}</Label>
-        <label className="inline-flex items-center gap-2 text-sm text-zinc-700">
-          <Checkbox
-            id={fieldId}
-            checked={Boolean(value)}
-            onChange={(event) =>
-              onFieldValueChange(field.logical_name, event.target.checked)
-            }
-            disabled={isReadOnly}
-          />
-          {displayLabel}
-        </label>
-      </div>
-    );
-  }
-
-  // JSON field
-  if (field.field_type === "json") {
-    const displayValue =
-      typeof value === "object" && value !== null
-        ? JSON.stringify(value, null, 2)
-        : String(value ?? "");
-
-    return (
-      <div className="space-y-2">
-        <Label htmlFor={fieldId}>
-          {displayLabel}
-          {isRequired ? <span className="text-red-500"> *</span> : null}
-        </Label>
-        <Textarea
-          id={fieldId}
-          className="font-mono text-xs"
-          value={displayValue}
-          onChange={(event) =>
-            onFieldValueChange(field.logical_name, event.target.value)
-          }
-          placeholder='{"value":"example"}'
-          readOnly={isReadOnly}
-          required={isRequired}
-          rows={4}
-        />
-      </div>
-    );
-  }
-
-  // Standard field
-  return (
-    <div className="space-y-2">
-      <Label htmlFor={fieldId}>
-        {displayLabel}
-        {isRequired ? <span className="text-red-500"> *</span> : null}
-      </Label>
-      <Input
-        id={fieldId}
-        type={
-          field.field_type === "number"
-            ? "number"
-            : field.field_type === "date"
-              ? "date"
-              : field.field_type === "datetime"
-                ? "datetime-local"
-                : "text"
-        }
-        value={String(value ?? "")}
-        onChange={(event) =>
-          onFieldValueChange(field.logical_name, event.target.value)
-        }
-        required={isRequired}
-        readOnly={isReadOnly}
-      />
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Flat record detail (fallback when no FormDefinition)
 // ---------------------------------------------------------------------------
 
@@ -740,7 +704,7 @@ function FlatRecordDetail({
           {fields
             .filter((field) => !ruleState.hiddenFieldNames.has(field.logical_name))
             .map((field) => (
-            <RecordFieldControl
+            <FieldControl
               key={field.logical_name}
               appLogicalName={appLogicalName}
               placement={{
@@ -752,12 +716,15 @@ function FlatRecordDetail({
                 required_override: null,
                 label_override: null,
               }}
-              canUpdate={canUpdate}
+              canEdit={canUpdate}
               field={field}
               formValues={formValues}
               onFieldValueChange={onFieldValueChange}
               optionSets={optionSets}
               ruleState={ruleState}
+              fieldIdPrefix="record_field"
+              prettyJsonObjects
+              jsonRows={4}
             />
             ))}
         </div>

@@ -11,6 +11,42 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./accordion": {
+      "types": "./dist/accordion.d.ts",
+      "import": "./dist/accordion.js"
+    },
+    "./dialog": {
+      "types": "./dist/dialog.d.ts",
+      "import": "./dist/dialog.js"
+    },
+    "./property-panel": {
+      "types": "./dist/property-panel.d.ts",
+      "import": "./dist/property-panel.js"
+    },
+    "./toast": {
+      "types": "./dist/toast.d.ts",
+      "import": "./dist/toast.js"
+    },
+    "./split-pane": {
+      "types": "./dist/split-pane.d.ts",
+      "import": "./dist/split-pane.js"
+    },
+    "./tree-view": {
+      "types": "./dist/tree-view.d.ts",
+      "import": "./dist/tree-view.js"
+    },
+    "./data-grid": {
+      "types": "./dist/data-grid.d.ts",
+      "import": "./dist/data-grid.js"
+    },
+    "./tabs": {
+      "types": "./dist/tabs.d.ts",
+      "import": "./dist/tabs.js"
+    },
+    "./tooltip": {
+      "types": "./dist/tooltip.d.ts",
+      "import": "./dist/tooltip.js"
+    },
     "./dropdown-menu": {
       "types": "./dist/dropdown-menu.d.ts",
       "import": "./dist/dropdown-menu.js"
@@ -21,7 +57,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsup src/index.ts src/dropdown-menu.ts --format esm --dts --clean --tsconfig tsconfig.build.json",
+    "build": "tsup src/index.ts src/accordion.ts src/tabs.ts src/tooltip.ts src/property-panel.ts src/dropdown-menu.ts src/dialog.ts src/toast.ts src/split-pane.ts src/tree-view.ts src/data-grid.ts --format esm --dts --clean --tsconfig tsconfig.build.json",
     "check": "tsc --noEmit",
     "prepublishOnly": "pnpm check && pnpm build"
   },

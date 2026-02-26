@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
-
 import { Header } from "@/components/layout/header";
 import { SurfaceSidebar } from "@/components/layout/surface-sidebar";
 import { AccessDeniedCard } from "@/components/shared/access-denied-card";
-import { apiFetch, type UserIdentityResponse } from "@/lib/api";
+import { type UserIdentityResponse } from "@/lib/api";
+import { useSidebarState } from "@/lib/hooks/use-sidebar-state";
 import {
   type SurfaceId,
   SURFACES,
@@ -18,6 +17,7 @@ type SurfaceLayoutProps = {
   children: React.ReactNode;
   surfaceId: SurfaceId;
   user: UserIdentityResponse;
+  commandBar?: React.ReactNode;
 };
 
 /**
@@ -30,30 +30,11 @@ export function SurfaceLayout({
   children,
   surfaceId,
   user,
+  commandBar,
 }: SurfaceLayoutProps) {
   const accessibleSurfaces = readAccessibleSurfaces(user);
   const definition = SURFACES[surfaceId];
-
-  // Always start expanded for SSR consistency, then sync with localStorage
-  const [collapsed, setCollapsed] = useState(false);
-  const [mounted, setMounted] = useState(false);
-
-  // Sync with localStorage after mount (client-side only)
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Required for hydration handling
-    setMounted(true);
-    const saved = localStorage.getItem("sidebar-collapsed");
-    if (saved === "true") {
-      setCollapsed(true);
-    }
-  }, []);
-
-  // Save collapsed state to localStorage when it changes
-  useEffect(() => {
-    if (mounted) {
-      localStorage.setItem("sidebar-collapsed", String(collapsed));
-    }
-  }, [collapsed, mounted]);
+  const { collapsed, toggleCollapsed } = useSidebarState();
 
   if (!hasSurfaceAccess(accessibleSurfaces, surfaceId)) {
     return (
@@ -79,10 +60,11 @@ export function SurfaceLayout({
         surface={surfaceId}
         accessibleSurfaces={accessibleSurfaces}
         collapsed={collapsed}
-        onToggle={() => setCollapsed(!collapsed)}
+        onToggle={toggleCollapsed}
       />
       <div className="flex min-h-screen min-w-0 flex-col">
         <Header user={user} surfaceId={surfaceId} />
+        {commandBar ? <div className="shrink-0">{commandBar}</div> : null}
         <main className="flex-1 px-4 py-5 md:px-8 md:py-8">{children}</main>
       </div>
     </div>

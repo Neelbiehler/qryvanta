@@ -39,7 +39,11 @@ type WorkbenchOverviewProps = {
   recordCount: number;
 };
 
-export function WorkbenchOverview({
+export function WorkbenchOverview(props: WorkbenchOverviewProps) {
+  return renderWorkbenchOverview(props);
+}
+
+function renderWorkbenchOverview({
   activeSection,
   fieldCount,
   hasPublishedSchema,
@@ -121,7 +125,11 @@ type SchemaDesignSectionProps = {
   setSecondaryRelationTargetEntity: (value: string) => void;
 };
 
-export function SchemaDesignSection({
+export function SchemaDesignSection(props: SchemaDesignSectionProps) {
+  return renderSchemaDesignSection(props);
+}
+
+function renderSchemaDesignSection({
   calculationExpressionText,
   defaultValueText,
   displayName,
@@ -476,7 +484,11 @@ type RuntimeOperationsSectionProps = {
   setSelectedPresetName: (value: string) => void;
 };
 
-export function RuntimeOperationsSection({
+export function RuntimeOperationsSection(props: RuntimeOperationsSectionProps) {
+  return renderRuntimeOperationsSection(props);
+}
+
+function renderRuntimeOperationsSection({
   activeRuntimeSection,
   deletingRecordId,
   displayedRecords,

@@ -173,7 +173,11 @@ function compareValues(left: unknown, right: unknown, direction: SortDirection):
   return direction === "asc" ? result : result * -1;
 }
 
-export function ViewDesignerPanel({
+export function ViewDesignerPanel(props: ViewDesignerPanelProps) {
+  return useViewDesignerPanelContent(props);
+}
+
+function useViewDesignerPanelContent({
   entityLogicalName,
   initialView,
   initialViews,
@@ -510,7 +514,7 @@ export function ViewDesignerPanel({
               {columns.length > 0 ? (
                 columns.map((column, index) => (
                   <div
-                    key={`${column.field_logical_name}-${index}`}
+                    key={column.field_logical_name}
                     className="grid gap-2 rounded-md border border-zinc-200 p-3 md:grid-cols-[1fr_120px_1fr_auto]"
                   >
                     <Input
@@ -679,7 +683,10 @@ export function ViewDesignerPanel({
               </div>
 
               {(filterGroup?.conditions ?? []).map((condition, index) => (
-                <div key={`${condition.field_logical_name}-${index}`} className="grid gap-2 md:grid-cols-[1fr_120px_1fr_auto]">
+                <div
+                  key={`${condition.field_logical_name}-${condition.operator}-${condition.value}`}
+                  className="grid gap-2 md:grid-cols-[1fr_120px_1fr_auto]"
+                >
                   <Select
                     value={condition.field_logical_name}
                     onChange={(event) =>

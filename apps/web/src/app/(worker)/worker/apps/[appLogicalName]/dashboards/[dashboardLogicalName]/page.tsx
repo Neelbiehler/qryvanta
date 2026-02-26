@@ -61,7 +61,7 @@ export default async function WorkerDashboardPage({
           <CardHeader>
             <CardTitle className="font-serif text-3xl">Dashboard Not Found</CardTitle>
             <CardDescription>
-              Dashboard "{dashboardLogicalName}" is not present in this app sitemap.
+              {`Dashboard "${dashboardLogicalName}" is not present in this app sitemap.`}
             </CardDescription>
           </CardHeader>
           <CardContent>

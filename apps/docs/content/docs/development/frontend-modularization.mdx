@@ -24,7 +24,10 @@ For large feature areas, split into:
 ## Current Examples
 
 - `apps/web/src/components/automation/workflow-studio/model.ts` holds canvas graph utilities, step/template factories, and reusable workflow types.
+- `apps/web/src/components/automation/workflow-studio/panels/run-history-panel.tsx` and `apps/web/src/components/automation/workflow-studio/panels/trigger-config-panel.tsx` extract focused workflow studio side-panel responsibilities from the main editor shell.
 - `apps/web/src/components/apps/workspace-entity/helpers.ts` holds payload/value helpers reused by the Worker entity panel.
+- `apps/web/src/components/apps/workspace-entity/workspace-toolbar.tsx`, `apps/web/src/components/apps/workspace-entity/create-form.tsx`, and `apps/web/src/components/apps/workspace-entity/metadata-grid.tsx` split toolbar, form composition, and grid rendering into dedicated worker modules.
+- `apps/web/src/components/shared/field-control.tsx` centralizes metadata-aware field rendering reused by both Worker create/edit record surfaces.
 - `apps/landing/src/components/landing/*` splits the landing page into composable sections.
 - `apps/landing/src/components/*-data.ts` and `apps/landing/src/components/*-utils.ts` split animation data and helper logic away from rendering.
 
@@ -37,6 +40,17 @@ Move components to `@qryvanta/ui` when they are:
 - Stable enough to maintain as a package API.
 
 Example: `Notice` in `packages/ui/src/components/notice.tsx` centralizes inline success/error/warning messaging styles.
+
+## Layout Foundation
+
+For multi-panel maker/worker/admin surfaces, use the shared layout primitives instead of one-off panel shells:
+
+- `SplitPane` for resizeable multi-panel workspaces.
+- `PropertyPanel` for right-side configuration editors.
+- `CommandBar` for dense action rows below page headers.
+- `DataGrid` + `SearchFilterBar` for list surfaces.
+
+Use the surface tokens in `apps/web/src/app/globals.css` (`--surface-*`, `--panel-*`, `--grid-*`, `--split-handle-*`, `--command-bar-*`) to keep visual consistency while allowing surface-specific polish.
 
 ## Quality Gate
 
