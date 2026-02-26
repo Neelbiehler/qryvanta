@@ -1,6 +1,6 @@
 {
   "name": "@qryvanta/ui",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Shared React UI primitives for Qryvanta, based on shadcn/ui patterns.",
   "private": false,
   "type": "module",
