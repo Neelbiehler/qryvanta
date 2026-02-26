@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use sqlx::PgPool;
 
 use qryvanta_application::{AuthTokenRecord, AuthTokenRepository};
-use qryvanta_core::{AppError, AppResult};
+use qryvanta_core::AppResult;
 use qryvanta_domain::{AuthTokenType, UserId};
 
 /// PostgreSQL implementation of the auth token repository port.
@@ -18,111 +18,6 @@ impl PostgresAuthTokenRepository {
     #[must_use]
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
-    }
-}
-
-#[async_trait]
-impl AuthTokenRepository for PostgresAuthTokenRepository {
-    async fn create_token(
-        &self,
-        user_id: Option<UserId>,
-        email: &str,
-        token_hash: &str,
-        token_type: AuthTokenType,
-        expires_at: chrono::DateTime<chrono::Utc>,
-        metadata: Option<&serde_json::Value>,
-    ) -> AppResult<uuid::Uuid> {
-        let id = sqlx::query_scalar::<_, uuid::Uuid>(
-            r#"
-            INSERT INTO auth_tokens (user_id, email, token_hash, token_type, expires_at, metadata)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            RETURNING id
-            "#,
-        )
-        .bind(user_id.map(|uid| uid.as_uuid()))
-        .bind(email)
-        .bind(token_hash)
-        .bind(token_type.as_str())
-        .bind(expires_at)
-        .bind(metadata)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|error| AppError::Internal(format!("failed to create auth token: {error}")))?;
-
-        Ok(id)
-    }
-
-    async fn consume_valid_token(
-        &self,
-        token_hash: &str,
-        token_type: AuthTokenType,
-    ) -> AppResult<Option<AuthTokenRecord>> {
-        let row = sqlx::query_as::<_, TokenRow>(
-            r#"
-            UPDATE auth_tokens
-            SET used_at = now()
-            WHERE token_hash = $1
-              AND token_type = $2
-              AND used_at IS NULL
-              AND expires_at > now()
-            RETURNING id, user_id, email, token_hash, token_type, expires_at, used_at, metadata
-            "#,
-        )
-        .bind(token_hash)
-        .bind(token_type.as_str())
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|error| AppError::Internal(format!("failed to consume auth token: {error}")))?;
-
-        Ok(row.map(AuthTokenRecord::from))
-    }
-
-    async fn invalidate_tokens_for_user(
-        &self,
-        user_id: UserId,
-        token_type: AuthTokenType,
-    ) -> AppResult<()> {
-        sqlx::query(
-            r#"
-            UPDATE auth_tokens
-            SET used_at = now()
-            WHERE user_id = $1
-              AND token_type = $2
-              AND used_at IS NULL
-            "#,
-        )
-        .bind(user_id.as_uuid())
-        .bind(token_type.as_str())
-        .execute(&self.pool)
-        .await
-        .map_err(|error| AppError::Internal(format!("failed to invalidate tokens: {error}")))?;
-
-        Ok(())
-    }
-
-    async fn count_recent_tokens(
-        &self,
-        email: &str,
-        token_type: AuthTokenType,
-        since: chrono::DateTime<chrono::Utc>,
-    ) -> AppResult<i64> {
-        let count = sqlx::query_scalar::<_, i64>(
-            r#"
-            SELECT COUNT(*)
-            FROM auth_tokens
-            WHERE LOWER(email) = LOWER($1)
-              AND token_type = $2
-              AND created_at >= $3
-            "#,
-        )
-        .bind(email)
-        .bind(token_type.as_str())
-        .bind(since)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|error| AppError::Internal(format!("failed to count recent tokens: {error}")))?;
-
-        Ok(count)
     }
 }
 
@@ -150,5 +45,53 @@ impl From<TokenRow> for AuthTokenRecord {
             used_at: row.used_at,
             metadata: row.metadata,
         }
+    }
+}
+
+mod consume;
+mod invalidate;
+mod issue;
+mod rate_limit;
+
+#[async_trait]
+impl AuthTokenRepository for PostgresAuthTokenRepository {
+    async fn create_token(
+        &self,
+        user_id: Option<UserId>,
+        email: &str,
+        token_hash: &str,
+        token_type: AuthTokenType,
+        expires_at: chrono::DateTime<chrono::Utc>,
+        metadata: Option<&serde_json::Value>,
+    ) -> AppResult<uuid::Uuid> {
+        self.create_token_impl(user_id, email, token_hash, token_type, expires_at, metadata)
+            .await
+    }
+
+    async fn consume_valid_token(
+        &self,
+        token_hash: &str,
+        token_type: AuthTokenType,
+    ) -> AppResult<Option<AuthTokenRecord>> {
+        self.consume_valid_token_impl(token_hash, token_type).await
+    }
+
+    async fn invalidate_tokens_for_user(
+        &self,
+        user_id: UserId,
+        token_type: AuthTokenType,
+    ) -> AppResult<()> {
+        self.invalidate_tokens_for_user_impl(user_id, token_type)
+            .await
+    }
+
+    async fn count_recent_tokens(
+        &self,
+        email: &str,
+        token_type: AuthTokenType,
+        since: chrono::DateTime<chrono::Utc>,
+    ) -> AppResult<i64> {
+        self.count_recent_tokens_impl(email, token_type, since)
+            .await
     }
 }

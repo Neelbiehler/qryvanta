@@ -16,6 +16,7 @@ import { EntityWorkbenchPanel } from "@/components/entities/entity-workbench-pan
 import { AccessDeniedCard } from "@/components/shared/access-denied-card";
 import {
   apiServerFetch,
+  type EntityResponse,
   type FieldResponse,
   type PublishedSchemaResponse,
   type RuntimeRecordResponse,
@@ -58,6 +59,27 @@ export default async function MakerEntityWorkbenchPage({
   }
 
   const fields = (await fieldsResponse.json()) as FieldResponse[];
+
+  const entitiesResponse = await apiServerFetch("/api/entities", cookieHeader);
+  if (entitiesResponse.status === 401) {
+    redirect("/login");
+  }
+
+  if (entitiesResponse.status === 403) {
+    return (
+      <AccessDeniedCard
+        section="Maker Center"
+        title="Entity Workbench"
+        message="Your account does not have metadata read permissions."
+      />
+    );
+  }
+
+  if (!entitiesResponse.ok) {
+    throw new Error("Failed to load entities catalog");
+  }
+
+  const entities = (await entitiesResponse.json()) as EntityResponse[];
 
   const publishedResponse = await apiServerFetch(
     `/api/entities/${entityLogicalName}/published`,
@@ -147,6 +169,12 @@ export default async function MakerEntityWorkbenchPage({
               Views
             </Link>
             <Link
+              href={`/maker/entities/${encodeURIComponent(entityLogicalName)}/business-rules`}
+              className={cn(buttonVariants({ variant: "outline" }))}
+            >
+              Business Rules
+            </Link>
+            <Link
               href="/maker/entities"
               className={cn(buttonVariants({ variant: "outline" }))}
             >
@@ -176,6 +204,7 @@ export default async function MakerEntityWorkbenchPage({
           <CardContent className="pt-6">
             <EntityWorkbenchPanel
               entityLogicalName={entityLogicalName}
+              initialEntities={entities}
               initialFields={fields}
               initialPublishedSchema={publishedSchema}
               initialRecords={records}

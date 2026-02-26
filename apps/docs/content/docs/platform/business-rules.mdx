@@ -1,0 +1,51 @@
+---
+title: Business Rules
+description: Phase 3 baseline for metadata-defined condition-action business rules.
+---
+
+Phase status: in progress.
+
+Qryvanta now supports metadata-defined business rules per entity, with optional form-level scoping.
+
+## Implemented Baseline
+
+- Create, update, list, and delete business rule definitions under entity metadata routes.
+- Rule model includes:
+  - `scope` (`entity` or `form`)
+  - `conditions[]` with field/operator/value tuples
+  - `actions[]` with typed action metadata
+  - `is_active` toggle for runtime retrieval filtering
+- Form-scoped rules validate that target forms exist.
+- Rule field references validate against the latest published schema.
+- Runtime route exposes active rules for worker clients:
+  - `GET /api/runtime/:entity_logical_name/business-rules`
+
+## Current Endpoints
+
+- `GET /api/entities/:entity_logical_name/business-rules`
+- `POST /api/entities/:entity_logical_name/business-rules`
+- `GET /api/entities/:entity_logical_name/business-rules/:business_rule_logical_name`
+- `PUT /api/entities/:entity_logical_name/business-rules/:business_rule_logical_name`
+- `DELETE /api/entities/:entity_logical_name/business-rules/:business_rule_logical_name`
+- `GET /api/runtime/:entity_logical_name/business-rules`
+
+## Maker Routes
+
+- `/maker/entities/:entity_logical_name/business-rules`
+- `/maker/entities/:entity_logical_name/business-rules/new`
+- `/maker/entities/:entity_logical_name/business-rules/:business_rule_logical_name`
+
+Maker rule authoring now uses a visual condition/action builder with field/operator/action selectors (instead of raw JSON text areas).
+The builder also includes field-type-aware validation templates that generate condition plus `show_error` rules (for example minimum/maximum value and text contains checks).
+
+## Notes
+
+- Worker form clients now execute active rules at runtime for create and record edit flows.
+- Supported runtime actions in the web client: show/hide field, set required/optional, lock/unlock field, set default value, set field value, and show error messages.
+- `show_error` messages now block record save/update in worker forms until conditions no longer match.
+- Active entity-scoped `show_error` rules now also enforce on runtime create/update in the API layer.
+- Active entity-scoped non-validation actions now execute in the API layer on runtime create/update:
+  - `set_default_value` and `set_field_value` patch normalized runtime payloads before persistence.
+  - `set_required` and `set_optional` override required-field checks for matching requests.
+  - `hide_field` suppresses required-field enforcement for hidden targets.
+  - On update, locked targets (`lock_field`) are preserved from the existing record and direct changes are rejected unless the same rule set applies a value patch.

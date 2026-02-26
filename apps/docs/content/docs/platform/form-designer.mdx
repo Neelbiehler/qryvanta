@@ -1,0 +1,51 @@
+---
+title: Form Designer
+description: Phase 2 visual form builder for tabs, sections, and field layout.
+---
+
+Phase status: in progress (Phase 2).
+
+## Outcome
+
+Makers can build and edit runtime forms visually without hand-editing metadata JSON.
+
+## Scope
+
+- Drag-and-drop field palette for published entity fields.
+- Tab and section management with section column layout (1, 2, or 3 columns).
+- Form header configuration for key record fields.
+- Section-level sub-grid controls for related records.
+- Multiple form definitions per entity (for example `main`, `quick_create`, `quick_view`).
+- Save and preview loop against metadata form endpoints.
+
+## Implemented Baseline
+
+- Maker form designer supports section-level sub-grid configuration with target entity and relation field mapping.
+- Worker record detail pages render configured sub-grids as related-record tables.
+- Designer header surfaces draft state (`Draft changes` vs `Draft saved`) alongside published-schema readiness.
+- Form canvas now supports line-based drag/drop insertion inside section columns, including moving already-placed fields across columns with visual insertion rails.
+- Form canvas now supports editor-grade keyboard and history controls: `Alt + Arrow` reordering for selected tabs/sections/fields and `Ctrl/Cmd + Z` / `Ctrl/Cmd + Y` undo/redo.
+- Shortcut discovery is built into the editor via the `Shortcuts` button and `?` hotkey overlay.
+- Form save validation now enforces layout position integrity (non-negative, non-duplicate, contiguous ordering) for tabs, sections, field placements, and section sub-grids to protect drag/drop and undo/redo transitions.
+- Form metadata is normalized on save so tabs/sections/placements/sub-grids are persisted in canonical position order.
+- Repeated save transitions (reorder -> undo -> redo style payloads) are covered in application tests to ensure final persisted layout remains deterministic.
+
+## Runtime Contract
+
+- Designer persists layout through form metadata endpoints.
+- Worker runtime consumes form definitions from workspace endpoints:
+  - `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/forms`
+  - `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/forms/:form_logical_name`
+
+## UX Requirements
+
+- Canvas and preview must use the same layout model as runtime rendering.
+- Property panel must stay context-sensitive (form, tab, section, field placement).
+- Save actions must return field-scoped and placement-scoped validation errors.
+
+## Definition of Done
+
+- Maker can create and update forms visually for an entity.
+- Worker record pages render tabs/sections/columns from published form metadata.
+- Regression coverage validates placement ordering and column layout rules.
+- Documentation is updated for route behavior, payload shape, and user flow.

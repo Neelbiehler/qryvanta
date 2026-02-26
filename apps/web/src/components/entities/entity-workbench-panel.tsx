@@ -9,6 +9,7 @@ import {
 } from "@/components/entities/entity-workbench/sections";
 import { useEntityWorkbenchPanel } from "@/components/entities/entity-workbench/use-entity-workbench-panel";
 import type {
+  EntityResponse,
   FieldResponse,
   PublishedSchemaResponse,
   RuntimeRecordResponse,
@@ -16,6 +17,7 @@ import type {
 
 type EntityWorkbenchPanelProps = {
   entityLogicalName: string;
+  initialEntities: EntityResponse[];
   initialFields: FieldResponse[];
   initialPublishedSchema: PublishedSchemaResponse | null;
   initialRecords: RuntimeRecordResponse[];
@@ -23,12 +25,14 @@ type EntityWorkbenchPanelProps = {
 
 export function EntityWorkbenchPanel({
   entityLogicalName,
+  initialEntities,
   initialFields,
   initialPublishedSchema,
   initialRecords,
 }: EntityWorkbenchPanelProps) {
   const panel = useEntityWorkbenchPanel({
     entityLogicalName,
+    initialEntities,
     initialFields,
     initialPublishedSchema,
     initialRecords,
@@ -47,26 +51,40 @@ export function EntityWorkbenchPanel({
 
       {panel.activeSection === "schema" ? (
         <SchemaDesignSection
+          calculationExpressionText={panel.calculationExpressionText}
           defaultValueText={panel.defaultValueText}
           displayName={panel.displayName}
+          entities={panel.initialEntities}
           fieldType={panel.fieldType}
           handlePublish={panel.handlePublish}
+          handlePublishChecks={panel.handlePublishChecks}
           handleSaveField={panel.handleSaveField}
           initialFields={panel.initialFields}
           initialPublishedSchema={panel.initialPublishedSchema}
+          isCheckingPublish={panel.isCheckingPublish}
           isPublishing={panel.isPublishing}
           isRequired={panel.isRequired}
           isSavingField={panel.isSavingField}
           isUnique={panel.isUnique}
           logicalName={panel.logicalName}
+          relationAuthoringMode={panel.relationAuthoringMode}
+          publishCheckErrors={panel.publishCheckErrors}
           relationTargetEntity={panel.relationTargetEntity}
+          secondaryDisplayName={panel.secondaryDisplayName}
+          secondaryLogicalName={panel.secondaryLogicalName}
+          secondaryRelationTargetEntity={panel.secondaryRelationTargetEntity}
+          setRelationAuthoringMode={panel.setRelationAuthoringMode}
           setDefaultValueText={panel.setDefaultValueText}
+          setCalculationExpressionText={panel.setCalculationExpressionText}
           setDisplayName={panel.setDisplayName}
           setFieldType={panel.setFieldType}
           setIsRequired={panel.setIsRequired}
           setIsUnique={panel.setIsUnique}
           setLogicalName={panel.setLogicalName}
           setRelationTargetEntity={panel.setRelationTargetEntity}
+          setSecondaryDisplayName={panel.setSecondaryDisplayName}
+          setSecondaryLogicalName={panel.setSecondaryLogicalName}
+          setSecondaryRelationTargetEntity={panel.setSecondaryRelationTargetEntity}
         />
       ) : null}
 

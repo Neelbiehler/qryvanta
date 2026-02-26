@@ -4,8 +4,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use qryvanta_core::{AppError, AppResult, TenantId, UserIdentity};
 use qryvanta_domain::{
-    AuditAction, EntityDefinition, EntityFieldDefinition, FieldType, FormDefinition,
-    OptionSetDefinition, Permission, PublishedEntitySchema, RuntimeRecord, ViewDefinition,
+    AuditAction, BusinessRuleAction, BusinessRuleActionType, BusinessRuleCondition,
+    BusinessRuleDefinition, BusinessRuleOperator, BusinessRuleScope, EntityDefinition,
+    EntityFieldDefinition, FieldType, FormDefinition, FormFieldPlacement, FormSection, FormTab,
+    FormType, OptionSetDefinition, Permission, PublishedEntitySchema, RuntimeRecord, ViewColumn,
+    ViewDefinition, ViewType,
 };
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
@@ -14,8 +17,9 @@ use uuid::Uuid;
 use crate::{
     AuditEvent, AuditRepository, AuthorizationRepository, AuthorizationService, MetadataRepository,
     RecordListQuery, RuntimeFieldGrant, RuntimeRecordFilter, RuntimeRecordLogicalMode,
-    RuntimeRecordOperator, RuntimeRecordQuery, RuntimeRecordSortDirection, SaveFieldInput,
-    TemporaryPermissionGrant, UniqueFieldValue, UpdateFieldInput,
+    RuntimeRecordOperator, RuntimeRecordQuery, RuntimeRecordSortDirection, SaveBusinessRuleInput,
+    SaveFieldInput, SaveFormInput, SaveViewInput, TemporaryPermissionGrant, UniqueFieldValue,
+    UpdateFieldInput,
 };
 
 use super::MetadataService;
@@ -26,7 +30,10 @@ struct FakeRepository {
     option_sets: Mutex<HashMap<(TenantId, String, String), OptionSetDefinition>>,
     forms: Mutex<HashMap<(TenantId, String, String), FormDefinition>>,
     views: Mutex<HashMap<(TenantId, String, String), ViewDefinition>>,
+    business_rules: Mutex<HashMap<(TenantId, String, String), BusinessRuleDefinition>>,
     published_schemas: Mutex<HashMap<(TenantId, String), Vec<PublishedEntitySchema>>>,
+    published_form_snapshots: Mutex<HashMap<(TenantId, String, i32), Vec<FormDefinition>>>,
+    published_view_snapshots: Mutex<HashMap<(TenantId, String, i32), Vec<ViewDefinition>>>,
     runtime_records: Mutex<HashMap<(TenantId, String, String), RuntimeRecord>>,
     record_owners: Mutex<HashMap<(TenantId, String, String), String>>,
     unique_values: Mutex<HashMap<(TenantId, String, String, String), String>>,
@@ -40,7 +47,10 @@ impl FakeRepository {
             option_sets: Mutex::new(HashMap::new()),
             forms: Mutex::new(HashMap::new()),
             views: Mutex::new(HashMap::new()),
+            business_rules: Mutex::new(HashMap::new()),
             published_schemas: Mutex::new(HashMap::new()),
+            published_form_snapshots: Mutex::new(HashMap::new()),
+            published_view_snapshots: Mutex::new(HashMap::new()),
             runtime_records: Mutex::new(HashMap::new()),
             record_owners: Mutex::new(HashMap::new()),
             unique_values: Mutex::new(HashMap::new()),
@@ -92,6 +102,19 @@ impl MetadataRepository for FakeRepository {
             .await
             .get(&(tenant_id, logical_name.to_owned()))
             .cloned())
+    }
+
+    async fn update_entity(&self, tenant_id: TenantId, entity: EntityDefinition) -> AppResult<()> {
+        let key = (tenant_id, entity.logical_name().as_str().to_owned());
+        let mut entities = self.entities.lock().await;
+        if !entities.contains_key(&key) {
+            return Err(AppError::NotFound(format!(
+                "entity '{}' does not exist for tenant '{}'",
+                key.1, key.0
+            )));
+        }
+        entities.insert(key, entity);
+        Ok(())
     }
 
     async fn save_field(&self, tenant_id: TenantId, field: EntityFieldDefinition) -> AppResult<()> {
@@ -402,6 +425,69 @@ impl MetadataRepository for FakeRepository {
         Ok(())
     }
 
+    async fn save_business_rule(
+        &self,
+        tenant_id: TenantId,
+        business_rule: BusinessRuleDefinition,
+    ) -> AppResult<()> {
+        self.business_rules.lock().await.insert(
+            (
+                tenant_id,
+                business_rule.entity_logical_name().as_str().to_owned(),
+                business_rule.logical_name().as_str().to_owned(),
+            ),
+            business_rule,
+        );
+        Ok(())
+    }
+
+    async fn list_business_rules(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+    ) -> AppResult<Vec<BusinessRuleDefinition>> {
+        let rules = self.business_rules.lock().await;
+        Ok(rules
+            .iter()
+            .filter_map(|((stored_tenant_id, stored_entity, _), rule)| {
+                (stored_tenant_id == &tenant_id && stored_entity == entity_logical_name)
+                    .then_some(rule.clone())
+            })
+            .collect())
+    }
+
+    async fn find_business_rule(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        business_rule_logical_name: &str,
+    ) -> AppResult<Option<BusinessRuleDefinition>> {
+        Ok(self
+            .business_rules
+            .lock()
+            .await
+            .get(&(
+                tenant_id,
+                entity_logical_name.to_owned(),
+                business_rule_logical_name.to_owned(),
+            ))
+            .cloned())
+    }
+
+    async fn delete_business_rule(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        business_rule_logical_name: &str,
+    ) -> AppResult<()> {
+        self.business_rules.lock().await.remove(&(
+            tenant_id,
+            entity_logical_name.to_owned(),
+            business_rule_logical_name.to_owned(),
+        ));
+        Ok(())
+    }
+
     async fn publish_entity_schema(
         &self,
         tenant_id: TenantId,
@@ -433,6 +519,90 @@ impl MetadataRepository for FakeRepository {
             .await
             .get(&(tenant_id, entity_logical_name.to_owned()))
             .and_then(|versions| versions.last().cloned()))
+    }
+
+    async fn save_published_form_snapshots(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        published_schema_version: i32,
+        forms: &[FormDefinition],
+    ) -> AppResult<()> {
+        self.published_form_snapshots.lock().await.insert(
+            (
+                tenant_id,
+                entity_logical_name.to_owned(),
+                published_schema_version,
+            ),
+            forms.to_vec(),
+        );
+        Ok(())
+    }
+
+    async fn save_published_view_snapshots(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        published_schema_version: i32,
+        views: &[ViewDefinition],
+    ) -> AppResult<()> {
+        self.published_view_snapshots.lock().await.insert(
+            (
+                tenant_id,
+                entity_logical_name.to_owned(),
+                published_schema_version,
+            ),
+            views.to_vec(),
+        );
+        Ok(())
+    }
+
+    async fn list_latest_published_form_snapshots(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+    ) -> AppResult<Vec<FormDefinition>> {
+        let snapshots = self.published_form_snapshots.lock().await;
+        let latest_version = snapshots
+            .keys()
+            .filter_map(|(stored_tenant, stored_entity, version)| {
+                (stored_tenant == &tenant_id && stored_entity == entity_logical_name)
+                    .then_some(*version)
+            })
+            .max();
+
+        let Some(version) = latest_version else {
+            return Ok(Vec::new());
+        };
+
+        Ok(snapshots
+            .get(&(tenant_id, entity_logical_name.to_owned(), version))
+            .cloned()
+            .unwrap_or_default())
+    }
+
+    async fn list_latest_published_view_snapshots(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+    ) -> AppResult<Vec<ViewDefinition>> {
+        let snapshots = self.published_view_snapshots.lock().await;
+        let latest_version = snapshots
+            .keys()
+            .filter_map(|(stored_tenant, stored_entity, version)| {
+                (stored_tenant == &tenant_id && stored_entity == entity_logical_name)
+                    .then_some(*version)
+            })
+            .max();
+
+        let Some(version) = latest_version else {
+            return Ok(Vec::new());
+        };
+
+        Ok(snapshots
+            .get(&(tenant_id, entity_logical_name.to_owned(), version))
+            .cloned()
+            .unwrap_or_default())
     }
 
     async fn create_runtime_record(
@@ -965,6 +1135,41 @@ fn build_service_with_runtime_field_grants(
     (service, audit_repository)
 }
 
+async fn register_publish_entity_with_text_fields(
+    service: &MetadataService,
+    actor: &UserIdentity,
+    entity_logical_name: &str,
+    entity_display_name: &str,
+    fields: &[&str],
+) -> AppResult<()> {
+    service
+        .register_entity(actor, entity_logical_name, entity_display_name)
+        .await?;
+
+    for (index, field_logical_name) in fields.iter().enumerate() {
+        service
+            .save_field(
+                actor,
+                SaveFieldInput {
+                    entity_logical_name: entity_logical_name.to_owned(),
+                    logical_name: (*field_logical_name).to_owned(),
+                    display_name: (*field_logical_name).to_owned(),
+                    field_type: FieldType::Text,
+                    is_required: index == 0,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await?;
+    }
+
+    service.publish_entity(actor, entity_logical_name).await?;
+    Ok(())
+}
+
 #[tokio::test]
 async fn register_entity_persists_data_and_writes_audit_event() {
     let tenant_id = TenantId::new();
@@ -1030,6 +1235,274 @@ async fn publish_entity_requires_fields() {
 }
 
 #[tokio::test]
+async fn publish_checks_report_missing_fields() {
+    let tenant_id = TenantId::new();
+    let subject = "carol";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+            Permission::MetadataFieldRead,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    let created = service.register_entity(&actor, "contact", "Contact").await;
+    assert!(created.is_ok());
+
+    let result = service.publish_checks(&actor, "contact").await;
+    assert!(result.is_ok());
+    let errors = result.unwrap_or_default();
+    assert_eq!(errors.len(), 1);
+    assert!(errors[0].contains("requires at least one field"));
+}
+
+#[tokio::test]
+async fn publish_checks_pass_for_valid_draft() {
+    let tenant_id = TenantId::new();
+    let subject = "olivia";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+            Permission::MetadataFieldRead,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    assert!(
+        service
+            .register_entity(&actor, "contact", "Contact")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "name".to_owned(),
+                    display_name: "Name".to_owned(),
+                    field_type: FieldType::Text,
+                    is_required: true,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+
+    let result = service.publish_checks(&actor, "contact").await;
+    assert!(result.is_ok());
+    assert!(result.unwrap_or_default().is_empty());
+}
+
+#[tokio::test]
+async fn publish_checks_report_relation_target_dependencies() {
+    let tenant_id = TenantId::new();
+    let subject = "nora";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+            Permission::MetadataFieldRead,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    assert!(
+        service
+            .register_entity(&actor, "contact", "Contact")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .register_entity(&actor, "account", "Account")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "account".to_owned(),
+                    logical_name: "name".to_owned(),
+                    display_name: "Name".to_owned(),
+                    field_type: FieldType::Text,
+                    is_required: true,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "account_id".to_owned(),
+                    display_name: "Account".to_owned(),
+                    field_type: FieldType::Relation,
+                    is_required: false,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: Some("account".to_owned()),
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+
+    let result = service.publish_checks(&actor, "contact").await;
+    assert!(result.is_ok());
+    let errors = result.unwrap_or_default();
+    assert!(errors.iter().any(|error| {
+        error.contains("requires a published schema or inclusion in this publish selection")
+    }));
+}
+
+#[tokio::test]
+async fn publish_checks_allow_selected_unpublished_relation_dependencies() {
+    let tenant_id = TenantId::new();
+    let subject = "nora";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+            Permission::MetadataFieldRead,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    assert!(
+        service
+            .register_entity(&actor, "contact", "Contact")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .register_entity(&actor, "account", "Account")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "account_id".to_owned(),
+                    display_name: "Account".to_owned(),
+                    field_type: FieldType::Relation,
+                    is_required: false,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: Some("account".to_owned()),
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+
+    let result = service
+        .publish_checks_with_allowed_unpublished_entities(
+            &actor,
+            "contact",
+            &["account".to_owned()],
+        )
+        .await;
+
+    assert!(result.is_ok());
+    assert!(result.unwrap_or_default().is_empty());
+}
+
+#[tokio::test]
+async fn publish_entity_allow_selected_unpublished_relation_dependencies() {
+    let tenant_id = TenantId::new();
+    let subject = "nora";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+            Permission::MetadataFieldRead,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    assert!(
+        service
+            .register_entity(&actor, "contact", "Contact")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .register_entity(&actor, "account", "Account")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "account_id".to_owned(),
+                    display_name: "Account".to_owned(),
+                    field_type: FieldType::Relation,
+                    is_required: false,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: Some("account".to_owned()),
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+
+    let published = service
+        .publish_entity_with_allowed_unpublished_entities(
+            &actor,
+            "contact",
+            &["account".to_owned()],
+        )
+        .await;
+
+    assert!(published.is_ok());
+    assert_eq!(published.unwrap_or_else(|_| unreachable!()).version(), 1);
+}
+
+#[tokio::test]
 async fn create_runtime_record_applies_defaults_and_writes_audit_event() {
     let tenant_id = TenantId::new();
     let subject = "dan";
@@ -1059,6 +1532,7 @@ async fn create_runtime_record_applies_defaults_and_writes_audit_event() {
                 is_required: true,
                 is_unique: true,
                 default_value: None,
+                calculation_expression: None,
                 relation_target_entity: None,
                 option_set_logical_name: None,
             },
@@ -1077,6 +1551,7 @@ async fn create_runtime_record_applies_defaults_and_writes_audit_event() {
                 is_required: false,
                 is_unique: false,
                 default_value: Some(json!(true)),
+                calculation_expression: None,
                 relation_target_entity: None,
                 option_set_logical_name: None,
             },
@@ -1155,6 +1630,7 @@ async fn query_runtime_records_filters_and_paginates() {
                     is_required: true,
                     is_unique: false,
                     default_value: None,
+                    calculation_expression: None,
                     relation_target_entity: None,
                     option_set_logical_name: None,
                 },
@@ -1174,6 +1650,7 @@ async fn query_runtime_records_filters_and_paginates() {
                     is_required: true,
                     is_unique: false,
                     default_value: None,
+                    calculation_expression: None,
                     relation_target_entity: None,
                     option_set_logical_name: None,
                 },
@@ -1238,6 +1715,834 @@ async fn query_runtime_records_filters_and_paginates() {
 }
 
 #[tokio::test]
+async fn create_runtime_record_computes_calculated_number_field() {
+    let tenant_id = TenantId::new();
+    let subject = "calc";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+            Permission::RuntimeRecordWrite,
+            Permission::RuntimeRecordRead,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    assert!(
+        service
+            .register_entity(&actor, "line", "Line")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "line".to_owned(),
+                    logical_name: "quantity".to_owned(),
+                    display_name: "Quantity".to_owned(),
+                    field_type: FieldType::Number,
+                    is_required: true,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "line".to_owned(),
+                    logical_name: "unit_price".to_owned(),
+                    display_name: "Unit Price".to_owned(),
+                    field_type: FieldType::Number,
+                    is_required: true,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "line".to_owned(),
+                    logical_name: "total".to_owned(),
+                    display_name: "Total".to_owned(),
+                    field_type: FieldType::Number,
+                    is_required: false,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: Some("add(quantity, unit_price)".to_owned()),
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(service.publish_entity(&actor, "line").await.is_ok());
+
+    let created = service
+        .create_runtime_record(&actor, "line", json!({"quantity": 2, "unit_price": 5}))
+        .await;
+    assert!(created.is_ok());
+    let created = created.unwrap_or_else(|_| unreachable!());
+
+    assert_eq!(
+        created
+            .data()
+            .as_object()
+            .and_then(|value| value.get("total")),
+        Some(&json!(7.0))
+    );
+}
+
+#[tokio::test]
+async fn create_runtime_record_rejects_direct_value_for_calculated_field() {
+    let tenant_id = TenantId::new();
+    let subject = "calc_guard";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+            Permission::RuntimeRecordWrite,
+            Permission::RuntimeRecordRead,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    assert!(
+        service
+            .register_entity(&actor, "person", "Person")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "person".to_owned(),
+                    logical_name: "first_name".to_owned(),
+                    display_name: "First Name".to_owned(),
+                    field_type: FieldType::Text,
+                    is_required: true,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "person".to_owned(),
+                    logical_name: "last_name".to_owned(),
+                    display_name: "Last Name".to_owned(),
+                    field_type: FieldType::Text,
+                    is_required: true,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(service
+        .save_field(
+            &actor,
+            SaveFieldInput {
+                entity_logical_name: "person".to_owned(),
+                logical_name: "full_name".to_owned(),
+                display_name: "Full Name".to_owned(),
+                field_type: FieldType::Text,
+                is_required: false,
+                is_unique: false,
+                default_value: None,
+                calculation_expression: Some("concat(first_name, \" \", last_name)".to_owned(),),
+                relation_target_entity: None,
+                option_set_logical_name: None,
+            },
+        )
+        .await
+        .is_ok());
+    assert!(service.publish_entity(&actor, "person").await.is_ok());
+
+    let result = service
+        .create_runtime_record(
+            &actor,
+            "person",
+            json!({
+                "first_name": "Ada",
+                "last_name": "Lovelace",
+                "full_name": "Injected Value"
+            }),
+        )
+        .await;
+
+    assert!(matches!(result, Err(AppError::Validation(_))));
+}
+
+#[tokio::test]
+async fn create_runtime_record_blocks_on_entity_business_rule_show_error() {
+    let tenant_id = TenantId::new();
+    let subject = "rule_creator";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+            Permission::RuntimeRecordWrite,
+            Permission::RuntimeRecordRead,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    assert!(
+        service
+            .register_entity(&actor, "contact", "Contact")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "name".to_owned(),
+                    display_name: "Name".to_owned(),
+                    field_type: FieldType::Text,
+                    is_required: true,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "active".to_owned(),
+                    display_name: "Active".to_owned(),
+                    field_type: FieldType::Boolean,
+                    is_required: true,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(service.publish_entity(&actor, "contact").await.is_ok());
+
+    let condition = BusinessRuleCondition::new("active", BusinessRuleOperator::Eq, json!(false));
+    assert!(condition.is_ok());
+    let action = BusinessRuleAction::new(
+        BusinessRuleActionType::ShowError,
+        None,
+        None,
+        Some("Active must be true".to_owned()),
+    );
+    assert!(action.is_ok());
+    let saved_rule = service
+        .save_business_rule(
+            &actor,
+            SaveBusinessRuleInput {
+                entity_logical_name: "contact".to_owned(),
+                logical_name: "active_guard".to_owned(),
+                display_name: "Active Guard".to_owned(),
+                scope: BusinessRuleScope::Entity,
+                form_logical_name: None,
+                conditions: vec![condition.unwrap_or_else(|_| unreachable!())],
+                actions: vec![action.unwrap_or_else(|_| unreachable!())],
+                is_active: true,
+            },
+        )
+        .await;
+    assert!(saved_rule.is_ok());
+
+    let result = service
+        .create_runtime_record(&actor, "contact", json!({"name": "Alice", "active": false}))
+        .await;
+    assert!(matches!(result, Err(AppError::Validation(_))));
+}
+
+#[tokio::test]
+async fn update_runtime_record_blocks_on_entity_business_rule_show_error() {
+    let tenant_id = TenantId::new();
+    let subject = "rule_editor";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+            Permission::RuntimeRecordWrite,
+            Permission::RuntimeRecordRead,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    assert!(
+        service
+            .register_entity(&actor, "contact", "Contact")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "name".to_owned(),
+                    display_name: "Name".to_owned(),
+                    field_type: FieldType::Text,
+                    is_required: true,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "active".to_owned(),
+                    display_name: "Active".to_owned(),
+                    field_type: FieldType::Boolean,
+                    is_required: true,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(service.publish_entity(&actor, "contact").await.is_ok());
+
+    let condition = BusinessRuleCondition::new("active", BusinessRuleOperator::Eq, json!(false));
+    assert!(condition.is_ok());
+    let action = BusinessRuleAction::new(
+        BusinessRuleActionType::ShowError,
+        None,
+        None,
+        Some("Active must be true".to_owned()),
+    );
+    assert!(action.is_ok());
+    let saved_rule = service
+        .save_business_rule(
+            &actor,
+            SaveBusinessRuleInput {
+                entity_logical_name: "contact".to_owned(),
+                logical_name: "active_guard".to_owned(),
+                display_name: "Active Guard".to_owned(),
+                scope: BusinessRuleScope::Entity,
+                form_logical_name: None,
+                conditions: vec![condition.unwrap_or_else(|_| unreachable!())],
+                actions: vec![action.unwrap_or_else(|_| unreachable!())],
+                is_active: true,
+            },
+        )
+        .await;
+    assert!(saved_rule.is_ok());
+
+    let created = service
+        .create_runtime_record(&actor, "contact", json!({"name": "Alice", "active": true}))
+        .await;
+    assert!(created.is_ok());
+    let created = created.unwrap_or_else(|_| unreachable!());
+
+    let result = service
+        .update_runtime_record(
+            &actor,
+            "contact",
+            created.record_id().as_str(),
+            json!({"name": "Alice", "active": false}),
+        )
+        .await;
+    assert!(matches!(result, Err(AppError::Validation(_))));
+}
+
+#[tokio::test]
+async fn create_runtime_record_applies_entity_business_rule_value_actions() {
+    let tenant_id = TenantId::new();
+    let subject = "rule_value_actions";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+            Permission::RuntimeRecordWrite,
+            Permission::RuntimeRecordRead,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    assert!(
+        service
+            .register_entity(&actor, "lead", "Lead")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "lead".to_owned(),
+                    logical_name: "name".to_owned(),
+                    display_name: "Name".to_owned(),
+                    field_type: FieldType::Text,
+                    is_required: true,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "lead".to_owned(),
+                    logical_name: "stage".to_owned(),
+                    display_name: "Stage".to_owned(),
+                    field_type: FieldType::Text,
+                    is_required: false,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "lead".to_owned(),
+                    logical_name: "tier".to_owned(),
+                    display_name: "Tier".to_owned(),
+                    field_type: FieldType::Text,
+                    is_required: false,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(service.publish_entity(&actor, "lead").await.is_ok());
+
+    let condition =
+        BusinessRuleCondition::new("name", BusinessRuleOperator::Contains, json!("acme"));
+    assert!(condition.is_ok());
+    let set_default_stage = BusinessRuleAction::new(
+        BusinessRuleActionType::SetDefaultValue,
+        Some("stage".to_owned()),
+        Some(json!("new")),
+        None,
+    );
+    assert!(set_default_stage.is_ok());
+    let set_tier = BusinessRuleAction::new(
+        BusinessRuleActionType::SetFieldValue,
+        Some("tier".to_owned()),
+        Some(json!("vip")),
+        None,
+    );
+    assert!(set_tier.is_ok());
+
+    let saved_rule = service
+        .save_business_rule(
+            &actor,
+            SaveBusinessRuleInput {
+                entity_logical_name: "lead".to_owned(),
+                logical_name: "lead_defaults".to_owned(),
+                display_name: "Lead Defaults".to_owned(),
+                scope: BusinessRuleScope::Entity,
+                form_logical_name: None,
+                conditions: vec![condition.unwrap_or_else(|_| unreachable!())],
+                actions: vec![
+                    set_default_stage.unwrap_or_else(|_| unreachable!()),
+                    set_tier.unwrap_or_else(|_| unreachable!()),
+                ],
+                is_active: true,
+            },
+        )
+        .await;
+    assert!(saved_rule.is_ok());
+
+    let created = service
+        .create_runtime_record(&actor, "lead", json!({"name": "Acme Corporation"}))
+        .await;
+    assert!(created.is_ok());
+    let created = created.unwrap_or_else(|_| unreachable!());
+    let data = created.data().as_object();
+    assert!(data.is_some());
+    assert_eq!(
+        data.and_then(|object| object.get("stage")),
+        Some(&json!("new"))
+    );
+    assert_eq!(
+        data.and_then(|object| object.get("tier")),
+        Some(&json!("vip"))
+    );
+}
+
+#[tokio::test]
+async fn create_runtime_record_honors_requiredness_overrides() {
+    let tenant_id = TenantId::new();
+    let subject = "rule_required_overrides";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+            Permission::RuntimeRecordWrite,
+            Permission::RuntimeRecordRead,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    assert!(
+        service
+            .register_entity(&actor, "contact", "Contact")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "name".to_owned(),
+                    display_name: "Name".to_owned(),
+                    field_type: FieldType::Text,
+                    is_required: true,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "phone".to_owned(),
+                    display_name: "Phone".to_owned(),
+                    field_type: FieldType::Text,
+                    is_required: false,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "active".to_owned(),
+                    display_name: "Active".to_owned(),
+                    field_type: FieldType::Boolean,
+                    is_required: true,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(service.publish_entity(&actor, "contact").await.is_ok());
+
+    let requires_phone_condition =
+        BusinessRuleCondition::new("name", BusinessRuleOperator::Eq, json!("Alice"));
+    assert!(requires_phone_condition.is_ok());
+    let require_phone_action = BusinessRuleAction::new(
+        BusinessRuleActionType::SetRequired,
+        Some("phone".to_owned()),
+        None,
+        None,
+    );
+    assert!(require_phone_action.is_ok());
+    let optional_active_condition =
+        BusinessRuleCondition::new("name", BusinessRuleOperator::Eq, json!("Guest"));
+    assert!(optional_active_condition.is_ok());
+    let optional_active_action = BusinessRuleAction::new(
+        BusinessRuleActionType::SetOptional,
+        Some("active".to_owned()),
+        None,
+        None,
+    );
+    assert!(optional_active_action.is_ok());
+
+    let save_required_rule = service
+        .save_business_rule(
+            &actor,
+            SaveBusinessRuleInput {
+                entity_logical_name: "contact".to_owned(),
+                logical_name: "phone_required_for_alice".to_owned(),
+                display_name: "Phone Required For Alice".to_owned(),
+                scope: BusinessRuleScope::Entity,
+                form_logical_name: None,
+                conditions: vec![requires_phone_condition.unwrap_or_else(|_| unreachable!())],
+                actions: vec![require_phone_action.unwrap_or_else(|_| unreachable!())],
+                is_active: true,
+            },
+        )
+        .await;
+    assert!(save_required_rule.is_ok());
+
+    let save_optional_rule = service
+        .save_business_rule(
+            &actor,
+            SaveBusinessRuleInput {
+                entity_logical_name: "contact".to_owned(),
+                logical_name: "active_optional_for_guest".to_owned(),
+                display_name: "Active Optional For Guest".to_owned(),
+                scope: BusinessRuleScope::Entity,
+                form_logical_name: None,
+                conditions: vec![optional_active_condition.unwrap_or_else(|_| unreachable!())],
+                actions: vec![optional_active_action.unwrap_or_else(|_| unreachable!())],
+                is_active: true,
+            },
+        )
+        .await;
+    assert!(save_optional_rule.is_ok());
+
+    let missing_phone = service
+        .create_runtime_record(&actor, "contact", json!({"name": "Alice", "active": true}))
+        .await;
+    assert!(matches!(missing_phone, Err(AppError::Validation(_))));
+
+    let missing_active = service
+        .create_runtime_record(&actor, "contact", json!({"name": "Guest"}))
+        .await;
+    assert!(missing_active.is_ok());
+}
+
+#[tokio::test]
+async fn update_runtime_record_preserves_hidden_values_and_blocks_locked_changes() {
+    let tenant_id = TenantId::new();
+    let subject = "rule_locking";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+            Permission::RuntimeRecordWrite,
+            Permission::RuntimeRecordRead,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    assert!(
+        service
+            .register_entity(&actor, "contact", "Contact")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "name".to_owned(),
+                    display_name: "Name".to_owned(),
+                    field_type: FieldType::Text,
+                    is_required: true,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "status".to_owned(),
+                    display_name: "Status".to_owned(),
+                    field_type: FieldType::Text,
+                    is_required: false,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(service.publish_entity(&actor, "contact").await.is_ok());
+
+    let created = service
+        .create_runtime_record(
+            &actor,
+            "contact",
+            json!({"name": "Alice", "status": "open"}),
+        )
+        .await;
+    assert!(created.is_ok());
+    let created = created.unwrap_or_else(|_| unreachable!());
+
+    let condition = BusinessRuleCondition::new("name", BusinessRuleOperator::Eq, json!("Alice"));
+    assert!(condition.is_ok());
+    let hide_status = BusinessRuleAction::new(
+        BusinessRuleActionType::HideField,
+        Some("status".to_owned()),
+        None,
+        None,
+    );
+    assert!(hide_status.is_ok());
+    let lock_status = BusinessRuleAction::new(
+        BusinessRuleActionType::LockField,
+        Some("status".to_owned()),
+        None,
+        None,
+    );
+    assert!(lock_status.is_ok());
+
+    let saved_rule = service
+        .save_business_rule(
+            &actor,
+            SaveBusinessRuleInput {
+                entity_logical_name: "contact".to_owned(),
+                logical_name: "lock_status".to_owned(),
+                display_name: "Lock Status".to_owned(),
+                scope: BusinessRuleScope::Entity,
+                form_logical_name: None,
+                conditions: vec![condition.unwrap_or_else(|_| unreachable!())],
+                actions: vec![
+                    hide_status.unwrap_or_else(|_| unreachable!()),
+                    lock_status.unwrap_or_else(|_| unreachable!()),
+                ],
+                is_active: true,
+            },
+        )
+        .await;
+    assert!(saved_rule.is_ok());
+
+    let updated_hidden = service
+        .update_runtime_record(
+            &actor,
+            "contact",
+            created.record_id().as_str(),
+            json!({"name": "Alice"}),
+        )
+        .await;
+    assert!(updated_hidden.is_ok());
+    let updated_hidden = updated_hidden.unwrap_or_else(|_| unreachable!());
+    assert_eq!(
+        updated_hidden
+            .data()
+            .as_object()
+            .and_then(|object| object.get("status")),
+        Some(&json!("open"))
+    );
+
+    let locked_change = service
+        .update_runtime_record(
+            &actor,
+            "contact",
+            created.record_id().as_str(),
+            json!({"name": "Alice", "status": "closed"}),
+        )
+        .await;
+    assert!(matches!(locked_change, Err(AppError::Validation(_))));
+}
+
+#[tokio::test]
 async fn query_runtime_records_requires_runtime_read_permission() {
     let tenant_id = TenantId::new();
     let subject = "heidi";
@@ -1270,6 +2575,7 @@ async fn query_runtime_records_requires_runtime_read_permission() {
                     is_required: true,
                     is_unique: false,
                     default_value: None,
+                    calculation_expression: None,
                     relation_target_entity: None,
                     option_set_logical_name: None,
                 },
@@ -1337,6 +2643,7 @@ async fn delete_runtime_record_blocks_when_relation_exists() {
                 is_required: true,
                 is_unique: false,
                 default_value: None,
+                calculation_expression: None,
                 relation_target_entity: None,
                 option_set_logical_name: None,
             },
@@ -1355,6 +2662,7 @@ async fn delete_runtime_record_blocks_when_relation_exists() {
                 is_required: true,
                 is_unique: false,
                 default_value: None,
+                calculation_expression: None,
                 relation_target_entity: Some("contact".to_owned()),
                 option_set_logical_name: None,
             },
@@ -1417,6 +2725,7 @@ async fn get_and_delete_runtime_record_succeed_when_unreferenced() {
                 is_required: true,
                 is_unique: false,
                 default_value: None,
+                calculation_expression: None,
                 relation_target_entity: None,
                 option_set_logical_name: None,
             },
@@ -1489,6 +2798,7 @@ async fn list_runtime_records_unchecked_honors_own_read_scope_when_configured() 
                     is_required: true,
                     is_unique: false,
                     default_value: None,
+                    calculation_expression: None,
                     relation_target_entity: None,
                     option_set_logical_name: None,
                 },
@@ -1565,6 +2875,7 @@ async fn query_runtime_records_unchecked_honors_own_read_scope_when_configured()
                     is_required: true,
                     is_unique: false,
                     default_value: None,
+                    calculation_expression: None,
                     relation_target_entity: None,
                     option_set_logical_name: None,
                 },
@@ -1644,6 +2955,7 @@ async fn update_runtime_record_unchecked_blocks_non_owned_records_for_own_write_
                     is_required: true,
                     is_unique: false,
                     default_value: None,
+                    calculation_expression: None,
                     relation_target_entity: None,
                     option_set_logical_name: None,
                 },
@@ -1712,6 +3024,7 @@ async fn get_runtime_record_unchecked_redacts_using_runtime_field_permissions() 
                     is_required: true,
                     is_unique: false,
                     default_value: None,
+                    calculation_expression: None,
                     relation_target_entity: None,
                     option_set_logical_name: None,
                 },
@@ -1731,6 +3044,7 @@ async fn get_runtime_record_unchecked_redacts_using_runtime_field_permissions() 
                     is_required: true,
                     is_unique: false,
                     default_value: None,
+                    calculation_expression: None,
                     relation_target_entity: None,
                     option_set_logical_name: None,
                 },
@@ -1796,6 +3110,7 @@ async fn update_field_updates_mutable_metadata_properties() {
                     is_required: true,
                     is_unique: false,
                     default_value: None,
+                    calculation_expression: None,
                     relation_target_entity: None,
                     option_set_logical_name: None,
                 },
@@ -1813,6 +3128,7 @@ async fn update_field_updates_mutable_metadata_properties() {
                 display_name: "Full Name".to_owned(),
                 description: Some("Primary full name".to_owned()),
                 default_value: Some(json!("Anonymous")),
+                calculation_expression: None,
                 max_length: Some(255),
                 min_value: None,
                 max_value: None,
@@ -1859,6 +3175,7 @@ async fn delete_field_rejects_published_fields() {
                     is_required: true,
                     is_unique: false,
                     default_value: None,
+                    calculation_expression: None,
                     relation_target_entity: None,
                     option_set_logical_name: None,
                 },
@@ -1905,6 +3222,7 @@ async fn delete_field_allows_unpublished_draft_fields() {
                     is_required: false,
                     is_unique: false,
                     default_value: None,
+                    calculation_expression: None,
                     relation_target_entity: None,
                     option_set_logical_name: None,
                 },
@@ -1926,4 +3244,740 @@ async fn delete_field_allows_unpublished_draft_fields() {
             .iter()
             .all(|field| field.logical_name().as_str() != "temporary_note")
     );
+}
+
+#[tokio::test]
+async fn save_form_rejects_sparse_tab_positions() {
+    let tenant_id = TenantId::new();
+    let subject = "laura";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    let seeded = register_publish_entity_with_text_fields(
+        &service,
+        &actor,
+        "contact",
+        "Contact",
+        &["name", "email"],
+    )
+    .await;
+    assert!(seeded.is_ok());
+
+    let summary_field = FormFieldPlacement::new("name", 0, 0, true, false, None, None)
+        .unwrap_or_else(|_| unreachable!());
+    let details_field = FormFieldPlacement::new("email", 0, 0, true, false, None, None)
+        .unwrap_or_else(|_| unreachable!());
+
+    let summary_section = FormSection::new(
+        "summary_section",
+        "Summary",
+        0,
+        true,
+        1,
+        vec![summary_field],
+        Vec::new(),
+    )
+    .unwrap_or_else(|_| unreachable!());
+    let details_section = FormSection::new(
+        "details_section",
+        "Details",
+        0,
+        true,
+        1,
+        vec![details_field],
+        Vec::new(),
+    )
+    .unwrap_or_else(|_| unreachable!());
+
+    let summary_tab = FormTab::new("summary", "Summary", 0, true, vec![summary_section])
+        .unwrap_or_else(|_| unreachable!());
+    let details_tab = FormTab::new("details", "Details", 2, true, vec![details_section])
+        .unwrap_or_else(|_| unreachable!());
+
+    let result = service
+        .save_form(
+            &actor,
+            SaveFormInput {
+                entity_logical_name: "contact".to_owned(),
+                logical_name: "main_form".to_owned(),
+                display_name: "Main Form".to_owned(),
+                form_type: FormType::Main,
+                tabs: vec![summary_tab, details_tab],
+                header_fields: Vec::new(),
+            },
+        )
+        .await;
+
+    match result {
+        Err(AppError::Validation(message)) => {
+            assert!(
+                message
+                    .contains("form tab positions must form contiguous sequence starting at zero")
+            );
+        }
+        _ => panic!("expected form position validation failure"),
+    }
+}
+
+#[tokio::test]
+async fn save_view_rejects_duplicate_column_positions() {
+    let tenant_id = TenantId::new();
+    let subject = "maria";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    let seeded = register_publish_entity_with_text_fields(
+        &service,
+        &actor,
+        "contact",
+        "Contact",
+        &["name", "email"],
+    )
+    .await;
+    assert!(seeded.is_ok());
+
+    let result = service
+        .save_view(
+            &actor,
+            SaveViewInput {
+                entity_logical_name: "contact".to_owned(),
+                logical_name: "main_view".to_owned(),
+                display_name: "Main View".to_owned(),
+                view_type: ViewType::Grid,
+                columns: vec![
+                    ViewColumn::new("name", 0, None, None).unwrap_or_else(|_| unreachable!()),
+                    ViewColumn::new("email", 0, None, None).unwrap_or_else(|_| unreachable!()),
+                ],
+                default_sort: None,
+                filter_criteria: None,
+                is_default: true,
+            },
+        )
+        .await;
+
+    match result {
+        Err(AppError::Validation(message)) => {
+            assert!(message.contains("duplicate view column position"));
+        }
+        _ => panic!("expected view position validation failure"),
+    }
+}
+
+#[tokio::test]
+async fn save_form_normalizes_nested_layout_order_by_position() {
+    let tenant_id = TenantId::new();
+    let subject = "nina";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    let seeded = register_publish_entity_with_text_fields(
+        &service,
+        &actor,
+        "contact",
+        "Contact",
+        &["title", "name", "email", "phone"],
+    )
+    .await;
+    assert!(seeded.is_ok());
+
+    let summary_field = FormFieldPlacement::new("phone", 0, 0, true, false, None, None)
+        .unwrap_or_else(|_| unreachable!());
+    let details_field_late = FormFieldPlacement::new("email", 0, 1, true, false, None, None)
+        .unwrap_or_else(|_| unreachable!());
+    let details_field_early = FormFieldPlacement::new("name", 0, 0, true, false, None, None)
+        .unwrap_or_else(|_| unreachable!());
+    let intro_field = FormFieldPlacement::new("title", 0, 0, true, false, None, None)
+        .unwrap_or_else(|_| unreachable!());
+
+    let summary_section = FormSection::new(
+        "summary",
+        "Summary",
+        1,
+        true,
+        1,
+        vec![summary_field],
+        Vec::new(),
+    )
+    .unwrap_or_else(|_| unreachable!());
+    let details_section = FormSection::new(
+        "details",
+        "Details",
+        0,
+        true,
+        1,
+        vec![details_field_late, details_field_early],
+        Vec::new(),
+    )
+    .unwrap_or_else(|_| unreachable!());
+    let intro_section = FormSection::new(
+        "intro_section",
+        "Intro",
+        0,
+        true,
+        1,
+        vec![intro_field],
+        Vec::new(),
+    )
+    .unwrap_or_else(|_| unreachable!());
+
+    let main_tab = FormTab::new(
+        "main_tab",
+        "Main",
+        1,
+        true,
+        vec![summary_section, details_section],
+    )
+    .unwrap_or_else(|_| unreachable!());
+    let intro_tab = FormTab::new("intro_tab", "Intro", 0, true, vec![intro_section])
+        .unwrap_or_else(|_| unreachable!());
+
+    let saved = service
+        .save_form(
+            &actor,
+            SaveFormInput {
+                entity_logical_name: "contact".to_owned(),
+                logical_name: "main_form".to_owned(),
+                display_name: "Main Form".to_owned(),
+                form_type: FormType::Main,
+                tabs: vec![main_tab, intro_tab],
+                header_fields: Vec::new(),
+            },
+        )
+        .await;
+
+    assert!(saved.is_ok());
+    let saved = saved.unwrap_or_else(|_| unreachable!());
+    let tab_order: Vec<&str> = saved
+        .tabs()
+        .iter()
+        .map(|tab| tab.logical_name().as_str())
+        .collect();
+    assert_eq!(tab_order, vec!["intro_tab", "main_tab"]);
+
+    let main_sections = saved.tabs()[1].sections();
+    let section_order: Vec<&str> = main_sections
+        .iter()
+        .map(|section| section.logical_name().as_str())
+        .collect();
+    assert_eq!(section_order, vec!["details", "summary"]);
+
+    let details_fields: Vec<&str> = main_sections[0]
+        .fields()
+        .iter()
+        .map(|field| field.field_logical_name().as_str())
+        .collect();
+    assert_eq!(details_fields, vec!["name", "email"]);
+}
+
+#[tokio::test]
+async fn save_view_normalizes_column_order_by_position() {
+    let tenant_id = TenantId::new();
+    let subject = "olga";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    let seeded = register_publish_entity_with_text_fields(
+        &service,
+        &actor,
+        "contact",
+        "Contact",
+        &["name", "email", "phone"],
+    )
+    .await;
+    assert!(seeded.is_ok());
+
+    let saved = service
+        .save_view(
+            &actor,
+            SaveViewInput {
+                entity_logical_name: "contact".to_owned(),
+                logical_name: "custom_view".to_owned(),
+                display_name: "Custom View".to_owned(),
+                view_type: ViewType::Grid,
+                columns: vec![
+                    ViewColumn::new("email", 1, None, None).unwrap_or_else(|_| unreachable!()),
+                    ViewColumn::new("name", 0, None, None).unwrap_or_else(|_| unreachable!()),
+                    ViewColumn::new("phone", 2, None, None).unwrap_or_else(|_| unreachable!()),
+                ],
+                default_sort: None,
+                filter_criteria: None,
+                is_default: false,
+            },
+        )
+        .await;
+
+    assert!(saved.is_ok());
+    let saved = saved.unwrap_or_else(|_| unreachable!());
+    let column_order: Vec<&str> = saved
+        .columns()
+        .iter()
+        .map(|column| column.field_logical_name().as_str())
+        .collect();
+    assert_eq!(column_order, vec!["name", "email", "phone"]);
+}
+
+#[tokio::test]
+async fn save_form_supports_reorder_then_undo_redo_transitions() {
+    let tenant_id = TenantId::new();
+    let subject = "paula";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+            Permission::MetadataFieldRead,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    let seeded = register_publish_entity_with_text_fields(
+        &service,
+        &actor,
+        "contact",
+        "Contact",
+        &["title", "name", "email", "phone"],
+    )
+    .await;
+    assert!(seeded.is_ok());
+
+    let initial = service
+        .save_form(
+            &actor,
+            SaveFormInput {
+                entity_logical_name: "contact".to_owned(),
+                logical_name: "custom_form".to_owned(),
+                display_name: "Custom Form".to_owned(),
+                form_type: FormType::Main,
+                tabs: vec![
+                    FormTab::new(
+                        "intro_tab",
+                        "Intro",
+                        0,
+                        true,
+                        vec![
+                            FormSection::new(
+                                "intro_section",
+                                "Intro Section",
+                                0,
+                                true,
+                                1,
+                                vec![
+                                    FormFieldPlacement::new("title", 0, 0, true, false, None, None)
+                                        .unwrap_or_else(|_| unreachable!()),
+                                ],
+                                Vec::new(),
+                            )
+                            .unwrap_or_else(|_| unreachable!()),
+                        ],
+                    )
+                    .unwrap_or_else(|_| unreachable!()),
+                    FormTab::new(
+                        "main_tab",
+                        "Main",
+                        1,
+                        true,
+                        vec![
+                            FormSection::new(
+                                "details",
+                                "Details",
+                                0,
+                                true,
+                                1,
+                                vec![
+                                    FormFieldPlacement::new("name", 0, 0, true, false, None, None)
+                                        .unwrap_or_else(|_| unreachable!()),
+                                    FormFieldPlacement::new("email", 0, 1, true, false, None, None)
+                                        .unwrap_or_else(|_| unreachable!()),
+                                ],
+                                Vec::new(),
+                            )
+                            .unwrap_or_else(|_| unreachable!()),
+                            FormSection::new(
+                                "summary",
+                                "Summary",
+                                1,
+                                true,
+                                1,
+                                vec![
+                                    FormFieldPlacement::new("phone", 0, 0, true, false, None, None)
+                                        .unwrap_or_else(|_| unreachable!()),
+                                ],
+                                Vec::new(),
+                            )
+                            .unwrap_or_else(|_| unreachable!()),
+                        ],
+                    )
+                    .unwrap_or_else(|_| unreachable!()),
+                ],
+                header_fields: Vec::new(),
+            },
+        )
+        .await;
+    assert!(initial.is_ok());
+
+    let reordered = service
+        .save_form(
+            &actor,
+            SaveFormInput {
+                entity_logical_name: "contact".to_owned(),
+                logical_name: "custom_form".to_owned(),
+                display_name: "Custom Form".to_owned(),
+                form_type: FormType::Main,
+                tabs: vec![
+                    FormTab::new(
+                        "main_tab",
+                        "Main",
+                        0,
+                        true,
+                        vec![
+                            FormSection::new(
+                                "summary",
+                                "Summary",
+                                0,
+                                true,
+                                1,
+                                vec![
+                                    FormFieldPlacement::new("phone", 0, 0, true, false, None, None)
+                                        .unwrap_or_else(|_| unreachable!()),
+                                ],
+                                Vec::new(),
+                            )
+                            .unwrap_or_else(|_| unreachable!()),
+                            FormSection::new(
+                                "details",
+                                "Details",
+                                1,
+                                true,
+                                1,
+                                vec![
+                                    FormFieldPlacement::new("email", 0, 0, true, false, None, None)
+                                        .unwrap_or_else(|_| unreachable!()),
+                                    FormFieldPlacement::new("name", 0, 1, true, false, None, None)
+                                        .unwrap_or_else(|_| unreachable!()),
+                                ],
+                                Vec::new(),
+                            )
+                            .unwrap_or_else(|_| unreachable!()),
+                        ],
+                    )
+                    .unwrap_or_else(|_| unreachable!()),
+                    FormTab::new(
+                        "intro_tab",
+                        "Intro",
+                        1,
+                        true,
+                        vec![
+                            FormSection::new(
+                                "intro_section",
+                                "Intro Section",
+                                0,
+                                true,
+                                1,
+                                vec![
+                                    FormFieldPlacement::new("title", 0, 0, true, false, None, None)
+                                        .unwrap_or_else(|_| unreachable!()),
+                                ],
+                                Vec::new(),
+                            )
+                            .unwrap_or_else(|_| unreachable!()),
+                        ],
+                    )
+                    .unwrap_or_else(|_| unreachable!()),
+                ],
+                header_fields: Vec::new(),
+            },
+        )
+        .await;
+    assert!(reordered.is_ok());
+    let reordered = reordered.unwrap_or_else(|_| unreachable!());
+    let reordered_tabs: Vec<&str> = reordered
+        .tabs()
+        .iter()
+        .map(|tab| tab.logical_name().as_str())
+        .collect();
+    assert_eq!(reordered_tabs, vec!["main_tab", "intro_tab"]);
+    let reordered_main_sections: Vec<&str> = reordered.tabs()[0]
+        .sections()
+        .iter()
+        .map(|section| section.logical_name().as_str())
+        .collect();
+    assert_eq!(reordered_main_sections, vec!["summary", "details"]);
+    let reordered_details_fields: Vec<&str> = reordered.tabs()[0].sections()[1]
+        .fields()
+        .iter()
+        .map(|field| field.field_logical_name().as_str())
+        .collect();
+    assert_eq!(reordered_details_fields, vec!["email", "name"]);
+
+    let undone = service
+        .save_form(
+            &actor,
+            SaveFormInput {
+                entity_logical_name: "contact".to_owned(),
+                logical_name: "custom_form".to_owned(),
+                display_name: "Custom Form".to_owned(),
+                form_type: FormType::Main,
+                tabs: vec![
+                    FormTab::new(
+                        "intro_tab",
+                        "Intro",
+                        0,
+                        true,
+                        vec![
+                            FormSection::new(
+                                "intro_section",
+                                "Intro Section",
+                                0,
+                                true,
+                                1,
+                                vec![
+                                    FormFieldPlacement::new("title", 0, 0, true, false, None, None)
+                                        .unwrap_or_else(|_| unreachable!()),
+                                ],
+                                Vec::new(),
+                            )
+                            .unwrap_or_else(|_| unreachable!()),
+                        ],
+                    )
+                    .unwrap_or_else(|_| unreachable!()),
+                    FormTab::new(
+                        "main_tab",
+                        "Main",
+                        1,
+                        true,
+                        vec![
+                            FormSection::new(
+                                "details",
+                                "Details",
+                                0,
+                                true,
+                                1,
+                                vec![
+                                    FormFieldPlacement::new("name", 0, 0, true, false, None, None)
+                                        .unwrap_or_else(|_| unreachable!()),
+                                    FormFieldPlacement::new("email", 0, 1, true, false, None, None)
+                                        .unwrap_or_else(|_| unreachable!()),
+                                ],
+                                Vec::new(),
+                            )
+                            .unwrap_or_else(|_| unreachable!()),
+                            FormSection::new(
+                                "summary",
+                                "Summary",
+                                1,
+                                true,
+                                1,
+                                vec![
+                                    FormFieldPlacement::new("phone", 0, 0, true, false, None, None)
+                                        .unwrap_or_else(|_| unreachable!()),
+                                ],
+                                Vec::new(),
+                            )
+                            .unwrap_or_else(|_| unreachable!()),
+                        ],
+                    )
+                    .unwrap_or_else(|_| unreachable!()),
+                ],
+                header_fields: Vec::new(),
+            },
+        )
+        .await;
+    assert!(undone.is_ok());
+
+    let redone = service
+        .save_form(
+            &actor,
+            SaveFormInput {
+                entity_logical_name: "contact".to_owned(),
+                logical_name: "custom_form".to_owned(),
+                display_name: "Custom Form".to_owned(),
+                form_type: FormType::Main,
+                tabs: reordered.tabs().to_vec(),
+                header_fields: Vec::new(),
+            },
+        )
+        .await;
+    assert!(redone.is_ok());
+    let redone = redone.unwrap_or_else(|_| unreachable!());
+    let redone_tabs: Vec<&str> = redone
+        .tabs()
+        .iter()
+        .map(|tab| tab.logical_name().as_str())
+        .collect();
+    assert_eq!(redone_tabs, vec!["main_tab", "intro_tab"]);
+
+    let listed = service
+        .find_form(&actor, "contact", "custom_form")
+        .await
+        .unwrap_or(None);
+    assert!(listed.is_some());
+    let listed = listed.unwrap_or_else(|| unreachable!());
+    let listed_tabs: Vec<&str> = listed
+        .tabs()
+        .iter()
+        .map(|tab| tab.logical_name().as_str())
+        .collect();
+    assert_eq!(listed_tabs, vec!["main_tab", "intro_tab"]);
+}
+
+#[tokio::test]
+async fn save_view_supports_column_reorder_then_undo_redo_transitions() {
+    let tenant_id = TenantId::new();
+    let subject = "quinn";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+            Permission::MetadataFieldRead,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    let seeded = register_publish_entity_with_text_fields(
+        &service,
+        &actor,
+        "contact",
+        "Contact",
+        &["name", "email", "phone"],
+    )
+    .await;
+    assert!(seeded.is_ok());
+
+    let initial = service
+        .save_view(
+            &actor,
+            SaveViewInput {
+                entity_logical_name: "contact".to_owned(),
+                logical_name: "custom_view".to_owned(),
+                display_name: "Custom View".to_owned(),
+                view_type: ViewType::Grid,
+                columns: vec![
+                    ViewColumn::new("name", 0, None, None).unwrap_or_else(|_| unreachable!()),
+                    ViewColumn::new("email", 1, None, None).unwrap_or_else(|_| unreachable!()),
+                    ViewColumn::new("phone", 2, None, None).unwrap_or_else(|_| unreachable!()),
+                ],
+                default_sort: None,
+                filter_criteria: None,
+                is_default: false,
+            },
+        )
+        .await;
+    assert!(initial.is_ok());
+
+    let reordered = service
+        .save_view(
+            &actor,
+            SaveViewInput {
+                entity_logical_name: "contact".to_owned(),
+                logical_name: "custom_view".to_owned(),
+                display_name: "Custom View".to_owned(),
+                view_type: ViewType::Grid,
+                columns: vec![
+                    ViewColumn::new("email", 0, None, None).unwrap_or_else(|_| unreachable!()),
+                    ViewColumn::new("name", 1, None, None).unwrap_or_else(|_| unreachable!()),
+                    ViewColumn::new("phone", 2, None, None).unwrap_or_else(|_| unreachable!()),
+                ],
+                default_sort: None,
+                filter_criteria: None,
+                is_default: false,
+            },
+        )
+        .await;
+    assert!(reordered.is_ok());
+    let reordered = reordered.unwrap_or_else(|_| unreachable!());
+    let reordered_columns: Vec<&str> = reordered
+        .columns()
+        .iter()
+        .map(|column| column.field_logical_name().as_str())
+        .collect();
+    assert_eq!(reordered_columns, vec!["email", "name", "phone"]);
+
+    let undone = service
+        .save_view(
+            &actor,
+            SaveViewInput {
+                entity_logical_name: "contact".to_owned(),
+                logical_name: "custom_view".to_owned(),
+                display_name: "Custom View".to_owned(),
+                view_type: ViewType::Grid,
+                columns: vec![
+                    ViewColumn::new("name", 0, None, None).unwrap_or_else(|_| unreachable!()),
+                    ViewColumn::new("email", 1, None, None).unwrap_or_else(|_| unreachable!()),
+                    ViewColumn::new("phone", 2, None, None).unwrap_or_else(|_| unreachable!()),
+                ],
+                default_sort: None,
+                filter_criteria: None,
+                is_default: false,
+            },
+        )
+        .await;
+    assert!(undone.is_ok());
+
+    let redone = service
+        .save_view(
+            &actor,
+            SaveViewInput {
+                entity_logical_name: "contact".to_owned(),
+                logical_name: "custom_view".to_owned(),
+                display_name: "Custom View".to_owned(),
+                view_type: ViewType::Grid,
+                columns: reordered.columns().to_vec(),
+                default_sort: None,
+                filter_criteria: None,
+                is_default: false,
+            },
+        )
+        .await;
+    assert!(redone.is_ok());
+    let redone = redone.unwrap_or_else(|_| unreachable!());
+    let redone_columns: Vec<&str> = redone
+        .columns()
+        .iter()
+        .map(|column| column.field_logical_name().as_str())
+        .collect();
+    assert_eq!(redone_columns, vec!["email", "name", "phone"]);
+
+    let listed = service
+        .find_view(&actor, "contact", "custom_view")
+        .await
+        .unwrap_or(None);
+    assert!(listed.is_some());
+    let listed = listed.unwrap_or_else(|| unreachable!());
+    let listed_columns: Vec<&str> = listed
+        .columns()
+        .iter()
+        .map(|column| column.field_logical_name().as_str())
+        .collect();
+    assert_eq!(listed_columns, vec!["email", "name", "phone"]);
 }

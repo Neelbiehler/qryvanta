@@ -3,6 +3,8 @@
 #![forbid(unsafe_code)]
 
 mod app;
+mod business_rule;
+mod dashboard;
 mod form;
 mod metadata;
 mod security;
@@ -15,10 +17,17 @@ pub use app::{
     AppEntityView, AppEntityViewMode, AppSitemap, SitemapArea, SitemapGroup, SitemapSubArea,
     SitemapTarget,
 };
-pub use form::{FormDefinition, FormFieldPlacement, FormSection, FormTab, FormType};
+pub use business_rule::{
+    BusinessRuleAction, BusinessRuleActionType, BusinessRuleCondition, BusinessRuleDefinition,
+    BusinessRuleDefinitionInput, BusinessRuleOperator, BusinessRuleScope,
+};
+pub use dashboard::{
+    ChartAggregation, ChartDefinition, ChartType, DashboardDefinition, DashboardWidget,
+};
+pub use form::{FormDefinition, FormFieldPlacement, FormSection, FormSubgrid, FormTab, FormType};
 pub use metadata::{
-    EntityDefinition, EntityFieldDefinition, FieldType, OptionSetDefinition, OptionSetItem,
-    PublishedEntitySchema, RuntimeRecord,
+    EntityDefinition, EntityFieldDefinition, EntityFieldMutableUpdateInput, FieldType,
+    OptionSetDefinition, OptionSetItem, PublishedEntitySchema, RuntimeRecord,
 };
 pub use security::{AuditAction, Permission, Surface};
 pub use user::{

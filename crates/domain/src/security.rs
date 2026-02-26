@@ -196,6 +196,8 @@ pub enum AuditAction {
     MetadataFieldSaved,
     /// Emitted when draft metadata is published.
     MetadataEntityPublished,
+    /// Emitted when a workspace publish run completes.
+    MetadataWorkspacePublished,
     /// Emitted when a runtime record is created.
     RuntimeRecordCreated,
     /// Emitted when a runtime record is updated.
@@ -237,6 +239,7 @@ impl AuditAction {
             Self::MetadataEntityCreated => "metadata.entity.created",
             Self::MetadataFieldSaved => "metadata.field.saved",
             Self::MetadataEntityPublished => "metadata.entity.published",
+            Self::MetadataWorkspacePublished => "metadata.workspace.published",
             Self::RuntimeRecordCreated => "runtime.record.created",
             Self::RuntimeRecordUpdated => "runtime.record.updated",
             Self::RuntimeRecordDeleted => "runtime.record.deleted",

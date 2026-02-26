@@ -13,7 +13,11 @@ import {
 } from "@qryvanta/ui";
 
 import { AccessDeniedCard } from "@/components/shared/access-denied-card";
-import { apiServerFetch, type AppEntityBindingResponse } from "@/lib/api";
+import { apiServerFetch, type AppSitemapResponse } from "@/lib/api";
+import {
+  flattenSitemapToDashboardNavigation,
+  flattenSitemapToNavigation,
+} from "@/components/apps/workspace-entity/helpers";
 import { cn } from "@/lib/utils";
 
 type WorkerAppHomePageProps = {
@@ -50,12 +54,10 @@ export default async function WorkerAppHomePage({
     throw new Error("Failed to load app navigation");
   }
 
-  const navigation =
-    (await navigationResponse.json()) as AppEntityBindingResponse[];
-
-  const sortedNavigation = [...navigation].sort(
-    (left, right) => left.navigation_order - right.navigation_order,
-  );
+  const sitemap =
+    (await navigationResponse.json()) as AppSitemapResponse;
+  const sortedNavigation = flattenSitemapToNavigation(sitemap);
+  const dashboardNavigation = flattenSitemapToDashboardNavigation(sitemap);
 
   return (
     <div className="space-y-4">
@@ -72,6 +74,7 @@ export default async function WorkerAppHomePage({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge tone="neutral">Areas {sortedNavigation.length}</StatusBadge>
+            <StatusBadge tone="neutral">Dashboards {dashboardNavigation.length}</StatusBadge>
             <Link
               href="/worker/apps"
               className={cn(buttonVariants({ variant: "outline" }))}
@@ -92,12 +95,12 @@ export default async function WorkerAppHomePage({
             {sortedNavigation.length > 0 ? (
               sortedNavigation.map((item) => (
                 <Link
-                  key={`${item.app_logical_name}.${item.entity_logical_name}`}
+                  key={item.entity_logical_name}
                   href={`/worker/apps/${appLogicalName}/${item.entity_logical_name}`}
                   className="block rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm transition hover:border-emerald-300"
                 >
                   <p className="font-medium text-zinc-900">
-                    {item.navigation_label ?? item.entity_logical_name}
+                    {item.display_name}
                   </p>
                   <p className="font-mono text-[11px] text-zinc-500">
                     {item.entity_logical_name}
@@ -107,6 +110,26 @@ export default async function WorkerAppHomePage({
             ) : (
               <p className="text-xs text-zinc-500">No entities configured yet.</p>
             )}
+
+            {dashboardNavigation.length > 0 ? (
+              <>
+                <p className="pt-2 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                  Dashboards
+                </p>
+                {dashboardNavigation.map((item) => (
+                  <Link
+                    key={item.dashboard_logical_name}
+                    href={`/worker/apps/${appLogicalName}/dashboards/${item.dashboard_logical_name}`}
+                    className="block rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm transition hover:border-sky-300"
+                  >
+                    <p className="font-medium text-zinc-900">{item.display_name}</p>
+                    <p className="font-mono text-[11px] text-zinc-500">
+                      {item.dashboard_logical_name}
+                    </p>
+                  </Link>
+                ))}
+              </>
+            ) : null}
           </CardContent>
         </Card>
 
@@ -121,17 +144,17 @@ export default async function WorkerAppHomePage({
             {sortedNavigation.length > 0 ? (
               sortedNavigation.map((item) => (
                 <div
-                  key={`${item.app_logical_name}.${item.entity_logical_name}.card`}
+                  key={`${item.entity_logical_name}.card`}
                   className="rounded-md border border-zinc-200 p-3"
                 >
                   <p className="text-sm font-semibold text-zinc-900">
-                    {item.navigation_label ?? item.entity_logical_name}
+                    {item.display_name}
                   </p>
                   <p className="font-mono text-[11px] text-zinc-500">
                     {item.entity_logical_name}
                   </p>
                   <p className="mt-1 text-xs text-zinc-600">
-                    Order {item.navigation_order} - default {item.default_view_mode.toUpperCase()} view
+                    Position {item.position}
                   </p>
                   <Link
                     href={`/worker/apps/${appLogicalName}/${item.entity_logical_name}`}
@@ -144,6 +167,25 @@ export default async function WorkerAppHomePage({
             ) : (
               <p className="text-sm text-zinc-500">No entities are configured for this app yet.</p>
             )}
+
+            {dashboardNavigation.map((item) => (
+              <div
+                key={`${item.dashboard_logical_name}.dashboard-card`}
+                className="rounded-md border border-zinc-200 p-3"
+              >
+                <p className="text-sm font-semibold text-zinc-900">{item.display_name}</p>
+                <p className="font-mono text-[11px] text-zinc-500">
+                  {item.dashboard_logical_name}
+                </p>
+                <p className="mt-1 text-xs text-zinc-600">Dashboard Position {item.position}</p>
+                <Link
+                  href={`/worker/apps/${appLogicalName}/dashboards/${item.dashboard_logical_name}`}
+                  className={cn(buttonVariants({ size: "sm", variant: "outline" }), "mt-3")}
+                >
+                  Open Dashboard
+                </Link>
+              </div>
+            ))}
           </CardContent>
         </Card>
       </div>

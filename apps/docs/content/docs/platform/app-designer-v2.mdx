@@ -1,0 +1,63 @@
+---
+title: App Designer v2
+description: Phase 2 app composition with sitemap drag-and-drop and per-page form/view selection.
+---
+
+Phase status: in progress (Phase 2).
+
+## Outcome
+
+Makers can compose complete model-driven apps with explicit page structure and runtime presentation choices.
+
+## Scope
+
+- Sitemap drag-and-drop for areas, groups, and pages.
+- Per-page entity target selection.
+- Per-page form and view override selection.
+- Live app preview of navigation and selected page defaults.
+- Validation for broken references before publish.
+
+## Runtime Contract
+
+- App metadata remains the source of truth for navigation and page presentation defaults.
+- Worker runtime resolves:
+  - app navigation from `GET /api/workspace/apps/:app_logical_name/navigation`
+  - page-level form/view options from workspace form and view endpoints
+- Sitemap saves validate entity targets and optional `default_form` / `default_view` references before persistence.
+- App-level publish checks are available via `GET /api/apps/:app_logical_name/publish-checks`.
+
+## Runtime Resolution Order
+
+- Worker entity list pages resolve active form/view in this order:
+  1. explicit route query (`?form=...&view=...`)
+  2. sitemap page defaults (`default_form`, `default_view`)
+  3. metadata defaults from available forms/views
+- Worker record detail pages resolve form in this order:
+  1. explicit route query (`?form=...`)
+  2. sitemap page `default_form`
+  3. first available `main` form
+
+## UX Requirements
+
+- Reordering sitemap nodes must be stable and deterministic.
+- Page configuration must provide safe defaults when overrides are not selected.
+- Preview must mirror worker navigation and default page behavior.
+
+## Current Implementation Notes
+
+- App Studio navigation bindings now support deterministic page ordering via inline `Up` / `Down` controls.
+- Reorder operations persist through binding updates and keep form/view selections intact.
+- Full area/group/page drag-and-drop remains in the dedicated sitemap editor flow.
+- Sitemap editor now behaves as a stronger WYSIWYG canvas: selected nodes are highlighted in tree/canvas, preview nodes are clickable to focus properties, and makers can add/delete nodes directly from the visual tree.
+- Canvas line drop zones now support cross-parent drag/drop for groups and sub-areas, enabling full tree restructuring directly in the visual canvas.
+- App Studio binding form/view designer now supports line-based drag/drop insertion so makers can place fields at exact positions across form and view surfaces.
+- App Studio binding field lists now support keyboard-first ordering (`Alt + Arrow`) for focused field chips.
+- Sitemap editor now supports undo/redo controls with keyboard shortcuts (`Ctrl/Cmd + Z`, `Ctrl/Cmd + Y`) and sibling reorder shortcuts for selected nodes (`Alt + Arrow`).
+- Editor shortcut overlays are available via `Shortcuts` and `?` for in-context discovery.
+
+## Definition of Done
+
+- Makers can drag, reorder, and configure sitemap entries visually.
+- Per-page form/view selection is persisted and applied in worker runtime.
+- Publish checks prevent unresolved entity, form, or view references.
+- Documentation is updated for app composition flow and runtime resolution order.

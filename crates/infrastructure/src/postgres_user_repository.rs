@@ -50,42 +50,18 @@ impl From<UserRow> for UserRecord {
     }
 }
 
+mod account;
+mod lookup;
+mod mfa;
+
 #[async_trait]
 impl UserRepository for PostgresUserRepository {
     async fn find_by_email(&self, email: &str) -> AppResult<Option<UserRecord>> {
-        let row = sqlx::query_as::<_, UserRow>(
-            r#"
-            SELECT id, email, email_verified, password_hash, totp_enabled,
-                   totp_secret_enc, recovery_codes_hash, failed_login_count, locked_until
-            FROM users
-            WHERE LOWER(email) = LOWER($1)
-            LIMIT 1
-            "#,
-        )
-        .bind(email)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|error| AppError::Internal(format!("failed to find user by email: {error}")))?;
-
-        Ok(row.map(UserRecord::from))
+        self.find_by_email_impl(email).await
     }
 
     async fn find_by_id(&self, user_id: UserId) -> AppResult<Option<UserRecord>> {
-        let row = sqlx::query_as::<_, UserRow>(
-            r#"
-            SELECT id, email, email_verified, password_hash, totp_enabled,
-                   totp_secret_enc, recovery_codes_hash, failed_login_count, locked_until
-            FROM users
-            WHERE id = $1
-            LIMIT 1
-            "#,
-        )
-        .bind(user_id.as_uuid())
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|error| AppError::Internal(format!("failed to find user by id: {error}")))?;
-
-        Ok(row.map(UserRecord::from))
+        self.find_by_id_impl(user_id).await
     }
 
     async fn create(
@@ -94,105 +70,23 @@ impl UserRepository for PostgresUserRepository {
         password_hash: Option<&str>,
         email_verified: bool,
     ) -> AppResult<UserId> {
-        let id = sqlx::query_scalar::<_, uuid::Uuid>(
-            r#"
-            INSERT INTO users (email, password_hash, email_verified)
-            VALUES (LOWER($1), $2, $3)
-            RETURNING id
-            "#,
-        )
-        .bind(email)
-        .bind(password_hash)
-        .bind(email_verified)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|error| {
-            if let sqlx::Error::Database(ref database_error) = error
-                && database_error.code().as_deref() == Some("23505")
-            {
-                return AppError::Conflict("an account with this email already exists".to_owned());
-            }
-            AppError::Internal(format!("failed to create user: {error}"))
-        })?;
-
-        Ok(UserId::from_uuid(id))
+        self.create_impl(email, password_hash, email_verified).await
     }
 
     async fn update_password(&self, user_id: UserId, password_hash: &str) -> AppResult<()> {
-        sqlx::query(
-            r#"
-            UPDATE users
-            SET password_hash = $2, password_changed_at = now(), updated_at = now()
-            WHERE id = $1
-            "#,
-        )
-        .bind(user_id.as_uuid())
-        .bind(password_hash)
-        .execute(&self.pool)
-        .await
-        .map_err(|error| AppError::Internal(format!("failed to update password: {error}")))?;
-
-        Ok(())
+        self.update_password_impl(user_id, password_hash).await
     }
 
     async fn record_failed_login(&self, user_id: UserId) -> AppResult<()> {
-        // Exponential lockout: lock for 2^(n-3) seconds after n failures,
-        // starting at the 3rd failure. Permanent lock after 10 failures.
-        sqlx::query(
-            r#"
-            UPDATE users
-            SET failed_login_count = failed_login_count + 1,
-                locked_until = CASE
-                    WHEN failed_login_count + 1 >= 10
-                        THEN now() + interval '24 hours'
-                    WHEN failed_login_count + 1 >= 3
-                        THEN now() + make_interval(secs => power(2, LEAST(failed_login_count + 1 - 3, 10))::int)
-                    ELSE NULL
-                END,
-                updated_at = now()
-            WHERE id = $1
-            "#,
-        )
-        .bind(user_id.as_uuid())
-        .execute(&self.pool)
-        .await
-        .map_err(|error| {
-            AppError::Internal(format!("failed to record failed login: {error}"))
-        })?;
-
-        Ok(())
+        self.record_failed_login_impl(user_id).await
     }
 
     async fn reset_failed_logins(&self, user_id: UserId) -> AppResult<()> {
-        sqlx::query(
-            r#"
-            UPDATE users
-            SET failed_login_count = 0, locked_until = NULL, updated_at = now()
-            WHERE id = $1
-            "#,
-        )
-        .bind(user_id.as_uuid())
-        .execute(&self.pool)
-        .await
-        .map_err(|error| AppError::Internal(format!("failed to reset failed logins: {error}")))?;
-
-        Ok(())
+        self.reset_failed_logins_impl(user_id).await
     }
 
     async fn mark_email_verified(&self, user_id: UserId) -> AppResult<()> {
-        sqlx::query(
-            r#"
-            UPDATE users
-            SET email_verified = TRUE, updated_at = now()
-            WHERE id = $1
-            "#,
-        )
-        .bind(user_id.as_uuid())
-        .execute(&self.pool)
-        .await
-        .map_err(|error| AppError::Internal(format!("failed to mark email verified: {error}")))?;
-
-        Ok(())
+        self.mark_email_verified_impl(user_id).await
     }
 
     async fn update_display_name(
@@ -201,45 +95,12 @@ impl UserRepository for PostgresUserRepository {
         tenant_id: TenantId,
         display_name: &str,
     ) -> AppResult<()> {
-        sqlx::query(
-            r#"
-            UPDATE tenant_memberships
-            SET display_name = $3
-            WHERE user_id = $1 AND tenant_id = $2
-            "#,
-        )
-        .bind(user_id.as_uuid())
-        .bind(tenant_id.as_uuid())
-        .bind(display_name)
-        .execute(&self.pool)
-        .await
-        .map_err(|error| AppError::Internal(format!("failed to update display name: {error}")))?;
-
-        Ok(())
+        self.update_display_name_impl(user_id, tenant_id, display_name)
+            .await
     }
 
     async fn update_email(&self, user_id: UserId, new_email: &str) -> AppResult<()> {
-        sqlx::query(
-            r#"
-            UPDATE users
-            SET email = LOWER($2), email_verified = FALSE, updated_at = now()
-            WHERE id = $1
-            "#,
-        )
-        .bind(user_id.as_uuid())
-        .bind(new_email)
-        .execute(&self.pool)
-        .await
-        .map_err(|error| {
-            if let sqlx::Error::Database(ref database_error) = error
-                && database_error.code().as_deref() == Some("23505")
-            {
-                return AppError::Conflict("an account with this email already exists".to_owned());
-            }
-            AppError::Internal(format!("failed to update email: {error}"))
-        })?;
-
-        Ok(())
+        self.update_email_impl(user_id, new_email).await
     }
 
     async fn enable_totp(
@@ -248,41 +109,12 @@ impl UserRepository for PostgresUserRepository {
         totp_secret_enc: &[u8],
         recovery_codes_hash: &serde_json::Value,
     ) -> AppResult<()> {
-        sqlx::query(
-            r#"
-            UPDATE users
-            SET totp_secret_enc = $2,
-                recovery_codes_hash = $3,
-                totp_enabled = TRUE,
-                updated_at = now()
-            WHERE id = $1
-            "#,
-        )
-        .bind(user_id.as_uuid())
-        .bind(totp_secret_enc)
-        .bind(recovery_codes_hash)
-        .execute(&self.pool)
-        .await
-        .map_err(|error| AppError::Internal(format!("failed to enable TOTP: {error}")))?;
-
-        Ok(())
+        self.enable_totp_impl(user_id, totp_secret_enc, recovery_codes_hash)
+            .await
     }
 
     async fn disable_totp(&self, user_id: UserId) -> AppResult<()> {
-        sqlx::query(
-            r#"
-            UPDATE users
-            SET totp_enabled = FALSE, totp_secret_enc = NULL,
-                recovery_codes_hash = NULL, updated_at = now()
-            WHERE id = $1
-            "#,
-        )
-        .bind(user_id.as_uuid())
-        .execute(&self.pool)
-        .await
-        .map_err(|error| AppError::Internal(format!("failed to disable TOTP: {error}")))?;
-
-        Ok(())
+        self.disable_totp_impl(user_id).await
     }
 
     async fn update_recovery_codes(
@@ -290,29 +122,21 @@ impl UserRepository for PostgresUserRepository {
         user_id: UserId,
         recovery_codes_hash: &serde_json::Value,
     ) -> AppResult<()> {
-        sqlx::query(
-            r#"
-            UPDATE users
-            SET recovery_codes_hash = $2, updated_at = now()
-            WHERE id = $1
-            "#,
-        )
-        .bind(user_id.as_uuid())
-        .bind(recovery_codes_hash)
-        .execute(&self.pool)
-        .await
-        .map_err(|error| AppError::Internal(format!("failed to update recovery codes: {error}")))?;
-
-        Ok(())
+        self.update_recovery_codes_impl(user_id, recovery_codes_hash)
+            .await
     }
 
     async fn find_by_subject(&self, subject: &str) -> AppResult<Option<UserRecord>> {
-        // Try parsing as UUID first (new-style user_id as subject).
-        if let Ok(uuid) = uuid::Uuid::parse_str(subject) {
-            return self.find_by_id(UserId::from_uuid(uuid)).await;
-        }
-
-        // Fall back to email lookup (legacy subjects might be emails).
-        self.find_by_email(subject).await
+        self.find_by_subject_impl(subject).await
     }
+}
+
+fn email_conflict_or_internal(error: sqlx::Error, operation: &str) -> AppError {
+    if let sqlx::Error::Database(ref database_error) = error
+        && database_error.code().as_deref() == Some("23505")
+    {
+        return AppError::Conflict("an account with this email already exists".to_owned());
+    }
+
+    AppError::Internal(format!("failed to {operation}: {error}"))
 }

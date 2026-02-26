@@ -3,4 +3,4 @@
 /**
  * Incoming payload for metadata field create/update.
  */
-export type CreateFieldRequest = { logical_name: string, display_name: string, field_type: string, is_required: boolean, is_unique: boolean, default_value: unknown | null, relation_target_entity: string | null, option_set_logical_name: string | null, };
+export type CreateFieldRequest = { logical_name: string, display_name: string, field_type: string, is_required: boolean, is_unique: boolean, default_value: unknown | null, calculation_expression: string | null, relation_target_entity: string | null, option_set_logical_name: string | null, };

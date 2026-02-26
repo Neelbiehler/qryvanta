@@ -3,4 +3,4 @@
 /**
  * API representation of a metadata field definition.
  */
-export type FieldResponse = { entity_logical_name: string, logical_name: string, display_name: string, field_type: string, is_required: boolean, is_unique: boolean, description: string | null, default_value: unknown | null, relation_target_entity: string | null, option_set_logical_name: string | null, max_length: number | null, min_value: number | null, max_value: number | null, };
+export type FieldResponse = { entity_logical_name: string, logical_name: string, display_name: string, field_type: string, is_required: boolean, is_unique: boolean, description: string | null, default_value: unknown | null, calculation_expression: string | null, relation_target_entity: string | null, option_set_logical_name: string | null, max_length: number | null, min_value: number | null, max_value: number | null, };
