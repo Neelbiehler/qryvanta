@@ -6,28 +6,37 @@ import { useRouter } from "next/navigation";
 import {
   Button,
   Card,
-  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-  Input,
-  Label,
   Notice,
-  Select,
   StatusBadge,
 } from "@qryvanta/ui";
 
 import {
   apiFetch,
-  type AppSitemapAreaDto,
   type AppSitemapResponse,
-  type AppSitemapSubAreaDto,
-  type AppSitemapTargetDto,
   type EntityResponse,
   type FormResponse,
   type SaveAppSitemapRequest,
   type ViewResponse,
 } from "@/lib/api";
+import {
+  createCrmTemplateSitemap,
+  createDefaultArea,
+  createDefaultGroup,
+  createDefaultSubArea,
+  moveGroup,
+  moveSubArea,
+  normalizeSitemap,
+  parseDragPayload,
+  reorderList,
+} from "@/components/apps/sitemap-editor/model";
+import { SitemapPreviewCard } from "@/components/apps/sitemap-editor/sitemap-preview-card";
+import { SitemapPropertiesCard } from "@/components/apps/sitemap-editor/sitemap-properties-card";
+import { SitemapTreeCard } from "@/components/apps/sitemap-editor/sitemap-tree-card";
+import type { DragPayload, SelectionState } from "@/components/apps/sitemap-editor/types";
+import { isEditableTarget } from "@/components/apps/sitemap-editor/utils";
 
 type SitemapEditorPanelProps = {
   appLogicalName: string;
@@ -35,282 +44,11 @@ type SitemapEditorPanelProps = {
   entities: EntityResponse[];
 };
 
-type SelectionState =
-  | { kind: "area"; areaIndex: number }
-  | { kind: "group"; areaIndex: number; groupIndex: number }
-  | {
-      kind: "sub_area";
-      areaIndex: number;
-      groupIndex: number;
-      subAreaIndex: number;
-    };
-
-type DragPayload =
-  | { kind: "area"; areaIndex: number }
-  | { kind: "group"; areaIndex: number; groupIndex: number }
-  | {
-      kind: "sub_area";
-      areaIndex: number;
-      groupIndex: number;
-      subAreaIndex: number;
-    };
-
-function parseDragPayload(rawPayload: string): DragPayload | null {
-  try {
-    return JSON.parse(rawPayload) as DragPayload;
-  } catch {
-    return null;
-  }
+export function SitemapEditorPanel(props: SitemapEditorPanelProps) {
+  return useSitemapEditorPanelContent(props);
 }
 
-function reorderList<T>(
-  items: T[],
-  sourceIndex: number,
-  targetIndex: number,
-): T[] {
-  if (sourceIndex === targetIndex) {
-    return items;
-  }
-  const next = [...items];
-  const [entry] = next.splice(sourceIndex, 1);
-  next.splice(targetIndex, 0, entry);
-  return next;
-}
-
-function moveGroup(
-  areas: AppSitemapAreaDto[],
-  sourceAreaIndex: number,
-  sourceGroupIndex: number,
-  targetAreaIndex: number,
-  targetGroupIndex: number,
-): AppSitemapAreaDto[] {
-  const sourceArea = areas[sourceAreaIndex];
-  if (!sourceArea) {
-    return areas;
-  }
-  const movingGroup = sourceArea.groups[sourceGroupIndex];
-  if (!movingGroup) {
-    return areas;
-  }
-
-  const withoutSource = areas.map((area, areaIndex) => {
-    if (areaIndex !== sourceAreaIndex) {
-      return area;
-    }
-    return {
-      ...area,
-      groups: area.groups.filter((_, groupIndex) => groupIndex !== sourceGroupIndex),
-    };
-  });
-
-  const normalizedTargetIndex =
-    sourceAreaIndex === targetAreaIndex && sourceGroupIndex < targetGroupIndex
-      ? targetGroupIndex - 1
-      : targetGroupIndex;
-
-  return withoutSource.map((area, areaIndex) => {
-    if (areaIndex !== targetAreaIndex) {
-      return area;
-    }
-    const nextGroups = [...area.groups];
-    nextGroups.splice(Math.max(0, normalizedTargetIndex), 0, movingGroup);
-    return {
-      ...area,
-      groups: nextGroups,
-    };
-  });
-}
-
-function moveSubArea(
-  areas: AppSitemapAreaDto[],
-  sourceAreaIndex: number,
-  sourceGroupIndex: number,
-  sourceSubAreaIndex: number,
-  targetAreaIndex: number,
-  targetGroupIndex: number,
-  targetSubAreaIndex: number,
-): AppSitemapAreaDto[] {
-  const sourceGroup = areas[sourceAreaIndex]?.groups[sourceGroupIndex];
-  if (!sourceGroup) {
-    return areas;
-  }
-  const movingSubArea = sourceGroup.sub_areas[sourceSubAreaIndex];
-  if (!movingSubArea) {
-    return areas;
-  }
-
-  const withoutSource = areas.map((area, areaIndex) => {
-    if (areaIndex !== sourceAreaIndex) {
-      return area;
-    }
-
-    return {
-      ...area,
-      groups: area.groups.map((group, groupIndex) => {
-        if (groupIndex !== sourceGroupIndex) {
-          return group;
-        }
-        return {
-          ...group,
-          sub_areas: group.sub_areas.filter(
-            (_, subAreaIndex) => subAreaIndex !== sourceSubAreaIndex,
-          ),
-        };
-      }),
-    };
-  });
-
-  const normalizedTargetIndex =
-    sourceAreaIndex === targetAreaIndex &&
-    sourceGroupIndex === targetGroupIndex &&
-    sourceSubAreaIndex < targetSubAreaIndex
-      ? targetSubAreaIndex - 1
-      : targetSubAreaIndex;
-
-  return withoutSource.map((area, areaIndex) => {
-    if (areaIndex !== targetAreaIndex) {
-      return area;
-    }
-
-    return {
-      ...area,
-      groups: area.groups.map((group, groupIndex) => {
-        if (groupIndex !== targetGroupIndex) {
-          return group;
-        }
-        const nextSubAreas = [...group.sub_areas];
-        nextSubAreas.splice(Math.max(0, normalizedTargetIndex), 0, movingSubArea);
-        return {
-          ...group,
-          sub_areas: nextSubAreas,
-        };
-      }),
-    };
-  });
-}
-
-function normalizeSitemap(sitemap: AppSitemapResponse): AppSitemapResponse {
-  return {
-    ...sitemap,
-    areas: sitemap.areas.map((area, areaIndex) => ({
-      ...area,
-      position: areaIndex,
-      groups: area.groups.map((group, groupIndex) => ({
-        ...group,
-        position: groupIndex,
-        sub_areas: group.sub_areas.map((subArea, subAreaIndex) => ({
-          ...subArea,
-          position: subAreaIndex,
-        })),
-      })),
-    })),
-  };
-}
-
-function createDefaultArea(index: number): AppSitemapAreaDto {
-  return {
-    logical_name: `area_${index + 1}`,
-    display_name: `Area ${index + 1}`,
-    position: index,
-    icon: null,
-    groups: [],
-  };
-}
-
-function createDefaultGroup(areaIndex: number, groupIndex: number) {
-  return {
-    logical_name: `group_${areaIndex + 1}_${groupIndex + 1}`,
-    display_name: `Group ${groupIndex + 1}`,
-    position: groupIndex,
-    sub_areas: [],
-  };
-}
-
-function createDefaultSubArea(
-  areaIndex: number,
-  groupIndex: number,
-  subAreaIndex: number,
-  entityLogicalName: string | null,
-): AppSitemapSubAreaDto {
-  const target: AppSitemapTargetDto = entityLogicalName
-    ? {
-        type: "entity",
-        entity_logical_name: entityLogicalName,
-        default_form: null,
-        default_view: null,
-      }
-    : {
-        type: "custom_page",
-        url: "",
-      };
-
-  return {
-    logical_name: `sub_area_${areaIndex + 1}_${groupIndex + 1}_${subAreaIndex + 1}`,
-    display_name: `Sub Area ${subAreaIndex + 1}`,
-    position: subAreaIndex,
-    icon: null,
-    target,
-  };
-}
-
-function createCrmTemplateSitemap(
-  appLogicalName: string,
-  entities: EntityResponse[],
-): AppSitemapResponse {
-  const primaryEntities = entities.slice(0, 6);
-  const coreEntities = primaryEntities.slice(0, 3);
-  const activityEntities = primaryEntities.slice(3, 6);
-
-  return normalizeSitemap({
-    app_logical_name: appLogicalName,
-    areas: [
-      {
-        logical_name: "operations",
-        display_name: "Operations",
-        position: 0,
-        icon: "briefcase",
-        groups: [
-          {
-            logical_name: "core",
-            display_name: "Core",
-            position: 0,
-            sub_areas: coreEntities.map((entity, index) => ({
-              logical_name: `${entity.logical_name}_home`,
-              display_name: entity.display_name,
-              position: index,
-              icon: null,
-              target: {
-                type: "entity",
-                entity_logical_name: entity.logical_name,
-                default_form: null,
-                default_view: null,
-              },
-            })),
-          },
-          {
-            logical_name: "activity",
-            display_name: "Activity",
-            position: 1,
-            sub_areas: activityEntities.map((entity, index) => ({
-              logical_name: `${entity.logical_name}_activity`,
-              display_name: entity.display_name,
-              position: index,
-              icon: null,
-              target: {
-                type: "entity",
-                entity_logical_name: entity.logical_name,
-                default_form: null,
-                default_view: null,
-              },
-            })),
-          },
-        ],
-      },
-    ],
-  });
-}
-
-export function SitemapEditorPanel({
+function useSitemapEditorPanelContent({
   appLogicalName,
   initialSitemap,
   entities,
@@ -330,13 +68,19 @@ export function SitemapEditorPanel({
   const [isSaving, setIsSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [entityFormsByLogicalName, setEntityFormsByLogicalName] = useState<
-    Record<string, FormResponse[]>
-  >({});
-  const [entityViewsByLogicalName, setEntityViewsByLogicalName] = useState<
-    Record<string, ViewResponse[]>
-  >({});
-  const [isLoadingTargetMetadata, setIsLoadingTargetMetadata] = useState(false);
+  const [targetMetadataState, setTargetMetadataState] = useState<{
+    entityFormsByLogicalName: Record<string, FormResponse[]>;
+    entityViewsByLogicalName: Record<string, ViewResponse[]>;
+    isLoadingTargetMetadata: boolean;
+  }>({
+    entityFormsByLogicalName: {},
+    entityViewsByLogicalName: {},
+    isLoadingTargetMetadata: false,
+  });
+
+  const entityFormsByLogicalName = targetMetadataState.entityFormsByLogicalName;
+  const entityViewsByLogicalName = targetMetadataState.entityViewsByLogicalName;
+  const isLoadingTargetMetadata = targetMetadataState.isLoadingTargetMetadata;
 
   const selectedArea =
     selection?.kind === "area" ||
@@ -420,30 +164,41 @@ export function SitemapEditorPanel({
         return;
       }
 
-      setIsLoadingTargetMetadata(true);
+      setTargetMetadataState((current) => ({
+        ...current,
+        isLoadingTargetMetadata: true,
+      }));
+
+      let forms: FormResponse[] | null = null;
+      let views: ViewResponse[] | null = null;
       try {
         const [formsResponse, viewsResponse] = await Promise.all([
           apiFetch(`/api/entities/${selectedEntityLogicalName}/forms`),
           apiFetch(`/api/entities/${selectedEntityLogicalName}/views`),
         ]);
 
-        if (formsResponse.ok) {
-          const forms = (await formsResponse.json()) as FormResponse[];
-          setEntityFormsByLogicalName((current) => ({
-            ...current,
-            [selectedEntityLogicalName]: forms,
-          }));
-        }
-        if (viewsResponse.ok) {
-          const views = (await viewsResponse.json()) as ViewResponse[];
-          setEntityViewsByLogicalName((current) => ({
-            ...current,
-            [selectedEntityLogicalName]: views,
-          }));
-        }
-      } finally {
-        setIsLoadingTargetMetadata(false);
+        forms = formsResponse.ok ? ((await formsResponse.json()) as FormResponse[]) : null;
+        views = viewsResponse.ok ? ((await viewsResponse.json()) as ViewResponse[]) : null;
+      } catch {
+        forms = null;
+        views = null;
       }
+
+      setTargetMetadataState((current) => ({
+        entityFormsByLogicalName: forms
+          ? {
+              ...current.entityFormsByLogicalName,
+              [selectedEntityLogicalName]: forms,
+            }
+          : current.entityFormsByLogicalName,
+        entityViewsByLogicalName: views
+          ? {
+              ...current.entityViewsByLogicalName,
+              [selectedEntityLogicalName]: views,
+            }
+          : current.entityViewsByLogicalName,
+        isLoadingTargetMetadata: false,
+      }));
     }
 
     void loadEntityTargetMetadata();
@@ -1096,868 +851,34 @@ export function SitemapEditorPanel({
       </Card>
 
       <div className="grid gap-4 xl:grid-cols-[320px_1fr_340px]">
-        <Card className="h-fit">
-          <CardHeader>
-            <CardTitle className="text-base">Tree</CardTitle>
-            <CardDescription>
-              Drag and drop to reorder nodes within each hierarchy level.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2" tabIndex={0} onKeyDown={handleCanvasKeyDown}>
-            <DropLine
-              lineId="area-insert-0"
-              activeLineId={activeDropLineId}
-              onSetActiveLine={setActiveDropLineId}
-              onDrop={(event) => onDropLine({ kind: "area", areaIndex: 0 }, event)}
-            />
-            {sitemap.areas.map((area, areaIndex) => (
-              <div
-                key={`area-${area.logical_name}-${areaIndex}`}
-                className="rounded-md border border-zinc-200 p-2"
-              >
-                <button
-                  type="button"
-                  className={`w-full rounded-md border px-2 py-1 text-left ${selection?.kind === "area" && selection.areaIndex === areaIndex ? "border-emerald-400 bg-emerald-50" : "border-zinc-200 bg-zinc-50"}`}
-                  onClick={() => setSelection({ kind: "area", areaIndex })}
-                  draggable
-                    onDragStart={(event) =>
-                      onDragStart({ kind: "area", areaIndex }, area.display_name, event)
-                    }
-                    onDragEnd={() => setDragLabel(null)}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={(event) =>
-                    onDropNode({ kind: "area", areaIndex }, event)
-                  }
-                >
-                  <p className="text-sm font-semibold">{area.display_name}</p>
-                  <p className="font-mono text-xs text-zinc-500">
-                    {area.logical_name}
-                  </p>
-                </button>
-                <div className="mt-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() => addGroupToArea(areaIndex)}
-                  >
-                    + Group
-                  </Button>
-                </div>
-                <div className="mt-2 space-y-2 pl-3">
-                  <DropLine
-                    lineId={`group-insert-${areaIndex}-0`}
-                    activeLineId={activeDropLineId}
-                    onSetActiveLine={setActiveDropLineId}
-                    onDrop={(event) =>
-                      onDropLine(
-                        {
-                          kind: "group",
-                          areaIndex,
-                          groupIndex: 0,
-                        },
-                        event,
-                      )
-                    }
-                  />
-                  {area.groups.map((group, groupIndex) => (
-                    <div
-                      key={`group-${group.logical_name}-${groupIndex}`}
-                      className="rounded-md border border-zinc-100 p-2"
-                    >
-                      <button
-                        type="button"
-                        className={`w-full rounded-md border px-2 py-1 text-left ${selection?.kind === "group" && selection.areaIndex === areaIndex && selection.groupIndex === groupIndex ? "border-emerald-400 bg-emerald-50" : "border-zinc-200 bg-white"}`}
-                        onClick={() =>
-                          setSelection({ kind: "group", areaIndex, groupIndex })
-                        }
-                        draggable
-                          onDragStart={(event) =>
-                            onDragStart(
-                              { kind: "group", areaIndex, groupIndex },
-                              group.display_name,
-                              event,
-                            )
-                          }
-                          onDragEnd={() => setDragLabel(null)}
-                        onDragOver={(event) => event.preventDefault()}
-                        onDrop={(event) =>
-                          onDropNode(
-                            { kind: "group", areaIndex, groupIndex },
-                            event,
-                          )
-                        }
-                      >
-                        <p className="text-sm font-medium">
-                          {group.display_name}
-                        </p>
-                        <p className="font-mono text-xs text-zinc-500">
-                          {group.logical_name}
-                        </p>
-                      </button>
-                      <div className="mt-2">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => addSubAreaToGroup(areaIndex, groupIndex)}
-                        >
-                          + Sub Area
-                        </Button>
-                      </div>
-                      <div className="mt-2 space-y-2 pl-3">
-                        <DropLine
-                          lineId={`subarea-insert-${areaIndex}-${groupIndex}-0`}
-                          activeLineId={activeDropLineId}
-                          onSetActiveLine={setActiveDropLineId}
-                          onDrop={(event) =>
-                            onDropLine(
-                              {
-                                kind: "sub_area",
-                                areaIndex,
-                                groupIndex,
-                                subAreaIndex: 0,
-                              },
-                              event,
-                            )
-                          }
-                        />
-                        {group.sub_areas.map((subArea, subAreaIndex) => (
-                          <button
-                            key={`sub-area-${subArea.logical_name}-${subAreaIndex}`}
-                            type="button"
-                            className={`w-full rounded-md border px-2 py-1 text-left ${selection?.kind === "sub_area" && selection.areaIndex === areaIndex && selection.groupIndex === groupIndex && selection.subAreaIndex === subAreaIndex ? "border-emerald-400 bg-emerald-50" : "border-zinc-200 bg-white"}`}
-                            onClick={() =>
-                              setSelection({
-                                kind: "sub_area",
-                                areaIndex,
-                                groupIndex,
-                                subAreaIndex,
-                              })
-                            }
-                            draggable
-                            onDragStart={(event) =>
-                              onDragStart(
-                                {
-                                  kind: "sub_area",
-                                  areaIndex,
-                                  groupIndex,
-                                  subAreaIndex,
-                                },
-                                subArea.display_name,
-                                event,
-                              )
-                            }
-                            onDragEnd={() => setDragLabel(null)}
-                            onDragOver={(event) => event.preventDefault()}
-                            onDrop={(event) =>
-                              onDropNode(
-                                {
-                                  kind: "sub_area",
-                                  areaIndex,
-                                  groupIndex,
-                                  subAreaIndex,
-                                },
-                                event,
-                              )
-                            }
-                          >
-                            <p className="text-sm">{subArea.display_name}</p>
-                            <p className="font-mono text-xs text-zinc-500">
-                              {subArea.logical_name}
-                            </p>
-                          </button>
-                        ))}
-                        <DropLine
-                          lineId={`subarea-insert-${areaIndex}-${groupIndex}-${group.sub_areas.length}`}
-                          activeLineId={activeDropLineId}
-                          onSetActiveLine={setActiveDropLineId}
-                          onDrop={(event) =>
-                            onDropLine(
-                              {
-                                kind: "sub_area",
-                                areaIndex,
-                                groupIndex,
-                                subAreaIndex: group.sub_areas.length,
-                              },
-                              event,
-                            )
-                          }
-                        />
-                      </div>
-                    </div>
-                  ))}
-                  <DropLine
-                    lineId={`group-insert-${areaIndex}-${area.groups.length}`}
-                    activeLineId={activeDropLineId}
-                    onSetActiveLine={setActiveDropLineId}
-                    onDrop={(event) =>
-                      onDropLine(
-                        {
-                          kind: "group",
-                          areaIndex,
-                          groupIndex: area.groups.length,
-                        },
-                        event,
-                      )
-                    }
-                  />
-                </div>
-              </div>
-            ))}
-            <DropLine
-              lineId={`area-insert-${sitemap.areas.length}`}
-              activeLineId={activeDropLineId}
-              onSetActiveLine={setActiveDropLineId}
-              onDrop={(event) =>
-                onDropLine({ kind: "area", areaIndex: sitemap.areas.length }, event)
-              }
-            />
-          </CardContent>
-        </Card>
+        <SitemapTreeCard
+          sitemap={sitemap}
+          selection={selection}
+          activeDropLineId={activeDropLineId}
+          onSetActiveDropLineId={setActiveDropLineId}
+          onCanvasKeyDown={handleCanvasKeyDown}
+          onSelectNode={setSelection}
+          onDragStart={onDragStart}
+          onDragEnd={() => setDragLabel(null)}
+          onDropNode={onDropNode}
+          onDropLine={onDropLine}
+          onAddGroupToArea={addGroupToArea}
+          onAddSubAreaToGroup={addSubAreaToGroup}
+        />
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Preview</CardTitle>
-            <CardDescription>
-              Worker sidebar preview updates as you modify the sitemap tree.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="space-y-3 rounded-md border border-zinc-200 bg-zinc-50 p-3">
-              {sitemap.areas.map((area) => (
-                <div
-                  key={`preview-area-${area.logical_name}`}
-                  className="space-y-2"
-                >
-                  <button
-                    type="button"
-                    className="text-left text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 hover:text-zinc-700"
-                    onClick={() =>
-                      setSelection({
-                        kind: "area",
-                        areaIndex: area.position,
-                      })
-                    }
-                  >
-                    {area.display_name}
-                  </button>
-                  <div className="space-y-2 pl-2">
-                    {area.groups.map((group) => (
-                      <details key={`preview-group-${group.logical_name}`} open>
-                        <summary
-                          className="cursor-pointer text-sm font-medium text-zinc-700"
-                          onClick={() =>
-                            setSelection({
-                              kind: "group",
-                              areaIndex: area.position,
-                              groupIndex: group.position,
-                            })
-                          }
-                        >
-                          {group.display_name}
-                        </summary>
-                        <div className="mt-1 space-y-1 pl-3">
-                          {group.sub_areas.map((subArea) => (
-                            <button
-                              key={`preview-sub-area-${subArea.logical_name}`}
-                              type="button"
-                              className="text-left text-sm text-zinc-600 hover:text-zinc-900"
-                              onClick={() =>
-                                setSelection({
-                                  kind: "sub_area",
-                                  areaIndex: area.position,
-                                  groupIndex: group.position,
-                                  subAreaIndex: subArea.position,
-                                })
-                              }
-                            >
-                              {subArea.display_name}
-                            </button>
-                          ))}
-                        </div>
-                      </details>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+        <SitemapPreviewCard sitemap={sitemap} onSelectNode={setSelection} />
 
-        <Card className="h-fit">
-          <CardHeader>
-            <CardTitle className="text-base">Properties</CardTitle>
-            <CardDescription>
-              Configure selected node metadata and target behavior.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {selection?.kind === "area" && selectedArea ? (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="area_display_name">Area Display Name</Label>
-                  <Input
-                    id="area_display_name"
-                    value={selectedArea.display_name}
-                    onChange={(event) =>
-                      updateSitemap((current) => ({
-                        ...current,
-                        areas: current.areas.map((area, index) =>
-                          index === selection.areaIndex
-                            ? { ...area, display_name: event.target.value }
-                            : area,
-                        ),
-                      }))
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="area_logical_name">Area Logical Name</Label>
-                  <Input
-                    id="area_logical_name"
-                    value={selectedArea.logical_name}
-                    onChange={(event) =>
-                      updateSitemap((current) => ({
-                        ...current,
-                        areas: current.areas.map((area, index) =>
-                          index === selection.areaIndex
-                            ? { ...area, logical_name: event.target.value }
-                            : area,
-                        ),
-                      }))
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="area_icon">Area Icon</Label>
-                  <Input
-                    id="area_icon"
-                    value={selectedArea.icon ?? ""}
-                    onChange={(event) =>
-                      updateSitemap((current) => ({
-                        ...current,
-                        areas: current.areas.map((area, index) =>
-                          index === selection.areaIndex
-                            ? {
-                                ...area,
-                                icon:
-                                  event.target.value.trim().length > 0
-                                    ? event.target.value
-                                    : null,
-                              }
-                            : area,
-                        ),
-                      }))
-                    }
-                  />
-                </div>
-              </>
-            ) : null}
-
-            {selection?.kind === "group" && selectedGroup ? (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="group_display_name">Group Display Name</Label>
-                  <Input
-                    id="group_display_name"
-                    value={selectedGroup.display_name}
-                    onChange={(event) =>
-                      updateSitemap((current) => ({
-                        ...current,
-                        areas: current.areas.map((area, areaIndex) => {
-                          if (areaIndex !== selection.areaIndex) {
-                            return area;
-                          }
-                          return {
-                            ...area,
-                            groups: area.groups.map((group, groupIndex) =>
-                              groupIndex === selection.groupIndex
-                                ? { ...group, display_name: event.target.value }
-                                : group,
-                            ),
-                          };
-                        }),
-                      }))
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="group_logical_name">Group Logical Name</Label>
-                  <Input
-                    id="group_logical_name"
-                    value={selectedGroup.logical_name}
-                    onChange={(event) =>
-                      updateSitemap((current) => ({
-                        ...current,
-                        areas: current.areas.map((area, areaIndex) => {
-                          if (areaIndex !== selection.areaIndex) {
-                            return area;
-                          }
-                          return {
-                            ...area,
-                            groups: area.groups.map((group, groupIndex) =>
-                              groupIndex === selection.groupIndex
-                                ? { ...group, logical_name: event.target.value }
-                                : group,
-                            ),
-                          };
-                        }),
-                      }))
-                    }
-                  />
-                </div>
-              </>
-            ) : null}
-
-            {selection?.kind === "sub_area" && selectedSubArea ? (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="sub_area_display_name">
-                    Sub Area Display Name
-                  </Label>
-                  <Input
-                    id="sub_area_display_name"
-                    value={selectedSubArea.display_name}
-                    onChange={(event) =>
-                      updateSitemap((current) => ({
-                        ...current,
-                        areas: current.areas.map((area, areaIndex) => {
-                          if (areaIndex !== selection.areaIndex) {
-                            return area;
-                          }
-                          return {
-                            ...area,
-                            groups: area.groups.map((group, groupIndex) => {
-                              if (groupIndex !== selection.groupIndex) {
-                                return group;
-                              }
-                              return {
-                                ...group,
-                                sub_areas: group.sub_areas.map(
-                                  (subArea, subAreaIndex) =>
-                                    subAreaIndex === selection.subAreaIndex
-                                      ? {
-                                          ...subArea,
-                                          display_name: event.target.value,
-                                        }
-                                      : subArea,
-                                ),
-                              };
-                            }),
-                          };
-                        }),
-                      }))
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="sub_area_icon">Sub Area Icon</Label>
-                  <Input
-                    id="sub_area_icon"
-                    value={selectedSubArea.icon ?? ""}
-                    onChange={(event) =>
-                      updateSitemap((current) => ({
-                        ...current,
-                        areas: current.areas.map((area, areaIndex) => {
-                          if (areaIndex !== selection.areaIndex) {
-                            return area;
-                          }
-                          return {
-                            ...area,
-                            groups: area.groups.map((group, groupIndex) => {
-                              if (groupIndex !== selection.groupIndex) {
-                                return group;
-                              }
-                              return {
-                                ...group,
-                                sub_areas: group.sub_areas.map(
-                                  (subArea, subAreaIndex) =>
-                                    subAreaIndex === selection.subAreaIndex
-                                      ? {
-                                          ...subArea,
-                                          icon:
-                                            event.target.value.trim().length > 0
-                                              ? event.target.value
-                                              : null,
-                                        }
-                                      : subArea,
-                                ),
-                              };
-                            }),
-                          };
-                        }),
-                      }))
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="sub_area_target_type">Target Type</Label>
-                  <Select
-                    id="sub_area_target_type"
-                    value={selectedSubArea.target.type}
-                    onChange={(event) =>
-                      updateSitemap((current) => ({
-                        ...current,
-                        areas: current.areas.map((area, areaIndex) => {
-                          if (areaIndex !== selection.areaIndex) {
-                            return area;
-                          }
-                          return {
-                            ...area,
-                            groups: area.groups.map((group, groupIndex) => {
-                              if (groupIndex !== selection.groupIndex) {
-                                return group;
-                              }
-                              return {
-                                ...group,
-                                sub_areas: group.sub_areas.map(
-                                  (subArea, subAreaIndex) => {
-                                    if (
-                                      subAreaIndex !== selection.subAreaIndex
-                                    ) {
-                                      return subArea;
-                                    }
-                                    const nextType = event.target
-                                      .value as AppSitemapTargetDto["type"];
-                                    const nextTarget: AppSitemapTargetDto =
-                                      nextType === "entity"
-                                        ? {
-                                            type: "entity",
-                                            entity_logical_name:
-                                              entities[0]?.logical_name ?? "",
-                                            default_form: null,
-                                            default_view: null,
-                                          }
-                                        : nextType === "dashboard"
-                                          ? {
-                                              type: "dashboard",
-                                              dashboard_logical_name: "",
-                                            }
-                                          : {
-                                              type: "custom_page",
-                                              url: "",
-                                            };
-                                    return {
-                                      ...subArea,
-                                      target: nextTarget,
-                                    };
-                                  },
-                                ),
-                              };
-                            }),
-                          };
-                        }),
-                      }))
-                    }
-                  >
-                    <option value="entity">Entity</option>
-                    <option value="dashboard">Dashboard</option>
-                    <option value="custom_page">Custom Page</option>
-                  </Select>
-                </div>
-
-                {selectedSubArea.target.type === "entity" ? (
-                  <>
-                    <div className="space-y-2">
-                      <Label htmlFor="sub_area_target_entity">Entity</Label>
-                      <Select
-                        id="sub_area_target_entity"
-                        value={selectedSubArea.target.entity_logical_name}
-                        onChange={(event) =>
-                          updateSitemap((current) => ({
-                            ...current,
-                            areas: current.areas.map((area, areaIndex) => {
-                              if (areaIndex !== selection.areaIndex) {
-                                return area;
-                              }
-                              return {
-                                ...area,
-                                groups: area.groups.map((group, groupIndex) => {
-                                  if (groupIndex !== selection.groupIndex) {
-                                    return group;
-                                  }
-                                  return {
-                                    ...group,
-                                    sub_areas: group.sub_areas.map(
-                                      (subArea, subAreaIndex) => {
-                                        if (
-                                          subAreaIndex !==
-                                          selection.subAreaIndex
-                                        ) {
-                                          return subArea;
-                                        }
-                                        if (subArea.target.type !== "entity") {
-                                          return subArea;
-                                        }
-                                        return {
-                                          ...subArea,
-                                          target: {
-                                            ...subArea.target,
-                                            entity_logical_name:
-                                              event.target.value,
-                                            default_form: null,
-                                            default_view: null,
-                                          },
-                                        };
-                                      },
-                                    ),
-                                  };
-                                }),
-                              };
-                            }),
-                          }))
-                        }
-                      >
-                        {entities.map((entity) => (
-                          <option
-                            key={entity.logical_name}
-                            value={entity.logical_name}
-                          >
-                            {entity.display_name} ({entity.logical_name})
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="sub_area_target_form">Default Form</Label>
-                      <Select
-                        id="sub_area_target_form"
-                        value={selectedSubArea.target.default_form ?? ""}
-                        disabled={isLoadingTargetMetadata}
-                        onChange={(event) =>
-                          updateSitemap((current) => ({
-                            ...current,
-                            areas: current.areas.map((area, areaIndex) => {
-                              if (areaIndex !== selection.areaIndex) {
-                                return area;
-                              }
-                              return {
-                                ...area,
-                                groups: area.groups.map((group, groupIndex) => {
-                                  if (groupIndex !== selection.groupIndex) {
-                                    return group;
-                                  }
-                                  return {
-                                    ...group,
-                                    sub_areas: group.sub_areas.map(
-                                      (subArea, subAreaIndex) => {
-                                        if (
-                                          subAreaIndex !==
-                                          selection.subAreaIndex
-                                        ) {
-                                          return subArea;
-                                        }
-                                        if (subArea.target.type !== "entity") {
-                                          return subArea;
-                                        }
-                                        return {
-                                          ...subArea,
-                                          target: {
-                                            ...subArea.target,
-                                            default_form:
-                                              event.target.value.trim().length >
-                                              0
-                                                ? event.target.value
-                                                : null,
-                                          },
-                                        };
-                                      },
-                                    ),
-                                  };
-                                }),
-                              };
-                            }),
-                          }))
-                        }
-                      >
-                        <option value="">None</option>
-                        {selectedEntityForms.map((form) => (
-                          <option
-                            key={form.logical_name}
-                            value={form.logical_name}
-                          >
-                            {form.display_name} ({form.logical_name})
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="sub_area_target_view">Default View</Label>
-                      <Select
-                        id="sub_area_target_view"
-                        value={selectedSubArea.target.default_view ?? ""}
-                        disabled={isLoadingTargetMetadata}
-                        onChange={(event) =>
-                          updateSitemap((current) => ({
-                            ...current,
-                            areas: current.areas.map((area, areaIndex) => {
-                              if (areaIndex !== selection.areaIndex) {
-                                return area;
-                              }
-                              return {
-                                ...area,
-                                groups: area.groups.map((group, groupIndex) => {
-                                  if (groupIndex !== selection.groupIndex) {
-                                    return group;
-                                  }
-                                  return {
-                                    ...group,
-                                    sub_areas: group.sub_areas.map(
-                                      (subArea, subAreaIndex) => {
-                                        if (
-                                          subAreaIndex !==
-                                          selection.subAreaIndex
-                                        ) {
-                                          return subArea;
-                                        }
-                                        if (subArea.target.type !== "entity") {
-                                          return subArea;
-                                        }
-                                        return {
-                                          ...subArea,
-                                          target: {
-                                            ...subArea.target,
-                                            default_view:
-                                              event.target.value.trim().length >
-                                              0
-                                                ? event.target.value
-                                                : null,
-                                          },
-                                        };
-                                      },
-                                    ),
-                                  };
-                                }),
-                              };
-                            }),
-                          }))
-                        }
-                      >
-                        <option value="">None</option>
-                        {selectedEntityViews.map((view) => (
-                          <option
-                            key={view.logical_name}
-                            value={view.logical_name}
-                          >
-                            {view.display_name} ({view.logical_name})
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
-                  </>
-                ) : null}
-
-                {selectedSubArea.target.type === "dashboard" ? (
-                  <div className="space-y-2">
-                    <Label htmlFor="sub_area_target_dashboard">
-                      Dashboard Logical Name
-                    </Label>
-                    <Input
-                      id="sub_area_target_dashboard"
-                      value={selectedSubArea.target.dashboard_logical_name}
-                      onChange={(event) =>
-                        updateSitemap((current) => ({
-                          ...current,
-                          areas: current.areas.map((area, areaIndex) => {
-                            if (areaIndex !== selection.areaIndex) {
-                              return area;
-                            }
-                            return {
-                              ...area,
-                              groups: area.groups.map((group, groupIndex) => {
-                                if (groupIndex !== selection.groupIndex) {
-                                  return group;
-                                }
-                                return {
-                                  ...group,
-                                  sub_areas: group.sub_areas.map(
-                                    (subArea, subAreaIndex) => {
-                                      if (
-                                        subAreaIndex !== selection.subAreaIndex
-                                      ) {
-                                        return subArea;
-                                      }
-                                      if (subArea.target.type !== "dashboard") {
-                                        return subArea;
-                                      }
-                                      return {
-                                        ...subArea,
-                                        target: {
-                                          ...subArea.target,
-                                          dashboard_logical_name:
-                                            event.target.value,
-                                        },
-                                      };
-                                    },
-                                  ),
-                                };
-                              }),
-                            };
-                          }),
-                        }))
-                      }
-                    />
-                  </div>
-                ) : null}
-
-                {selectedSubArea.target.type === "custom_page" ? (
-                  <div className="space-y-2">
-                    <Label htmlFor="sub_area_target_url">Custom Page URL</Label>
-                    <Input
-                      id="sub_area_target_url"
-                      value={selectedSubArea.target.url}
-                      onChange={(event) =>
-                        updateSitemap((current) => ({
-                          ...current,
-                          areas: current.areas.map((area, areaIndex) => {
-                            if (areaIndex !== selection.areaIndex) {
-                              return area;
-                            }
-                            return {
-                              ...area,
-                              groups: area.groups.map((group, groupIndex) => {
-                                if (groupIndex !== selection.groupIndex) {
-                                  return group;
-                                }
-                                return {
-                                  ...group,
-                                  sub_areas: group.sub_areas.map(
-                                    (subArea, subAreaIndex) => {
-                                      if (
-                                        subAreaIndex !== selection.subAreaIndex
-                                      ) {
-                                        return subArea;
-                                      }
-                                      if (
-                                        subArea.target.type !== "custom_page"
-                                      ) {
-                                        return subArea;
-                                      }
-                                      return {
-                                        ...subArea,
-                                        target: {
-                                          ...subArea.target,
-                                          url: event.target.value,
-                                        },
-                                      };
-                                    },
-                                  ),
-                                };
-                              }),
-                            };
-                          }),
-                        }))
-                      }
-                    />
-                  </div>
-                ) : null}
-              </>
-            ) : null}
-          </CardContent>
-        </Card>
+        <SitemapPropertiesCard
+          selection={selection}
+          selectedArea={selectedArea}
+          selectedGroup={selectedGroup}
+          selectedSubArea={selectedSubArea}
+          entities={entities}
+          selectedEntityForms={selectedEntityForms}
+          selectedEntityViews={selectedEntityViews}
+          isLoadingTargetMetadata={isLoadingTargetMetadata}
+          onUpdateSitemap={updateSitemap}
+        />
       </div>
 
       {isShortcutHelpOpen ? (
@@ -1978,45 +899,6 @@ export function SitemapEditorPanel({
       ) : null}
       {errorMessage ? <Notice tone="error">{errorMessage}</Notice> : null}
       {statusMessage ? <Notice tone="success">{statusMessage}</Notice> : null}
-    </div>
-  );
-}
-
-function isEditableTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-
-  const tagName = target.tagName;
-  return tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT" || target.isContentEditable;
-}
-
-type DropLineProps = {
-  lineId: string;
-  activeLineId: string | null;
-  onSetActiveLine: (lineId: string | null) => void;
-  label?: string;
-  onDrop: (event: DragEvent<HTMLDivElement>) => void;
-};
-
-function DropLine({ lineId, activeLineId, onSetActiveLine, label, onDrop }: DropLineProps) {
-  const isActive = activeLineId === lineId;
-  return (
-    <div
-      className={`rounded border border-dashed px-2 py-0.5 text-[10px] transition ${isActive ? "border-emerald-400 bg-emerald-100 text-emerald-900" : "border-transparent text-transparent hover:border-emerald-300 hover:bg-emerald-100 hover:text-emerald-800"}`}
-      onDragOver={(event) => {
-        event.preventDefault();
-        onSetActiveLine(lineId);
-      }}
-      onDragEnter={() => onSetActiveLine(lineId)}
-      onDragLeave={() => onSetActiveLine(null)}
-      onDrop={(event) => {
-        onSetActiveLine(null);
-        onDrop(event);
-      }}
-      aria-hidden
-    >
-      {label ?? "Insert here"}
     </div>
   );
 }

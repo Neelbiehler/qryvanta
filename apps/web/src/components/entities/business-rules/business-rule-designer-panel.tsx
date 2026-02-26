@@ -222,7 +222,11 @@ function toRuleLogicalName(value: string): string {
     .slice(0, 64);
 }
 
-export function BusinessRuleDesignerPanel({
+export function BusinessRuleDesignerPanel(props: BusinessRuleDesignerPanelProps) {
+  return useBusinessRuleDesignerPanelContent(props);
+}
+
+function useBusinessRuleDesignerPanelContent({
   entityLogicalName,
   initialRule,
   initialRules,

@@ -9,6 +9,26 @@
   --border: #d8ebdf;
   --ring: #2f8f63;
   --surface-grid: rgba(21, 32, 38, 0.04);
+
+  --surface-primary: #ffffff;
+  --surface-secondary: #f5faf7;
+  --surface-tertiary: #edf6f1;
+
+  --command-bar-bg: #ffffff;
+  --command-bar-border: #d8ebdf;
+
+  --panel-bg: #ffffff;
+  --panel-border: #d8ebdf;
+  --panel-header-bg: #f5faf7;
+
+  --split-handle-bg: #d8ebdf;
+  --split-handle-hover: #9dc9b4;
+  --split-handle-active: #2f8f63;
+
+  --grid-header-bg: #f5faf7;
+  --grid-row-hover: #f6fbf8;
+  --grid-row-selected: #e8f7ef;
+  --grid-border: #d8ebdf;
 }
 
 * {

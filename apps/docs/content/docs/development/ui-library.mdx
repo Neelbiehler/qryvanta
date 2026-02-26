@@ -8,7 +8,7 @@ The package is based on shadcn patterns and is the default source for shared app
 
 `@qryvanta/ui` is publishable as a standalone npm package so other repositories (including `qryvanta.com`) can consume the same component library without source duplication.
 
-The current package includes standardized form primitives (`Input`, `Textarea`, `Checkbox`, `Select`), card/layout primitives, table primitives, accessible menu/avatar controls, feedback primitives (`Notice`), and workspace experience primitives (`PageHeader`, `StatusBadge`).
+The current package includes standardized form primitives (`Input`, `Textarea`, `Checkbox`, `Select`), card/layout primitives, table primitives, accessible menu/avatar controls, feedback primitives (`Notice`, `EmptyState`, toast primitives), command/layout primitives (`CommandBar`, `Tabs`, `Accordion`, `SearchFilterBar`), and workspace experience primitives (`PageHeader`, `StatusBadge`, `PropertyPanel`).
 
 ## Usage
 
@@ -23,6 +23,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@qryvanta/ui/dropdown-menu";
+
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@qryvanta/ui/dialog";
+
+import { ToastProvider, Toaster, useToast } from "@qryvanta/ui/toast";
 ```
 
 Do not import from `apps/web/src/components/ui` for shared primitives.
@@ -33,6 +43,19 @@ Do not import from `apps/web/src/components/ui` for shared primitives.
 2. Reuse `packages/ui/src/lib/cn.ts` for class merging.
 3. Export server-safe components from `packages/ui/src/index.ts`; expose client-only primitives via a dedicated subpath entry (for example `@qryvanta/ui/dropdown-menu`).
 4. Update consuming apps to import from `@qryvanta/ui`.
+
+### Client-only component entry points
+
+Interactive primitives that depend on browser APIs are exposed as dedicated client entry points:
+
+- `@qryvanta/ui/dropdown-menu`
+- `@qryvanta/ui/dialog`
+- `@qryvanta/ui/toast`
+- `@qryvanta/ui/split-pane`
+- `@qryvanta/ui/tree-view`
+- `@qryvanta/ui/data-grid`
+
+Keep server-safe components on the package root export and import client-only APIs from these subpaths.
 
 ## Form Standards
 
@@ -46,6 +69,19 @@ Do not import from `apps/web/src/components/ui` for shared primitives.
 - Use `PageHeader` for page-level title/description/action layout in all persona surfaces.
 - Use `StatusBadge` for short status labels instead of ad-hoc badge styles in app code.
 - Keep command-surface patterns (header search bars, sidebar status chips, action rows) composed from `@qryvanta/ui` primitives.
+
+## New Surface Primitives
+
+- `Tabs`: context-based tab system for schema/runtime and settings surfaces.
+- `CommandBar`: action toolbar with grouped and destructive/primary actions.
+- `Accordion`: section expansion with shared styling and smooth transitions.
+- `Tooltip`: lightweight hover help for icon-only controls.
+- `EmptyState`: standardized empty list/table messaging with CTA slot.
+- `PropertyPanel`: right-side configurable property editor shell.
+- `SplitPane`: resizable panel composition for maker and worker layouts.
+- `TreeView`: nested explorer navigation with keyboard-friendly semantics.
+- `DataGrid`: column-defined table with selection and sorting callbacks.
+- `SearchFilterBar`: shared search + filter + actions control strip.
 
 ## Integration Notes
 
