@@ -97,6 +97,12 @@ impl ViewColumn {
         width: Option<i32>,
         label_override: Option<String>,
     ) -> AppResult<Self> {
+        if position < 0 {
+            return Err(AppError::Validation(
+                "view column position must be greater than or equal to zero".to_owned(),
+            ));
+        }
+
         if let Some(width) = width
             && width <= 0
         {
@@ -237,6 +243,7 @@ impl ViewDefinition {
         }
 
         let mut seen_columns = HashSet::new();
+        let mut column_positions = HashSet::new();
         for column in &columns {
             if !seen_columns.insert(column.field_logical_name().as_str().to_owned()) {
                 return Err(AppError::Validation(format!(
@@ -244,14 +251,36 @@ impl ViewDefinition {
                     column.field_logical_name().as_str()
                 )));
             }
+
+            if !column_positions.insert(column.position) {
+                return Err(AppError::Validation(format!(
+                    "duplicate view column position '{}'",
+                    column.position
+                )));
+            }
         }
+
+        if !positions_are_contiguous(column_positions.into_iter().collect()) {
+            return Err(AppError::Validation(
+                "view column positions must form contiguous sequence starting at zero".to_owned(),
+            ));
+        }
+
+        let mut sorted_columns = columns;
+        sorted_columns.sort_by(|left, right| {
+            left.position.cmp(&right.position).then_with(|| {
+                left.field_logical_name
+                    .as_str()
+                    .cmp(right.field_logical_name.as_str())
+            })
+        });
 
         Ok(Self {
             entity_logical_name: NonEmptyString::new(entity_logical_name)?,
             logical_name: NonEmptyString::new(logical_name)?,
             display_name: NonEmptyString::new(display_name)?,
             view_type,
-            columns,
+            columns: sorted_columns,
             default_sort,
             filter_criteria,
             is_default,
@@ -304,5 +333,90 @@ impl ViewDefinition {
     #[must_use]
     pub fn is_default(&self) -> bool {
         self.is_default
+    }
+}
+
+fn positions_are_contiguous(mut positions: Vec<i32>) -> bool {
+    positions.sort_unstable();
+    positions.iter().enumerate().all(|(index, position)| {
+        let Ok(expected) = i32::try_from(index) else {
+            return false;
+        };
+        *position == expected
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ViewColumn, ViewDefinition, ViewType};
+
+    #[test]
+    fn view_column_rejects_negative_position() {
+        let column = ViewColumn::new("name", -1, None, None);
+        assert!(column.is_err());
+    }
+
+    #[test]
+    fn view_definition_rejects_duplicate_column_positions() {
+        let first = ViewColumn::new("name", 0, None, None).unwrap_or_else(|_| unreachable!());
+        let second = ViewColumn::new("email", 0, None, None).unwrap_or_else(|_| unreachable!());
+
+        let view = ViewDefinition::new(
+            "contact",
+            "main_view",
+            "Main View",
+            ViewType::Grid,
+            vec![first, second],
+            None,
+            None,
+            true,
+        );
+
+        assert!(view.is_err());
+    }
+
+    #[test]
+    fn view_definition_rejects_sparse_column_positions() {
+        let first = ViewColumn::new("name", 0, None, None).unwrap_or_else(|_| unreachable!());
+        let second = ViewColumn::new("email", 2, None, None).unwrap_or_else(|_| unreachable!());
+
+        let view = ViewDefinition::new(
+            "contact",
+            "main_view",
+            "Main View",
+            ViewType::Grid,
+            vec![first, second],
+            None,
+            None,
+            true,
+        );
+
+        assert!(view.is_err());
+    }
+
+    #[test]
+    fn view_definition_normalizes_column_order_by_position() {
+        let late = ViewColumn::new("email", 1, None, None).unwrap_or_else(|_| unreachable!());
+        let early = ViewColumn::new("name", 0, None, None).unwrap_or_else(|_| unreachable!());
+        let latest = ViewColumn::new("phone", 2, None, None).unwrap_or_else(|_| unreachable!());
+
+        let view = ViewDefinition::new(
+            "contact",
+            "main_view",
+            "Main View",
+            ViewType::Grid,
+            vec![late, early, latest],
+            None,
+            None,
+            true,
+        )
+        .unwrap_or_else(|_| unreachable!());
+
+        let column_order: Vec<&str> = view
+            .columns()
+            .iter()
+            .map(|column| column.field_logical_name().as_str())
+            .collect();
+        assert_eq!(column_order, vec!["name", "email", "phone"]);
     }
 }

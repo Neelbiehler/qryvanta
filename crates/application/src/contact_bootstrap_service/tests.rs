@@ -8,8 +8,8 @@ use uuid::Uuid;
 
 use qryvanta_core::{AppError, AppResult, TenantId};
 use qryvanta_domain::{
-    EntityDefinition, EntityFieldDefinition, FormDefinition, OptionSetDefinition,
-    PublishedEntitySchema, RuntimeRecord, ViewDefinition,
+    BusinessRuleDefinition, EntityDefinition, EntityFieldDefinition, FormDefinition,
+    OptionSetDefinition, PublishedEntitySchema, RuntimeRecord, ViewDefinition,
 };
 
 use crate::{
@@ -23,7 +23,10 @@ struct FakeMetadataRepository {
     option_sets: Mutex<HashMap<(TenantId, String, String), OptionSetDefinition>>,
     forms: Mutex<HashMap<(TenantId, String, String), FormDefinition>>,
     views: Mutex<HashMap<(TenantId, String, String), ViewDefinition>>,
+    business_rules: Mutex<HashMap<(TenantId, String, String), BusinessRuleDefinition>>,
     published_schemas: Mutex<HashMap<(TenantId, String), Vec<PublishedEntitySchema>>>,
+    published_form_snapshots: Mutex<HashMap<(TenantId, String, i32), Vec<FormDefinition>>>,
+    published_view_snapshots: Mutex<HashMap<(TenantId, String, i32), Vec<ViewDefinition>>>,
     runtime_records: Mutex<HashMap<(TenantId, String, String), RuntimeRecord>>,
 }
 
@@ -35,7 +38,10 @@ impl FakeMetadataRepository {
             option_sets: Mutex::new(HashMap::new()),
             forms: Mutex::new(HashMap::new()),
             views: Mutex::new(HashMap::new()),
+            business_rules: Mutex::new(HashMap::new()),
             published_schemas: Mutex::new(HashMap::new()),
+            published_form_snapshots: Mutex::new(HashMap::new()),
+            published_view_snapshots: Mutex::new(HashMap::new()),
             runtime_records: Mutex::new(HashMap::new()),
         }
     }
@@ -72,6 +78,14 @@ impl MetadataRepository for FakeMetadataRepository {
             .await
             .get(&(tenant_id, logical_name.to_owned()))
             .cloned())
+    }
+
+    async fn update_entity(&self, tenant_id: TenantId, entity: EntityDefinition) -> AppResult<()> {
+        self.entities.lock().await.insert(
+            (tenant_id, entity.logical_name().as_str().to_owned()),
+            entity,
+        );
+        Ok(())
     }
 
     async fn save_field(&self, tenant_id: TenantId, field: EntityFieldDefinition) -> AppResult<()> {
@@ -363,6 +377,71 @@ impl MetadataRepository for FakeMetadataRepository {
         Ok(())
     }
 
+    async fn save_business_rule(
+        &self,
+        tenant_id: TenantId,
+        business_rule: BusinessRuleDefinition,
+    ) -> AppResult<()> {
+        self.business_rules.lock().await.insert(
+            (
+                tenant_id,
+                business_rule.entity_logical_name().as_str().to_owned(),
+                business_rule.logical_name().as_str().to_owned(),
+            ),
+            business_rule,
+        );
+        Ok(())
+    }
+
+    async fn list_business_rules(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+    ) -> AppResult<Vec<BusinessRuleDefinition>> {
+        Ok(self
+            .business_rules
+            .lock()
+            .await
+            .iter()
+            .filter_map(|((stored_tenant_id, stored_entity, _), rule)| {
+                (stored_tenant_id == &tenant_id && stored_entity == entity_logical_name)
+                    .then_some(rule.clone())
+            })
+            .collect())
+    }
+
+    async fn find_business_rule(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        business_rule_logical_name: &str,
+    ) -> AppResult<Option<BusinessRuleDefinition>> {
+        Ok(self
+            .business_rules
+            .lock()
+            .await
+            .get(&(
+                tenant_id,
+                entity_logical_name.to_owned(),
+                business_rule_logical_name.to_owned(),
+            ))
+            .cloned())
+    }
+
+    async fn delete_business_rule(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        business_rule_logical_name: &str,
+    ) -> AppResult<()> {
+        self.business_rules.lock().await.remove(&(
+            tenant_id,
+            entity_logical_name.to_owned(),
+            business_rule_logical_name.to_owned(),
+        ));
+        Ok(())
+    }
+
     async fn publish_entity_schema(
         &self,
         tenant_id: TenantId,
@@ -396,6 +475,90 @@ impl MetadataRepository for FakeMetadataRepository {
             .await
             .get(&(tenant_id, entity_logical_name.to_owned()))
             .and_then(|versions| versions.last().cloned()))
+    }
+
+    async fn save_published_form_snapshots(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        published_schema_version: i32,
+        forms: &[FormDefinition],
+    ) -> AppResult<()> {
+        self.published_form_snapshots.lock().await.insert(
+            (
+                tenant_id,
+                entity_logical_name.to_owned(),
+                published_schema_version,
+            ),
+            forms.to_vec(),
+        );
+        Ok(())
+    }
+
+    async fn save_published_view_snapshots(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        published_schema_version: i32,
+        views: &[ViewDefinition],
+    ) -> AppResult<()> {
+        self.published_view_snapshots.lock().await.insert(
+            (
+                tenant_id,
+                entity_logical_name.to_owned(),
+                published_schema_version,
+            ),
+            views.to_vec(),
+        );
+        Ok(())
+    }
+
+    async fn list_latest_published_form_snapshots(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+    ) -> AppResult<Vec<FormDefinition>> {
+        let snapshots = self.published_form_snapshots.lock().await;
+        let latest_version = snapshots
+            .keys()
+            .filter_map(|(stored_tenant, stored_entity, version)| {
+                (stored_tenant == &tenant_id && stored_entity == entity_logical_name)
+                    .then_some(*version)
+            })
+            .max();
+
+        let Some(version) = latest_version else {
+            return Ok(Vec::new());
+        };
+
+        Ok(snapshots
+            .get(&(tenant_id, entity_logical_name.to_owned(), version))
+            .cloned()
+            .unwrap_or_default())
+    }
+
+    async fn list_latest_published_view_snapshots(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+    ) -> AppResult<Vec<ViewDefinition>> {
+        let snapshots = self.published_view_snapshots.lock().await;
+        let latest_version = snapshots
+            .keys()
+            .filter_map(|(stored_tenant, stored_entity, version)| {
+                (stored_tenant == &tenant_id && stored_entity == entity_logical_name)
+                    .then_some(*version)
+            })
+            .max();
+
+        let Some(version) = latest_version else {
+            return Ok(Vec::new());
+        };
+
+        Ok(snapshots
+            .get(&(tenant_id, entity_logical_name.to_owned(), version))
+            .cloned()
+            .unwrap_or_default())
     }
 
     async fn create_runtime_record(

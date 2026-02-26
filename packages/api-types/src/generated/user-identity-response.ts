@@ -5,6 +5,6 @@
  */
 export type UserIdentityResponse = { subject: string, display_name: string, email: string | null, tenant_id: string, 
 /**
- * Surfaces the authenticated user may access (e.g. `["admin", "maker", "worker"]`).
+ * Surfaces the authenticated user may access (e.g. `['admin', 'maker', 'worker']`).
  */
 accessible_surfaces: Array<string>, };

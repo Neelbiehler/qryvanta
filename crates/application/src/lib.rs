@@ -12,6 +12,7 @@ mod metadata_ports;
 mod metadata_service;
 mod mfa_service;
 mod rate_limit_service;
+mod security_admin_ports;
 mod security_admin_service;
 mod user_service;
 mod workflow_ports;
@@ -33,21 +34,26 @@ pub use authorization_service::{
 };
 pub use contact_bootstrap_service::ContactBootstrapService;
 pub use metadata_ports::{
-    AuditEvent, AuditRepository, MetadataRepository, RecordListQuery, RuntimeRecordConditionGroup,
+    AuditEvent, AuditRepository, MetadataComponentsRepository, MetadataDefinitionsRepository,
+    MetadataPublishRepository, MetadataRepository, MetadataRepositoryByConcern,
+    MetadataRuntimeRepository, RecordListQuery, RuntimeRecordConditionGroup,
     RuntimeRecordConditionNode, RuntimeRecordFilter, RuntimeRecordJoinType, RuntimeRecordLink,
     RuntimeRecordLogicalMode, RuntimeRecordOperator, RuntimeRecordQuery, RuntimeRecordSort,
-    RuntimeRecordSortDirection, SaveFieldInput, SaveFormInput, SaveOptionSetInput, SaveViewInput,
-    TenantRepository, UniqueFieldValue, UpdateFieldInput,
+    RuntimeRecordSortDirection, SaveBusinessRuleInput, SaveFieldInput, SaveFormInput,
+    SaveOptionSetInput, SaveViewInput, TenantRepository, UniqueFieldValue, UpdateEntityInput,
+    UpdateFieldInput,
 };
 pub use metadata_service::MetadataService;
 pub use mfa_service::{MfaService, SecretEncryptor, TotpEnrollment, TotpProvider};
 pub use rate_limit_service::{AttemptInfo, RateLimitRepository, RateLimitRule, RateLimitService};
-pub use security_admin_service::{
+pub use security_admin_ports::{
     AuditLogEntry, AuditLogQuery, AuditLogRepository, AuditPurgeResult, AuditRetentionPolicy,
     CreateRoleInput, CreateTemporaryAccessGrantInput, RoleAssignment, RoleDefinition,
     RuntimeFieldPermissionEntry, RuntimeFieldPermissionInput, SaveRuntimeFieldPermissionsInput,
-    SecurityAdminRepository, SecurityAdminService, TemporaryAccessGrant, TemporaryAccessGrantQuery,
+    SecurityAdminRepository, TemporaryAccessGrant, TemporaryAccessGrantQuery,
+    WorkspacePublishRunAuditInput,
 };
+pub use security_admin_service::SecurityAdminService;
 pub use user_service::{
     AuthOutcome, PasswordHasher, RegisterParams, UserRecord, UserRepository, UserService,
 };

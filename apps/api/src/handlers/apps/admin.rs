@@ -5,10 +5,10 @@ use qryvanta_core::UserIdentity;
 use qryvanta_domain::{AppSitemap, SitemapArea, SitemapGroup, SitemapSubArea, SitemapTarget};
 
 use crate::dto::{
-    AppEntityBindingResponse, AppResponse, AppRoleEntityPermissionResponse, AppSitemapAreaDto,
-    AppSitemapGroupDto, AppSitemapResponse, AppSitemapSubAreaDto, AppSitemapTargetDto,
-    BindAppEntityRequest, CreateAppRequest, SaveAppRoleEntityPermissionRequest,
-    SaveAppSitemapRequest,
+    AppEntityBindingResponse, AppPublishChecksResponse, AppResponse,
+    AppRoleEntityPermissionResponse, AppSitemapAreaDto, AppSitemapGroupDto, AppSitemapResponse,
+    AppSitemapSubAreaDto, AppSitemapTargetDto, BindAppEntityRequest, CreateAppRequest,
+    SaveAppRoleEntityPermissionRequest, SaveAppSitemapRequest,
 };
 use crate::error::ApiResult;
 use crate::state::AppState;
@@ -192,6 +192,22 @@ pub async fn save_app_sitemap_handler(
         )
         .await?;
     Ok(Json(AppSitemapResponse::from(saved)))
+}
+
+pub async fn app_publish_checks_handler(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserIdentity>,
+    Path(app_logical_name): Path<String>,
+) -> ApiResult<Json<AppPublishChecksResponse>> {
+    let errors = state
+        .app_service
+        .publish_checks(&user, app_logical_name.as_str())
+        .await?;
+
+    Ok(Json(AppPublishChecksResponse {
+        is_publishable: errors.is_empty(),
+        errors,
+    }))
 }
 
 fn area_dto_to_domain(area: AppSitemapAreaDto) -> Result<SitemapArea, qryvanta_core::AppError> {

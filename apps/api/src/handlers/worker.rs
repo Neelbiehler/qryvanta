@@ -12,198 +12,29 @@ use crate::error::ApiResult;
 use crate::middleware::WorkerIdentity;
 use crate::state::AppState;
 
-#[derive(Debug, Deserialize)]
-pub struct ClaimWorkflowJobsRequest {
-    pub limit: Option<usize>,
-    pub lease_seconds: Option<u32>,
-    pub partition_count: Option<u32>,
-    pub partition_index: Option<u32>,
-}
+mod claim;
+mod heartbeat;
+mod stats;
 
-#[derive(Debug, Deserialize)]
-pub struct WorkerHeartbeatRequest {
-    pub claimed_jobs: Option<u32>,
-    pub executed_jobs: Option<u32>,
-    pub failed_jobs: Option<u32>,
-    pub partition_count: Option<u32>,
-    pub partition_index: Option<u32>,
-}
+pub use claim::claim_workflow_jobs_handler;
+pub use heartbeat::worker_heartbeat_handler;
+pub use stats::workflow_queue_stats_handler;
 
-#[derive(Debug, Deserialize)]
-pub struct WorkflowQueueStatsQuery {
-    pub active_window_seconds: Option<u32>,
-    pub partition_count: Option<u32>,
-    pub partition_index: Option<u32>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ClaimedWorkflowJobsResponse {
-    pub jobs: Vec<ClaimedWorkflowJobResponse>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ClaimedWorkflowJobResponse {
-    pub job_id: String,
-    pub lease_token: String,
-    pub tenant_id: String,
-    pub run_id: String,
-    pub workflow_logical_name: String,
-    pub workflow_display_name: String,
-    pub workflow_description: Option<String>,
-    pub workflow_trigger: WorkflowTrigger,
-    pub workflow_action: WorkflowAction,
-    pub workflow_steps: Option<Vec<WorkflowStep>>,
-    pub workflow_max_attempts: u16,
-    pub workflow_is_enabled: bool,
-    pub trigger_payload: Value,
-}
-
-#[derive(Debug, Serialize)]
-pub struct WorkflowQueueStatsResponse {
-    pub pending_jobs: i64,
-    pub leased_jobs: i64,
-    pub completed_jobs: i64,
-    pub failed_jobs: i64,
-    pub expired_leases: i64,
-    pub active_workers: i64,
-}
-
-pub async fn claim_workflow_jobs_handler(
-    State(state): State<AppState>,
-    Extension(worker): Extension<WorkerIdentity>,
-    Json(payload): Json<ClaimWorkflowJobsRequest>,
-) -> ApiResult<Json<ClaimedWorkflowJobsResponse>> {
-    let requested_limit = payload
-        .limit
-        .unwrap_or(state.workflow_worker_max_claim_limit);
-    let requested_lease_seconds = payload
-        .lease_seconds
-        .unwrap_or(state.workflow_worker_default_lease_seconds);
-
-    let effective_limit = requested_limit.clamp(1, state.workflow_worker_max_claim_limit);
-    let effective_lease_seconds = requested_lease_seconds.max(1);
-    let partition = match (payload.partition_count, payload.partition_index) {
-        (None, None) => None,
+fn parse_worker_partition(
+    partition_count: Option<u32>,
+    partition_index: Option<u32>,
+    max_partition_count: u32,
+) -> Result<Option<WorkflowClaimPartition>, AppError> {
+    match (partition_count, partition_index) {
+        (None, None) => Ok(None),
         (Some(requested_partition_count), Some(requested_partition_index)) => {
-            let effective_partition_count =
-                requested_partition_count.clamp(1, state.workflow_worker_max_partition_count);
-            Some(WorkflowClaimPartition::new(
-                effective_partition_count,
-                requested_partition_index,
-            )?)
+            let effective_partition_count = requested_partition_count.clamp(1, max_partition_count);
+
+            WorkflowClaimPartition::new(effective_partition_count, requested_partition_index)
+                .map(Some)
         }
-        _ => {
-            return Err(AppError::Validation(
-                "partition_count and partition_index must be provided together".to_owned(),
-            )
-            .into());
-        }
-    };
-
-    let jobs = state
-        .workflow_service
-        .claim_jobs_for_worker(
-            worker.worker_id(),
-            effective_limit,
-            effective_lease_seconds,
-            partition,
-        )
-        .await?
-        .into_iter()
-        .map(|job| ClaimedWorkflowJobResponse {
-            job_id: job.job_id,
-            lease_token: job.lease_token,
-            tenant_id: job.tenant_id.to_string(),
-            run_id: job.run_id,
-            workflow_logical_name: job.workflow.logical_name().as_str().to_owned(),
-            workflow_display_name: job.workflow.display_name().as_str().to_owned(),
-            workflow_description: job.workflow.description().map(ToOwned::to_owned),
-            workflow_trigger: job.workflow.trigger().clone(),
-            workflow_action: job.workflow.action().clone(),
-            workflow_steps: job.workflow.steps().map(ToOwned::to_owned),
-            workflow_max_attempts: job.workflow.max_attempts(),
-            workflow_is_enabled: job.workflow.is_enabled(),
-            trigger_payload: job.trigger_payload,
-        })
-        .collect();
-
-    Ok(Json(ClaimedWorkflowJobsResponse { jobs }))
-}
-
-pub async fn worker_heartbeat_handler(
-    State(state): State<AppState>,
-    Extension(worker): Extension<WorkerIdentity>,
-    Json(payload): Json<WorkerHeartbeatRequest>,
-) -> ApiResult<StatusCode> {
-    let partition = match (payload.partition_count, payload.partition_index) {
-        (None, None) => None,
-        (Some(requested_partition_count), Some(requested_partition_index)) => {
-            let effective_partition_count =
-                requested_partition_count.clamp(1, state.workflow_worker_max_partition_count);
-            Some(WorkflowClaimPartition::new(
-                effective_partition_count,
-                requested_partition_index,
-            )?)
-        }
-        _ => {
-            return Err(AppError::Validation(
-                "partition_count and partition_index must be provided together".to_owned(),
-            )
-            .into());
-        }
-    };
-
-    state
-        .workflow_service
-        .heartbeat_worker(
-            worker.worker_id(),
-            WorkflowWorkerHeartbeatInput {
-                claimed_jobs: payload.claimed_jobs.unwrap_or(0),
-                executed_jobs: payload.executed_jobs.unwrap_or(0),
-                failed_jobs: payload.failed_jobs.unwrap_or(0),
-                partition,
-            },
-        )
-        .await?;
-
-    Ok(StatusCode::NO_CONTENT)
-}
-
-pub async fn workflow_queue_stats_handler(
-    State(state): State<AppState>,
-    Extension(_worker): Extension<WorkerIdentity>,
-    Query(query): Query<WorkflowQueueStatsQuery>,
-) -> ApiResult<Json<WorkflowQueueStatsResponse>> {
-    let active_window_seconds = query.active_window_seconds.unwrap_or(120).max(1);
-    let partition = match (query.partition_count, query.partition_index) {
-        (None, None) => None,
-        (Some(requested_partition_count), Some(requested_partition_index)) => {
-            let effective_partition_count =
-                requested_partition_count.clamp(1, state.workflow_worker_max_partition_count);
-            Some(WorkflowClaimPartition::new(
-                effective_partition_count,
-                requested_partition_index,
-            )?)
-        }
-        _ => {
-            return Err(AppError::Validation(
-                "partition_count and partition_index must be provided together".to_owned(),
-            )
-            .into());
-        }
-    };
-
-    let stats = state
-        .workflow_service
-        .queue_stats_with_partition(active_window_seconds, partition)
-        .await?;
-
-    Ok(Json(WorkflowQueueStatsResponse {
-        pending_jobs: stats.pending_jobs,
-        leased_jobs: stats.leased_jobs,
-        completed_jobs: stats.completed_jobs,
-        failed_jobs: stats.failed_jobs,
-        expired_leases: stats.expired_leases,
-        active_workers: stats.active_workers,
-    }))
+        _ => Err(AppError::Validation(
+            "partition_count and partition_index must be provided together".to_owned(),
+        )),
+    }
 }

@@ -5,7 +5,9 @@ import {
   apiFetch,
   type CreateFieldRequest,
   type CreateRuntimeRecordRequest,
+  type EntityResponse,
   type FieldResponse,
+  type PublishChecksResponse,
   type PublishedSchemaResponse,
   type QueryRuntimeRecordsRequest,
   type RuntimeRecordQueryFilterRequest,
@@ -29,9 +31,11 @@ export const FIELD_TYPE_OPTIONS = [
 
 export type WorkbenchSection = "schema" | "runtime";
 export type RuntimeSection = "create" | "query";
+export type RelationAuthoringMode = "lookup" | "junction_pair";
 
 type UseEntityWorkbenchPanelInput = {
   entityLogicalName: string;
+  initialEntities: EntityResponse[];
   initialFields: FieldResponse[];
   initialPublishedSchema: PublishedSchemaResponse | null;
   initialRecords: RuntimeRecordResponse[];
@@ -39,6 +43,7 @@ type UseEntityWorkbenchPanelInput = {
 
 export function useEntityWorkbenchPanel({
   entityLogicalName,
+  initialEntities,
   initialFields,
   initialPublishedSchema,
   initialRecords,
@@ -52,7 +57,14 @@ export function useEntityWorkbenchPanel({
   const [isRequired, setIsRequired] = useState(false);
   const [isUnique, setIsUnique] = useState(false);
   const [defaultValueText, setDefaultValueText] = useState("");
+  const [calculationExpressionText, setCalculationExpressionText] = useState("");
   const [relationTargetEntity, setRelationTargetEntity] = useState("");
+  const [relationAuthoringMode, setRelationAuthoringMode] =
+    useState<RelationAuthoringMode>("lookup");
+  const [secondaryRelationTargetEntity, setSecondaryRelationTargetEntity] =
+    useState("");
+  const [secondaryLogicalName, setSecondaryLogicalName] = useState("");
+  const [secondaryDisplayName, setSecondaryDisplayName] = useState("");
 
   const [recordPayload, setRecordPayload] = useState("{}");
   const [queryLogicalMode, setQueryLogicalMode] = useState<"and" | "or">("and");
@@ -71,9 +83,11 @@ export function useEntityWorkbenchPanel({
   const [isPresetCopied, setIsPresetCopied] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [publishCheckErrors, setPublishCheckErrors] = useState<string[]>([]);
 
   const [isSavingField, setIsSavingField] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [isCheckingPublish, setIsCheckingPublish] = useState(false);
   const [isCreatingRecord, setIsCreatingRecord] = useState(false);
   const [isSavingPreset, setIsSavingPreset] = useState(false);
   const [isQueryingRecords, setIsQueryingRecords] = useState(false);
@@ -114,6 +128,56 @@ export function useEntityWorkbenchPanel({
     };
   }, []);
 
+  useEffect(() => {
+    if (fieldType !== "relation") {
+      if (relationTargetEntity !== "") {
+        setRelationTargetEntity("");
+      }
+      if (secondaryRelationTargetEntity !== "") {
+        setSecondaryRelationTargetEntity("");
+      }
+      if (secondaryLogicalName !== "") {
+        setSecondaryLogicalName("");
+      }
+      if (secondaryDisplayName !== "") {
+        setSecondaryDisplayName("");
+      }
+      if (relationAuthoringMode !== "lookup") {
+        setRelationAuthoringMode("lookup");
+      }
+      return;
+    }
+
+    const fallbackTarget = initialEntities[0]?.logical_name ?? "";
+    const primaryTarget =
+      relationTargetEntity.trim().length > 0
+        ? relationTargetEntity.trim()
+        : fallbackTarget;
+
+    if (relationTargetEntity.trim().length === 0 && fallbackTarget.length > 0) {
+      setRelationTargetEntity(fallbackTarget);
+    }
+
+    if (relationAuthoringMode === "junction_pair") {
+      const fallbackSecondaryTarget =
+        initialEntities.find(
+          (entity) => entity.logical_name !== primaryTarget,
+        )?.logical_name ?? primaryTarget;
+      if (
+        secondaryRelationTargetEntity.trim().length === 0 &&
+        fallbackSecondaryTarget.length > 0
+      ) {
+        setSecondaryRelationTargetEntity(fallbackSecondaryTarget);
+      }
+    }
+  }, [
+    fieldType,
+    initialEntities,
+    relationTargetEntity,
+    relationAuthoringMode,
+    secondaryRelationTargetEntity,
+  ]);
+
   function savePresetsToStorage(nextPresets: QueryPreset[]) {
     setQueryPresets(nextPresets);
     if (typeof window === "undefined") {
@@ -129,6 +193,10 @@ export function useEntityWorkbenchPanel({
   function clearMessages() {
     setErrorMessage(null);
     setStatusMessage(null);
+  }
+
+  function clearPublishChecks() {
+    setPublishCheckErrors([]);
   }
 
   function showPresetCopiedIndicator() {
@@ -409,9 +477,69 @@ export function useEntityWorkbenchPanel({
   async function handleSaveField(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     clearMessages();
+    clearPublishChecks();
     setIsSavingField(true);
 
     try {
+      if (fieldType === "relation" && relationTargetEntity.trim().length === 0) {
+        setErrorMessage("Relation fields require a relation target entity.");
+        return;
+      }
+
+      if (fieldType === "relation" && relationAuthoringMode === "junction_pair") {
+        if (secondaryLogicalName.trim().length === 0) {
+          setErrorMessage(
+            "Junction pair template requires a secondary logical field name.",
+          );
+          return;
+        }
+
+        if (secondaryDisplayName.trim().length === 0) {
+          setErrorMessage(
+            "Junction pair template requires a secondary display field name.",
+          );
+          return;
+        }
+
+        if (secondaryRelationTargetEntity.trim().length === 0) {
+          setErrorMessage(
+            "Junction pair template requires a secondary relation target entity.",
+          );
+          return;
+        }
+
+        if (
+          secondaryLogicalName.trim().toLowerCase() ===
+          logicalName.trim().toLowerCase()
+        ) {
+          setErrorMessage(
+            "Primary and secondary relation field logical names must be different.",
+          );
+          return;
+        }
+      }
+
+      if (
+        calculationExpressionText.trim().length > 0 &&
+        fieldType !== "text" &&
+        fieldType !== "number"
+      ) {
+        setErrorMessage(
+          "Calculated fields currently support text and number field types only.",
+        );
+        return;
+      }
+
+      if (
+        calculationExpressionText.trim().length > 0 &&
+        defaultValueText.trim().length > 0
+      ) {
+        setErrorMessage(
+          "Calculated fields cannot define a default value.",
+        );
+        return;
+      }
+
       let parsedDefaultValue: unknown | null = null;
       if (defaultValueText.trim().length > 0) {
         parsedDefaultValue = JSON.parse(defaultValueText);
@@ -424,8 +552,14 @@ export function useEntityWorkbenchPanel({
         is_required: isRequired,
         is_unique: isUnique,
         default_value: parsedDefaultValue,
+        calculation_expression:
+          calculationExpressionText.trim().length > 0
+            ? calculationExpressionText.trim()
+            : null,
         relation_target_entity:
-          relationTargetEntity.trim().length > 0 ? relationTargetEntity : null,
+          fieldType === "relation" && relationTargetEntity.trim().length > 0
+            ? relationTargetEntity
+            : null,
         option_set_logical_name: null,
       };
 
@@ -440,14 +574,60 @@ export function useEntityWorkbenchPanel({
         return;
       }
 
+      if (fieldType === "relation" && relationAuthoringMode === "junction_pair") {
+        const secondaryPayload: CreateFieldRequest = {
+          logical_name: secondaryLogicalName.trim(),
+          display_name: secondaryDisplayName.trim(),
+          field_type: "relation",
+          is_required: false,
+          is_unique: false,
+          default_value: null,
+          calculation_expression: null,
+          relation_target_entity: secondaryRelationTargetEntity.trim(),
+          option_set_logical_name: null,
+        };
+
+        const secondaryResponse = await apiFetch(
+          `/api/entities/${entityLogicalName}/fields`,
+          {
+            method: "POST",
+            body: JSON.stringify(secondaryPayload),
+          },
+        );
+
+        if (!secondaryResponse.ok) {
+          const secondaryError = (await secondaryResponse.json()) as {
+            message?: string;
+          };
+          setErrorMessage(
+            secondaryError.message ??
+              "Primary relation field was saved, but secondary relation field failed.",
+          );
+          setStatusMessage(
+            `Saved relation field '${logicalName.trim()}' but secondary field '${secondaryLogicalName.trim()}' needs attention.`,
+          );
+          router.refresh();
+          return;
+        }
+      }
+
       setLogicalName("");
       setDisplayName("");
       setFieldType("text");
       setIsRequired(false);
       setIsUnique(false);
       setDefaultValueText("");
+      setCalculationExpressionText("");
       setRelationTargetEntity("");
-      setStatusMessage("Field saved.");
+      setRelationAuthoringMode("lookup");
+      setSecondaryRelationTargetEntity("");
+      setSecondaryLogicalName("");
+      setSecondaryDisplayName("");
+      setStatusMessage(
+        fieldType === "relation" && relationAuthoringMode === "junction_pair"
+          ? "Junction relation pair saved."
+          : "Field saved.",
+      );
       router.refresh();
     } catch {
       setErrorMessage("Unable to save field.");
@@ -458,6 +638,7 @@ export function useEntityWorkbenchPanel({
 
   async function handlePublish() {
     clearMessages();
+    clearPublishChecks();
     setIsPublishing(true);
 
     try {
@@ -477,6 +658,35 @@ export function useEntityWorkbenchPanel({
       setErrorMessage("Unable to publish entity.");
     } finally {
       setIsPublishing(false);
+    }
+  }
+
+  async function handlePublishChecks() {
+    clearMessages();
+    setIsCheckingPublish(true);
+
+    try {
+      const response = await apiFetch(
+        `/api/entities/${entityLogicalName}/publish-checks`,
+      );
+
+      if (!response.ok) {
+        const payload = (await response.json()) as { message?: string };
+        setErrorMessage(payload.message ?? "Unable to run publish checks.");
+        return;
+      }
+
+      const payload = (await response.json()) as PublishChecksResponse;
+      setPublishCheckErrors(payload.errors);
+      if (payload.is_publishable) {
+        setStatusMessage("Publish checks passed.");
+      } else {
+        setErrorMessage("Publish checks found issues. Resolve them before publishing.");
+      }
+    } catch {
+      setErrorMessage("Unable to run publish checks.");
+    } finally {
+      setIsCheckingPublish(false);
     }
   }
 
@@ -625,6 +835,7 @@ export function useEntityWorkbenchPanel({
     activeSection,
     clearMessages,
     defaultValueText,
+    calculationExpressionText,
     deletingRecordId,
     displayName,
     displayedRecords,
@@ -638,14 +849,17 @@ export function useEntityWorkbenchPanel({
     handleImportQueryPresets,
     handleLoadSelectedPreset,
     handlePublish,
+    handlePublishChecks,
     handleQueryRecords,
     handleSaveField,
     handleSaveQueryPreset,
     initialFields,
+    initialEntities,
     initialPublishedSchema,
     isCreatingRecord,
     isPresetCopied,
     isPublishing,
+    isCheckingPublish,
     isQueryingRecords,
     isRequired,
     isSavingField,
@@ -653,6 +867,7 @@ export function useEntityWorkbenchPanel({
     isUnique,
     logicalName,
     presetTransferText,
+    publishCheckErrors,
     queriedRecords,
     queryConditionsText,
     queryFiltersText,
@@ -663,11 +878,16 @@ export function useEntityWorkbenchPanel({
     queryPresets,
     querySortText,
     recordPayload,
+    relationAuthoringMode,
     relationTargetEntity,
+    secondaryDisplayName,
+    secondaryLogicalName,
+    secondaryRelationTargetEntity,
     selectedPresetName,
     setActiveRuntimeSection,
     setActiveSection,
     setDefaultValueText,
+    setCalculationExpressionText,
     setDisplayName,
     setFieldType,
     setIsRequired,
@@ -682,7 +902,11 @@ export function useEntityWorkbenchPanel({
     setQueryPresetName,
     setQuerySortText,
     setRecordPayload,
+    setRelationAuthoringMode,
     setRelationTargetEntity,
+    setSecondaryDisplayName,
+    setSecondaryLogicalName,
+    setSecondaryRelationTargetEntity,
     setSelectedPresetName,
     statusMessage,
   };

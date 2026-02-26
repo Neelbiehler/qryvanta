@@ -17,12 +17,14 @@ import {
 } from "@qryvanta/ui";
 
 import type {
+  EntityResponse,
   FieldResponse,
   PublishedSchemaResponse,
   RuntimeRecordResponse,
 } from "@/lib/api";
 import {
   FIELD_TYPE_OPTIONS,
+  type RelationAuthoringMode,
   type RuntimeSection,
   type WorkbenchSection,
 } from "@/components/entities/entity-workbench/use-entity-workbench-panel";
@@ -83,67 +85,118 @@ export function WorkbenchOverview({
 }
 
 type SchemaDesignSectionProps = {
+  calculationExpressionText: string;
   defaultValueText: string;
   displayName: string;
+  entities: EntityResponse[];
   fieldType: (typeof FIELD_TYPE_OPTIONS)[number];
   handlePublish: () => Promise<void>;
+  handlePublishChecks: () => Promise<void>;
   handleSaveField: (event: FormEvent<HTMLFormElement>) => Promise<void>;
   initialFields: FieldResponse[];
   initialPublishedSchema: PublishedSchemaResponse | null;
+  isCheckingPublish: boolean;
   isPublishing: boolean;
   isRequired: boolean;
   isSavingField: boolean;
   isUnique: boolean;
   logicalName: string;
+  relationAuthoringMode: RelationAuthoringMode;
+  publishCheckErrors: string[];
   relationTargetEntity: string;
+  secondaryDisplayName: string;
+  secondaryLogicalName: string;
+  secondaryRelationTargetEntity: string;
+  setRelationAuthoringMode: (value: RelationAuthoringMode) => void;
   setDefaultValueText: (value: string) => void;
+  setCalculationExpressionText: (value: string) => void;
   setDisplayName: (value: string) => void;
   setFieldType: (value: (typeof FIELD_TYPE_OPTIONS)[number]) => void;
   setIsRequired: (value: boolean) => void;
   setIsUnique: (value: boolean) => void;
   setLogicalName: (value: string) => void;
   setRelationTargetEntity: (value: string) => void;
+  setSecondaryDisplayName: (value: string) => void;
+  setSecondaryLogicalName: (value: string) => void;
+  setSecondaryRelationTargetEntity: (value: string) => void;
 };
 
 export function SchemaDesignSection({
+  calculationExpressionText,
   defaultValueText,
   displayName,
+  entities,
   fieldType,
   handlePublish,
+  handlePublishChecks,
   handleSaveField,
   initialFields,
   initialPublishedSchema,
+  isCheckingPublish,
   isPublishing,
   isRequired,
   isSavingField,
   isUnique,
   logicalName,
+  relationAuthoringMode,
+  publishCheckErrors,
   relationTargetEntity,
+  secondaryDisplayName,
+  secondaryLogicalName,
+  secondaryRelationTargetEntity,
+  setRelationAuthoringMode,
   setDefaultValueText,
+  setCalculationExpressionText,
   setDisplayName,
   setFieldType,
   setIsRequired,
   setIsUnique,
   setLogicalName,
   setRelationTargetEntity,
+  setSecondaryDisplayName,
+  setSecondaryLogicalName,
+  setSecondaryRelationTargetEntity,
 }: SchemaDesignSectionProps) {
   return (
     <section className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium text-zinc-800">Draft Fields</p>
-        <Button
-          disabled={isPublishing}
-          onClick={handlePublish}
-          type="button"
-          variant="outline"
-        >
-          {isPublishing
-            ? "Publishing..."
-            : initialPublishedSchema
-              ? `Publish v${initialPublishedSchema.version + 1}`
-              : "Publish v1"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            disabled={isCheckingPublish || isPublishing}
+            onClick={handlePublishChecks}
+            type="button"
+            variant="outline"
+          >
+            {isCheckingPublish ? "Checking..." : "Run Publish Checks"}
+          </Button>
+          <Button
+            disabled={isPublishing}
+            onClick={handlePublish}
+            type="button"
+            variant="outline"
+          >
+            {isPublishing
+              ? "Publishing..."
+              : initialPublishedSchema
+                ? `Publish v${initialPublishedSchema.version + 1}`
+                : "Publish v1"}
+          </Button>
+        </div>
       </div>
+
+      {publishCheckErrors.length > 0 ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-700">
+            Publish Check Issues
+          </p>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-900">
+            {publishCheckErrors.map((error) => (
+              <li key={error}>{error}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <form
         className="grid gap-3 rounded-md border border-zinc-200 bg-white p-4 md:grid-cols-2"
@@ -189,13 +242,115 @@ export function SchemaDesignSection({
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="relation_target_entity">Relation Target Entity</Label>
-          <Input
+          <Label htmlFor="relation_target_entity">Primary Relation Target</Label>
+          <Select
             id="relation_target_entity"
+            disabled={fieldType !== "relation"}
             onChange={(event) => setRelationTargetEntity(event.target.value)}
-            placeholder="contact"
             value={relationTargetEntity}
+          >
+            <option value="">
+              {fieldType === "relation" ? "Select target entity..." : "Not used for this field type"}
+            </option>
+            {entities.map((entity) => (
+              <option key={entity.logical_name} value={entity.logical_name}>
+                {entity.display_name} ({entity.logical_name})
+              </option>
+            ))}
+          </Select>
+          {fieldType === "relation" ? (
+            <p className="text-xs text-zinc-500">
+              Relation fields must target an existing entity logical name.
+            </p>
+          ) : null}
+        </div>
+
+        {fieldType === "relation" ? (
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="relationship_authoring_mode">Relationship Template</Label>
+            <Select
+              id="relationship_authoring_mode"
+              value={relationAuthoringMode}
+              onChange={(event) =>
+                setRelationAuthoringMode(
+                  event.target.value === "junction_pair" ? "junction_pair" : "lookup",
+                )
+              }
+            >
+              <option value="lookup">Single Lookup (1:N)</option>
+              <option value="junction_pair">Junction Pair (N:N bridge)</option>
+            </Select>
+            <p className="text-xs text-zinc-500">
+              Use junction pair to create two relation fields in one save when modeling N:N bridge entities.
+            </p>
+          </div>
+        ) : null}
+
+        {fieldType === "relation" && relationAuthoringMode === "junction_pair" ? (
+          <>
+            <div className="space-y-2">
+              <Label htmlFor="secondary_relation_logical_name">
+                Secondary Relation Logical Name
+              </Label>
+              <Input
+                id="secondary_relation_logical_name"
+                value={secondaryLogicalName}
+                onChange={(event) => setSecondaryLogicalName(event.target.value)}
+                placeholder="account_id"
+                required
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="secondary_relation_display_name">
+                Secondary Relation Display Name
+              </Label>
+              <Input
+                id="secondary_relation_display_name"
+                value={secondaryDisplayName}
+                onChange={(event) => setSecondaryDisplayName(event.target.value)}
+                placeholder="Account"
+                required
+              />
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="secondary_relation_target_entity">
+                Secondary Relation Target
+              </Label>
+              <Select
+                id="secondary_relation_target_entity"
+                value={secondaryRelationTargetEntity}
+                onChange={(event) =>
+                  setSecondaryRelationTargetEntity(event.target.value)
+                }
+              >
+                <option value="">Select target entity...</option>
+                {entities.map((entity) => (
+                  <option key={entity.logical_name} value={entity.logical_name}>
+                    {entity.display_name} ({entity.logical_name})
+                  </option>
+                ))}
+              </Select>
+              <p className="text-xs text-zinc-500">
+                The secondary field is created with relation type and optional target for the bridge pair.
+              </p>
+            </div>
+          </>
+        ) : null}
+
+        <div className="space-y-2 md:col-span-2">
+          <Label htmlFor="calculation_expression">Calculation Expression</Label>
+          <Input
+            id="calculation_expression"
+            onChange={(event) => setCalculationExpressionText(event.target.value)}
+            placeholder='add(quantity, unit_price) or concat(first_name, " ", last_name)'
+            value={calculationExpressionText}
           />
+          <p className="text-xs text-zinc-500">
+            Supported functions: <span className="font-mono">add(...)</span>,{" "}
+            <span className="font-mono">concat(...)</span>. Calculated fields are computed at runtime and cannot be set directly.
+          </p>
         </div>
 
         <div className="space-y-2 md:col-span-2">
@@ -204,6 +359,7 @@ export function SchemaDesignSection({
             id="default_value"
             onChange={(event) => setDefaultValueText(event.target.value)}
             placeholder='"Acme" or true or {"enabled":true}'
+            disabled={calculationExpressionText.trim().length > 0}
             value={defaultValueText}
           />
         </div>
@@ -240,7 +396,9 @@ export function SchemaDesignSection({
             <TableHead>Type</TableHead>
             <TableHead>Required</TableHead>
             <TableHead>Unique</TableHead>
+            <TableHead>Relation Target</TableHead>
             <TableHead>Default</TableHead>
+            <TableHead>Calculation</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -252,13 +410,19 @@ export function SchemaDesignSection({
                 <TableCell>{field.is_required ? "Yes" : "No"}</TableCell>
                 <TableCell>{field.is_unique ? "Yes" : "No"}</TableCell>
                 <TableCell className="font-mono text-xs">
+                  {field.relation_target_entity ?? "-"}
+                </TableCell>
+                <TableCell className="font-mono text-xs">
                   {field.default_value === null ? "-" : JSON.stringify(field.default_value)}
+                </TableCell>
+                <TableCell className="font-mono text-xs">
+                  {field.calculation_expression ?? "-"}
                 </TableCell>
               </TableRow>
             ))
           ) : (
             <TableRow>
-              <TableCell className="text-zinc-500" colSpan={5}>
+              <TableCell className="text-zinc-500" colSpan={7}>
                 No fields defined yet.
               </TableCell>
             </TableRow>

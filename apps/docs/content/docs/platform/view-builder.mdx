@@ -1,0 +1,49 @@
+---
+title: View Builder
+description: Phase 2 visual list view builder for columns, sorting, and filters.
+---
+
+Phase status: in progress (Phase 2).
+
+## Outcome
+
+Makers can configure list/grid views visually, including default sort and filter logic.
+
+## Scope
+
+- Column selection, ordering, width hints, and label overrides.
+- Default sort configuration with field and direction.
+- Visual filter groups with logical mode (`and` or `or`).
+- Multiple views per entity, including an explicit default view.
+- Preview table with representative runtime records.
+
+## Runtime Contract
+
+- Designer writes view metadata through view endpoints.
+- Worker runtime resolves available and selected views from workspace endpoints:
+  - `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/views`
+  - `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/views/:view_logical_name`
+- Worker runtime record loading applies selected view metadata through:
+  - `POST /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/records/query`
+  - `filter_criteria.conditions[]` mapped to runtime query conditions
+  - `default_sort` mapped to runtime query sort
+
+## Implemented Baseline
+
+- Designer header surfaces draft state (`Draft changes` vs `Draft saved`) and published-schema readiness.
+- View save validation now enforces column position integrity (non-negative, non-duplicate, contiguous ordering) to stabilize keyboard reorder and undo/redo flows.
+- View metadata is normalized on save so columns are persisted in canonical position order.
+- Repeated save transitions (column reorder -> undo -> redo style payloads) are covered in application tests to confirm deterministic persisted ordering.
+
+## UX Requirements
+
+- Makers can reorder columns and immediately see the preview update.
+- Filter builder uses readable field/operator/value controls (no raw query language).
+- Validation errors identify invalid sort fields, duplicate columns, or malformed filters.
+
+## Definition of Done
+
+- Maker can create, update, and select default views visually.
+- Worker grid pages render columns and default sort from published view metadata.
+- Filter metadata is persisted and enforced by runtime query behavior.
+- Documentation is updated for view payloads, constraints, and runtime effects.

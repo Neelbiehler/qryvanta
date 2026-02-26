@@ -3,4 +3,4 @@
 /**
  * Incoming payload for metadata field updates.
  */
-export type UpdateFieldRequest = { display_name: string, description: string | null, default_value: unknown | null, max_length: number | null, min_value: number | null, max_value: number | null, };
+export type UpdateFieldRequest = { display_name: string, description: string | null, default_value: unknown | null, calculation_expression: string | null, max_length: number | null, min_value: number | null, max_value: number | null, };

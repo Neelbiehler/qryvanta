@@ -16,12 +16,20 @@ import {
 import { WorkspaceEntityPanel } from "@/components/apps/workspace-entity-panel";
 import { AccessDeniedCard } from "@/components/shared/access-denied-card";
 import {
-  type AppEntityBindingResponse,
   apiServerFetch,
   type AppEntityCapabilitiesResponse,
+  type AppSitemapResponse,
+  type BusinessRuleResponse,
+  type FormResponse,
   type PublishedSchemaResponse,
   type RuntimeRecordResponse,
+  type ViewResponse,
 } from "@/lib/api";
+import {
+  flattenSitemapToNavigation,
+  parseFormResponse,
+  parseViewResponse,
+} from "@/components/apps/workspace-entity/helpers";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
@@ -35,15 +43,21 @@ type WorkerAppEntityPageProps = {
     appLogicalName: string;
     entityLogicalName: string;
   }>;
+  searchParams: Promise<{
+    form?: string;
+    view?: string;
+  }>;
 };
 
 export default async function WorkerAppEntityPage({
   params,
+  searchParams,
 }: WorkerAppEntityPageProps) {
   const { appLogicalName, entityLogicalName } = await params;
+  const { form: requestedForm, view: requestedView } = await searchParams;
   const cookieHeader = (await cookies()).toString();
 
-  const [schemaResponse, capabilitiesResponse, recordsResponse, navigationResponse] =
+  const [schemaResponse, capabilitiesResponse, recordsResponse, navigationResponse, formsResponse, viewsResponse, businessRulesResponse] =
     await Promise.all([
       apiServerFetch(
         `/api/workspace/apps/${appLogicalName}/entities/${entityLogicalName}/schema`,
@@ -58,6 +72,15 @@ export default async function WorkerAppEntityPage({
         cookieHeader,
       ),
       apiServerFetch(`/api/workspace/apps/${appLogicalName}/navigation`, cookieHeader),
+      apiServerFetch(
+        `/api/workspace/apps/${appLogicalName}/entities/${entityLogicalName}/forms`,
+        cookieHeader,
+      ),
+      apiServerFetch(
+        `/api/workspace/apps/${appLogicalName}/entities/${entityLogicalName}/views`,
+        cookieHeader,
+      ),
+      apiServerFetch(`/api/runtime/${entityLogicalName}/business-rules`, cookieHeader),
     ]);
 
   if (schemaResponse.status === 401) {
@@ -87,13 +110,28 @@ export default async function WorkerAppEntityPage({
   const capabilities =
     (await capabilitiesResponse.json()) as AppEntityCapabilitiesResponse;
   const records = (await recordsResponse.json()) as RuntimeRecordResponse[];
-  const navigation = (await navigationResponse.json()) as AppEntityBindingResponse[];
-  const binding =
-    navigation.find((item) => item.entity_logical_name === entityLogicalName) ??
-    null;
-  const sortedNavigation = [...navigation].sort(
-    (left, right) => left.navigation_order - right.navigation_order,
-  );
+
+  const sitemap = (await navigationResponse.json()) as AppSitemapResponse;
+  const sortedNavigation = flattenSitemapToNavigation(sitemap);
+
+  // Find the current entity's navigation item for defaults
+  const currentNavItem = sortedNavigation.find(
+    (item) => item.entity_logical_name === entityLogicalName,
+  ) ?? null;
+
+  // Parse form and view definitions (gracefully handle failures)
+  const rawForms = formsResponse.ok
+    ? ((await formsResponse.json()) as FormResponse[])
+    : [];
+  const rawViews = viewsResponse.ok
+    ? ((await viewsResponse.json()) as ViewResponse[])
+    : [];
+
+  const forms = rawForms.map(parseFormResponse);
+  const views = rawViews.map(parseViewResponse);
+  const businessRules = businessRulesResponse.ok
+    ? ((await businessRulesResponse.json()) as BusinessRuleResponse[])
+    : [];
 
   return (
     <div className="space-y-4">
@@ -142,7 +180,7 @@ export default async function WorkerAppEntityPage({
               const isActive = item.entity_logical_name === entityLogicalName;
               return (
                 <Link
-                  key={`${item.app_logical_name}.${item.entity_logical_name}`}
+                  key={item.entity_logical_name}
                   href={`/worker/apps/${appLogicalName}/${item.entity_logical_name}`}
                   className={`block rounded-md border px-3 py-2 text-sm transition ${
                     isActive
@@ -151,7 +189,7 @@ export default async function WorkerAppEntityPage({
                   }`}
                 >
                   <p className="font-medium text-zinc-900">
-                    {item.navigation_label ?? item.entity_logical_name}
+                    {item.display_name}
                   </p>
                   <p className="font-mono text-[11px] text-zinc-500">
                     {item.entity_logical_name}
@@ -167,10 +205,15 @@ export default async function WorkerAppEntityPage({
             <WorkspaceEntityPanel
               appLogicalName={appLogicalName}
               entityLogicalName={entityLogicalName}
-              binding={binding}
+              binding={null}
+              initialFormLogicalName={requestedForm ?? currentNavItem?.default_form ?? null}
+              initialViewLogicalName={requestedView ?? currentNavItem?.default_view ?? null}
               schema={schema}
               capabilities={capabilities}
+              businessRules={businessRules}
               records={records}
+              forms={forms}
+              views={views}
             />
           </CardContent>
         </Card>

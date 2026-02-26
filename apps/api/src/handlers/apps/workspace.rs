@@ -6,8 +6,8 @@ use tracing::warn;
 
 use crate::dto::{
     AppEntityCapabilitiesResponse, AppResponse, AppSitemapResponse, CreateRuntimeRecordRequest,
-    PublishedSchemaResponse, QueryRuntimeRecordsRequest, RuntimeRecordResponse,
-    UpdateRuntimeRecordRequest,
+    FormResponse, PublishedSchemaResponse, QueryRuntimeRecordsRequest, RuntimeRecordResponse,
+    UpdateRuntimeRecordRequest, ViewResponse, WorkspaceDashboardResponse,
 };
 use crate::error::ApiResult;
 use crate::handlers::runtime::runtime_record_query_from_request;
@@ -47,6 +47,23 @@ pub async fn app_navigation_handler(
     Ok(Json(AppSitemapResponse::from(sitemap)))
 }
 
+pub async fn workspace_dashboard_handler(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserIdentity>,
+    Path((app_logical_name, dashboard_logical_name)): Path<(String, String)>,
+) -> ApiResult<Json<WorkspaceDashboardResponse>> {
+    let dashboard = state
+        .app_service
+        .get_dashboard_for_subject(
+            &user,
+            app_logical_name.as_str(),
+            dashboard_logical_name.as_str(),
+        )
+        .await?;
+
+    Ok(Json(WorkspaceDashboardResponse::from(dashboard)))
+}
+
 pub async fn workspace_entity_schema_handler(
     State(state): State<AppState>,
     Extension(user): Extension<UserIdentity>,
@@ -79,6 +96,90 @@ pub async fn workspace_entity_capabilities_handler(
         .await?;
 
     Ok(Json(AppEntityCapabilitiesResponse::from(capabilities)))
+}
+
+pub async fn workspace_list_forms_handler(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserIdentity>,
+    Path((app_logical_name, entity_logical_name)): Path<(String, String)>,
+) -> ApiResult<Json<Vec<FormResponse>>> {
+    let forms = state
+        .app_service
+        .list_entity_forms(
+            &user,
+            app_logical_name.as_str(),
+            entity_logical_name.as_str(),
+        )
+        .await?
+        .into_iter()
+        .map(FormResponse::from)
+        .collect();
+
+    Ok(Json(forms))
+}
+
+pub async fn workspace_get_form_handler(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserIdentity>,
+    Path((app_logical_name, entity_logical_name, form_logical_name)): Path<(
+        String,
+        String,
+        String,
+    )>,
+) -> ApiResult<Json<FormResponse>> {
+    let form = state
+        .app_service
+        .get_entity_form(
+            &user,
+            app_logical_name.as_str(),
+            entity_logical_name.as_str(),
+            form_logical_name.as_str(),
+        )
+        .await?;
+
+    Ok(Json(FormResponse::from(form)))
+}
+
+pub async fn workspace_list_views_handler(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserIdentity>,
+    Path((app_logical_name, entity_logical_name)): Path<(String, String)>,
+) -> ApiResult<Json<Vec<ViewResponse>>> {
+    let views = state
+        .app_service
+        .list_entity_views(
+            &user,
+            app_logical_name.as_str(),
+            entity_logical_name.as_str(),
+        )
+        .await?
+        .into_iter()
+        .map(ViewResponse::from)
+        .collect();
+
+    Ok(Json(views))
+}
+
+pub async fn workspace_get_view_handler(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserIdentity>,
+    Path((app_logical_name, entity_logical_name, view_logical_name)): Path<(
+        String,
+        String,
+        String,
+    )>,
+) -> ApiResult<Json<ViewResponse>> {
+    let view = state
+        .app_service
+        .get_entity_view(
+            &user,
+            app_logical_name.as_str(),
+            entity_logical_name.as_str(),
+            view_logical_name.as_str(),
+        )
+        .await?;
+
+    Ok(Json(ViewResponse::from(view)))
 }
 
 pub async fn workspace_list_records_handler(

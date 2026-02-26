@@ -2,18 +2,10 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use qryvanta_core::AppError;
-use serde::Serialize;
-use ts_rs::TS;
 
-/// API error payload.
-#[derive(Debug, Serialize, TS)]
-#[ts(
-    export,
-    export_to = "../../../packages/api-types/src/generated/error-response.ts"
-)]
-pub struct ErrorResponse {
-    message: String,
-}
+mod types;
+
+pub use types::ErrorResponse;
 
 /// HTTP API error wrapper around core application errors.
 #[derive(Debug)]
@@ -39,9 +31,7 @@ impl IntoResponse for ApiError {
             AppError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
 
-        let payload = Json(ErrorResponse {
-            message: self.0.to_string(),
-        });
+        let payload = Json(ErrorResponse::new(self.0.to_string()));
 
         if is_rate_limited {
             // OWASP: include Retry-After header on 429 responses.

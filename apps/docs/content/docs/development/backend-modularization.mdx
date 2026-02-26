@@ -18,20 +18,127 @@ When modules get large, we split by responsibility while keeping the same runtim
 
 ## Current Pattern
 
-- `crates/application/src/app_ports.rs`: app-level DTOs and ports.
-- `crates/application/src/metadata_ports.rs`: metadata/runtime ports and shared input/query types.
+- `crates/application/src/app_ports.rs`: app ports entrypoint with stable re-exports.
+- `crates/application/src/app_ports/inputs.rs`, `permissions.rs`, `repository.rs`, `runtime_records.rs`: app input DTOs, subject entity permission projection/helpers, app repository trait, and runtime-record gateway trait split by concern.
+- `crates/application/src/security_admin_ports.rs`: security-admin ports entrypoint with stable re-exports.
+- `crates/application/src/security_admin_ports/roles.rs`, `runtime_permissions.rs`, `temporary_access.rs`, `audit.rs`, `governance.rs`, `repositories.rs`: security-admin role/runtime-permission/temporary-access/audit/governance types and repository traits split by concern.
+- `crates/application/src/workflow_ports.rs`: workflow ports entrypoint with stable re-exports.
+- `crates/application/src/workflow_ports/execution.rs`, `repository.rs`, `cache.rs`, `lease.rs`, `runtime_records.rs`: workflow execution payloads/state, repository trait, queue stats cache trait, worker lease-coordination trait, and runtime-record gateway trait split by concern.
+- `crates/application/src/metadata_ports.rs`: metadata ports entrypoint with stable re-exports for audit, tenant, metadata input/query types, and repository concern traits.
+- `crates/application/src/metadata_ports/audit.rs`, `tenant.rs`, `metadata_inputs.rs`, `runtime_query.rs`, `metadata_repository.rs`: metadata port surface split by concern while keeping `MetadataRepositoryByConcern` marker composition over `MetadataRepository`.
+- `crates/application/src/metadata_service/runtime_query.rs`: runtime query orchestration isolated from design-time service methods.
+- `crates/application/src/metadata_service/runtime_query_links.rs`: runtime query alias/link graph resolution and schema cache/field lookup helpers isolated from validation rules.
+- `crates/application/src/metadata_service/runtime_query_validation.rs`: runtime query readable-field enforcement and filter/sort/where validation rules isolated from orchestration.
+- `crates/application/src/metadata_service/publish.rs`: publish orchestration and publish check entrypoints isolated from validation and default artifact generation helpers.
+- `crates/application/src/metadata_service/publish_validation.rs`: publish-time form/view schema validation and draft publish-check issue collection helpers isolated from orchestration.
+- `crates/application/src/metadata_service/publish_defaults.rs`: publish-time default form/view auto-generation helpers isolated from orchestration.
+- `crates/application/src/metadata_service/publish_access.rs`: published schema/snapshot and design-surface read helpers (checked and unchecked) isolated from publish write flows.
+- `crates/application/src/metadata_service/runtime_access.rs`: runtime record read/write scope resolution plus field-level redaction/writability enforcement isolated from CRUD flows.
+- `crates/application/src/metadata_service/runtime_payload.rs`: runtime payload normalization orchestration isolated from calculation/business-rule/validation helper implementations.
+- `crates/application/src/metadata_service/runtime_payload_calculation.rs`: runtime calculated field expression parsing/evaluation isolated from payload normalization orchestration.
+- `crates/application/src/metadata_service/runtime_payload_normalization.rs`: runtime payload field/default/required/lock normalization helpers isolated from orchestration.
+- `crates/application/src/metadata_service/runtime_payload_option_sets.rs`: runtime option-set-backed choice and multichoice value validation isolated from payload normalization helpers.
+- `crates/application/src/metadata_service/runtime_payload_rules.rs`: runtime business-rule condition matching and effect aggregation isolated from payload normalization orchestration.
+- `crates/application/src/metadata_service/runtime_records_read.rs`: runtime record list/query/get/read-ownership orchestration isolated from write paths.
+- `crates/application/src/metadata_service/runtime_records_write.rs`: runtime record create/update/delete orchestration isolated from read/query paths.
+- `crates/application/src/metadata_service/runtime_write.rs`: runtime write-time relation integrity and unique value hashing helpers isolated from CRUD flows.
+- `crates/application/src/metadata_service/definitions_entities.rs`: metadata entity and field design-time orchestration isolated from runtime record and publish concerns.
+- `crates/application/src/metadata_service/definitions_components.rs`: metadata option-set, form, and view design-time orchestration isolated from runtime record and publish concerns.
+- `crates/application/src/metadata_service/definitions_business_rules.rs`: metadata business-rule design-time orchestration isolated from runtime record and publish concerns.
+- `crates/application/src/app_service.rs`: app service entrypoint with dependency wiring, runtime-record service adapter bridge, and module composition.
+- `crates/application/src/app_service/access.rs`, `admin.rs`, `workspace.rs`: app access guards, admin app-definition/binding/permission orchestration, and worker/admin sitemap/dashboard surfaces split by concern.
+- `crates/application/src/app_service/runtime.rs`: app-scoped runtime schema/capability checks and record/form/view access orchestration isolated from app configuration flows.
+- `crates/application/src/app_service/publish.rs`, `sitemap.rs`: app publish checks and sitemap algorithms isolated from core service flow.
+- `crates/application/src/workflow_service.rs`: workflow service entrypoint with module wiring and shared service state.
+- `crates/application/src/workflow_service/definitions.rs`, `dispatch.rs`, `queue.rs`, `execution.rs`: workflow definition CRUD, event dispatch, queue/lease coordination, and execution runtime logic split by concern.
+- `crates/application/src/workflow_service/tests.rs`: workflow service tests isolated from production code.
+- `crates/application/src/mfa_service.rs`: MFA service entrypoint with shared ports/types and dependency wiring.
+- `crates/application/src/mfa_service/enrollment.rs`, `verification.rs`, `management.rs`, `recovery_codes.rs`: MFA enrollment/confirmation flow, TOTP/recovery verification flow, password-reauth management operations, and recovery-code generation/hash helpers split by concern.
+- `crates/application/src/auth_token_service.rs`: auth-token service entrypoint with shared record/port types and dependency wiring.
+- `crates/application/src/auth_token_service/password_reset.rs`, `email_verification.rs`, `invite.rs`, `consume.rs`, `token_crypto.rs`: auth-token password-reset flow, email-verification flow, invite flow, token-consume flow, and token generation/hash helpers split by concern.
+- `crates/application/src/auth_token_service/tests.rs`: auth-token service tests isolated from production code.
+- `crates/application/src/contact_bootstrap_service.rs`: contact bootstrap service entrypoint with dependency wiring and bootstrap constants.
+- `crates/application/src/contact_bootstrap_service/bootstrap.rs`, `schema.rs`, `payload.rs`: subject-contact bootstrap orchestration, contact schema bootstrap/publish flow, and contact runtime payload construction split by concern.
+- `crates/application/src/security_admin_service.rs`: security admin service entrypoint with dependency wiring and shared authorization guard helpers.
+- `crates/application/src/security_admin_service/roles.rs`, `runtime_permissions.rs`, `temporary_access.rs`, `governance.rs`: security role/assignment flows, runtime field permission administration, temporary privileged access, and audit/tenant-governance operations split by concern.
+- `crates/application/src/authorization_service.rs`: authorization service entrypoint with repository/audit wiring and shared authorization types.
+- `crates/application/src/authorization_service/permissions.rs`, `surfaces.rs`, `runtime_fields.rs`: permission grant resolution and temporary-access auditing, accessible-surface resolution, and runtime field-level access aggregation split by concern.
+- `crates/application/src/authorization_service/tests.rs`: authorization service tests isolated from production code.
+- `crates/application/src/user_service.rs`: user service entrypoint with shared ports/types and dependency wiring.
+- `crates/application/src/user_service/registration.rs`, `login.rs`, `password.rs`, `retrieval.rs`: user registration flow, login/lockout flow, password-change flow, and basic retrieval accessors split by concern.
+- `crates/application/src/rate_limit_service.rs`: rate-limit service entrypoint with stable re-exports.
+- `crates/application/src/rate_limit_service/ports.rs`, `config.rs`, `service.rs`: rate-limit repository/attempt types, rule configuration types, and rate-limit enforcement/cleanup service logic split by concern.
+- `crates/application/src/security_admin_service/tests.rs`: security admin service tests isolated from production code.
 - `crates/application/src/app_service/tests.rs`: app service tests isolated from production code.
 - `crates/application/src/metadata_service/tests.rs`: metadata service tests isolated from production code.
 - `crates/infrastructure/src/in_memory_metadata_repository/tests.rs`: in-memory adapter tests isolated.
+- `crates/infrastructure/src/in_memory_metadata_repository.rs`: in-memory metadata repository entrypoint with concern-focused delegation methods.
+- `crates/infrastructure/src/in_memory_metadata_repository/definitions.rs`, `components.rs`, `publish.rs`: in-memory metadata persistence split by definitions, design components, and publish snapshots.
+- `crates/infrastructure/src/in_memory_metadata_repository/runtime_records.rs`: in-memory runtime-record entrypoint with shared storage-key/index helper utilities.
+- `crates/infrastructure/src/in_memory_metadata_repository/runtime_records/write.rs`, `read.rs`, `query.rs`, `relations.rs`: in-memory runtime record write flows, read/existence flows, query/filter/sort evaluation, and relation-reference checks split by concern.
 - `crates/infrastructure/src/postgres_metadata_repository/tests.rs`: postgres adapter tests isolated.
+- `crates/infrastructure/src/postgres_metadata_repository/definitions.rs`: postgres entity and field metadata definition persistence logic isolated from other repository concerns.
+- `crates/infrastructure/src/postgres_metadata_repository/components.rs`: postgres option-set, form, view, and business-rule persistence logic isolated from general metadata repository operations.
+- `crates/infrastructure/src/postgres_metadata_repository/publish.rs`: postgres published-schema and published-snapshot persistence logic isolated from general metadata repository operations.
+- `crates/infrastructure/src/postgres_metadata_repository/runtime_records.rs`: postgres runtime record entrypoint with shared row-to-domain mapping, id parsing, and unique-index helper logic.
+- `crates/infrastructure/src/postgres_metadata_repository/runtime_records/write.rs`, `read.rs`, `query.rs`, `relations.rs`: postgres runtime record write flows, read/existence flows, query SQL composition, and relation-reference checks split by concern.
+- `crates/infrastructure/src/postgres_app_repository.rs`: postgres app repository entrypoint with trait wiring and shared row/document types.
+- `crates/infrastructure/src/postgres_app_repository/definitions.rs`, `bindings.rs`, `sitemap.rs`, `permissions.rs`: postgres app-definition persistence, app-entity binding persistence, sitemap persistence, and app-role/subject permission query flows split by concern.
+- `crates/infrastructure/src/postgres_auth_token_repository.rs`: postgres auth-token repository entrypoint with trait wiring and shared auth-token row mapping.
+- `crates/infrastructure/src/postgres_auth_token_repository/issue.rs`, `consume.rs`, `invalidate.rs`, `rate_limit.rs`: postgres auth-token issue, consume, invalidate, and rate-limit counting flows split by concern.
+- `crates/infrastructure/src/postgres_security_admin_repository.rs`: postgres security-admin repository entrypoint with trait wiring, shared row types, aggregation helpers, and owner-role bootstrap helper.
+- `crates/infrastructure/src/postgres_security_admin_repository/roles.rs`, `runtime_permissions.rs`, `temporary_access.rs`, `governance.rs`: postgres role lifecycle, runtime field-permission persistence, temporary access grants, and tenant governance persistence split by concern.
+- `crates/infrastructure/src/postgres_authorization_repository.rs`: postgres authorization repository entrypoint with trait wiring and shared row mapping types.
+- `crates/infrastructure/src/postgres_authorization_repository/permissions.rs`, `runtime_fields.rs`, `temporary_grants.rs`: postgres subject permission lookup, runtime field-grant lookup, and temporary permission-grant resolution split by concern.
+- `crates/infrastructure/src/postgres_workflow_repository.rs`: postgres workflow repository entrypoint with trait wiring and shared workflow row/conversion helpers.
+- `crates/infrastructure/src/postgres_workflow_repository/definitions.rs`, `runs.rs`, `queue.rs`: postgres workflow definition persistence, run/attempt lifecycle persistence, and queue claim/lease/heartbeat statistics logic split by concern.
+- `crates/infrastructure/src/postgres_user_repository.rs`: postgres user repository entrypoint with trait wiring and shared user-row mapping.
+- `crates/infrastructure/src/postgres_user_repository/lookup.rs`, `account.rs`, `mfa.rs`: postgres user lookup/subject resolution, account/password/email/profile updates, and TOTP/recovery-code persistence split by concern.
+- `crates/infrastructure/src/postgres_tenant_repository.rs`: postgres tenant repository entrypoint with trait wiring for membership, registration-mode, and subject-contact mapping operations.
+- `crates/infrastructure/src/postgres_tenant_repository/lookup.rs`, `membership.rs`, `contacts.rs`: postgres tenant/registration lookups, membership bootstrap and owner-role seeding, and subject-contact mapping persistence split by concern.
 - `apps/api/src/auth/mod.rs`: auth module entrypoint with stable handler exports.
 - `apps/api/src/auth/passkey.rs`, `password.rs`, `invite.rs`, `mfa.rs`: auth flow handlers split by concern.
 - `apps/api/src/auth/session_helpers.rs`: shared auth helpers and helper-focused unit tests.
 - `apps/api/src/dto/mod.rs`: DTO entrypoint with re-exports for handlers.
-- `apps/api/src/dto/apps.rs`, `auth.rs`, `common.rs`, `entities.rs`, `runtime.rs`, `security.rs`: contract types split by bounded context.
-- `apps/api/src/api_config.rs`, `api_services.rs`, `api_router.rs`: composition root split into config loading, service wiring, and route assembly.
+- `apps/api/src/dto/apps.rs`: app DTO entrypoint with stable re-exports for handlers/tests.
+- `apps/api/src/dto/apps/types.rs`, `conversions.rs`: app request/response transport types and domain conversion impls split by concern.
+- `apps/api/src/dto/entities.rs`, `workflows.rs`: entity/workflow DTO entrypoints with stable re-exports for handlers/tests.
+- `apps/api/src/dto/entities/types.rs`, `entities/conversions.rs`: entity contract transport types and domain conversion impls split by concern.
+- `apps/api/src/dto/workflows/types.rs`, `workflows/conversions.rs`: workflow transport types and workflow/application conversion/parsing helpers split by concern.
+- `apps/api/src/dto/security.rs`: security DTO entrypoint with stable re-exports for handlers/tests.
+- `apps/api/src/dto/security/types.rs`, `security/conversions.rs`: security transport types and application/domain conversion impls split by concern.
+- `apps/api/src/dto/runtime.rs`: runtime DTO entrypoint with stable re-exports for handlers/tests.
+- `apps/api/src/dto/runtime/types.rs`, `runtime/conversions.rs`: runtime query/request transport types and runtime-record conversion impl split by concern.
+- `apps/api/src/dto/auth.rs`: auth DTO entrypoint with stable re-exports for handlers/tests.
+- `apps/api/src/dto/auth/types.rs`: auth request/response transport types split from DTO entrypoint wiring.
+- `apps/api/src/dto/common.rs`: shared DTO entrypoint with stable re-exports.
+- `apps/api/src/dto/common/types.rs`, `common/conversions.rs`: shared health/auth utility transport types and user-identity conversion helpers split by concern.
+- `apps/api/src/error.rs`, `error/types.rs`: API error wrapper/response mapping and exported error payload type split by concern.
+- `apps/api/src/api_config.rs`: API runtime config entrypoint with stable public API.
+- `apps/api/src/api_config/load.rs`, `tracing.rs`: env/config loading and validation plus tracing initialization split by concern.
+- `apps/api/src/api_services.rs`: API service/composition entrypoint with stable public constructors.
+- `apps/api/src/api_services/database.rs`, `sessions.rs`, `redis.rs`, `email.rs`: database migration/bootstrap, session layers, redis client construction, and email provider wiring split by concern.
+- `apps/api/src/api_services/state_builder.rs`: app-state assembly entrypoint with stable public constructor.
+- `apps/api/src/api_services/state_builder/repositories.rs`, `security.rs`, `users.rs`, `caches.rs`, `webauthn.rs`: repository bundle construction, authorization/security service wiring, user/auth-token/mfa service wiring, rate-limit/queue-cache backend selection, and WebAuthn runtime construction split by concern.
+- `apps/api/src/state.rs`, `state/app_state.rs`: API shared state entrypoint and concrete app-state struct split for composition clarity.
+- `apps/api/src/api_router.rs`: route assembly entrypoint with stable public constructor.
+- `apps/api/src/api_router/protected.rs`, `public_auth.rs`, `worker_internal.rs`, `cors.rs`: authenticated route graph, public auth/rate-limited route graph, worker-internal route graph, and CORS layer construction split by concern.
 - `apps/api/src/handlers/apps/mod.rs`: app handler entrypoint with stable exports.
 - `apps/api/src/handlers/apps/admin.rs`, `workspace.rs`: app admin and workspace handlers split by concern.
+- `apps/api/src/handlers/entities/mod.rs`: entity handler entrypoint with stable exports.
+- `apps/api/src/handlers/entities/*.rs`: entity, field, form, view, option-set, publish, and business-rule handlers split by responsibility.
+- `apps/api/src/handlers/publish.rs`: publish handler entrypoint with shared state/query types and stable exports.
+- `apps/api/src/handlers/publish/handlers.rs`, `diff.rs`, `issues.rs`, `history.rs`: publish execution, diffing, issue classification, and audit mapping split by concern.
+- `apps/api/src/handlers/publish/tests.rs`: publish endpoint tests isolated from handler production code.
+- `apps/api/src/handlers/runtime.rs`: runtime handler entrypoint with stable exports and query-conversion re-export for workspace handler reuse.
+- `apps/api/src/handlers/runtime/handlers.rs`, `query.rs`: runtime CRUD/business-rule HTTP handlers and runtime query payload parsing/link-resolution helpers split by concern.
+- `apps/api/src/handlers/runtime/tests.rs`: runtime query parsing tests isolated from handler production code.
+- `apps/api/src/handlers/health.rs`: health handler entrypoint with stable exports.
+- `apps/api/src/handlers/health/handlers.rs`, `checks.rs`: health endpoint orchestration and dependency-specific postgres/redis probes split by concern.
+- `apps/api/src/handlers/security.rs`: security handler entrypoint with stable exports.
+- `apps/api/src/handlers/security/roles.rs`, `audit.rs`, `runtime_permissions.rs`, `temporary_access.rs`, `governance.rs`: security role/assignment, audit-log, runtime field-permission, temporary-access, and tenant/audit-governance HTTP handlers split by concern.
+- `apps/api/src/handlers/worker.rs`: worker-internal handler entrypoint with stable exports and shared partition parsing helper.
+- `apps/api/src/handlers/worker/claim.rs`, `heartbeat.rs`, `stats.rs`: worker queue-claim, worker-heartbeat, and queue-stats HTTP handlers split by concern.
 
 ## Quality Gate For Refactors
 

@@ -41,6 +41,7 @@ Per-field constraints:
 - `default_value`
 - `relation_target_entity` (required for `relation` fields)
 - `option_set_logical_name` (required for `choice` and `multichoice` fields)
+- `calculation_expression` (optional, computed runtime value for `text` and `number` fields)
 - `description` (optional freeform metadata)
 - `max_length` (optional, `text` fields only)
 - `min_value` / `max_value` (optional, `number` fields only)
@@ -50,6 +51,17 @@ Field mutation rules:
 - Published fields keep stable identity/type semantics: `logical_name` and `field_type` are immutable.
 - Draft fields can be deleted only when they do not exist in any published schema version.
 - Validation rejects invalid constraint combinations (for example `max_length` on `number` fields).
+- Calculated fields cannot define `default_value` and cannot be directly set by runtime clients.
+
+## Calculated Fields (v1)
+
+Calculated fields are evaluated in the API runtime on create/update writes after payload normalization.
+
+- Supported functions:
+  - `add(arg1, arg2, ...)` → numeric sum
+  - `concat(arg1, arg2, ...)` → text concatenation
+- Arguments can reference other field logical names, numeric literals, or quoted string literals.
+- Calculated fields are persisted in runtime record payloads like normal fields, but are always derived from expression output.
 
 ## Option Sets
 
@@ -67,6 +79,8 @@ Entity definitions support optional descriptive fields in addition to logical an
 - `description`
 - `plural_display_name`
 - `icon`
+
+Entity metadata can be updated after creation via `PUT /api/entities/:entity_logical_name` to change display name, description, plural display name, and icon without altering the immutable logical name.
 
 ## Form and View Definitions
 
@@ -88,12 +102,22 @@ Current invariants:
 - Forms reject duplicate field placements.
 - Views require at least one column and reject duplicate columns.
 
+## Auto-Generated Defaults on Publish
+
+When an entity is published, the system automatically generates convention-based defaults if they do not already exist:
+
+- **Default Main Form** (`main_form`): A `Main` form type with all published fields placed in a single "General" tab and section using a two-column layout. Auto-generation is skipped if any form with `form_type: main` already exists for the entity.
+- **Default "All Records" View** (`all_records`): A `Grid` view type containing all published fields as columns, sorted ascending by the first field, and marked as the default view. Auto-generation is skipped if any view marked `is_default: true` already exists for the entity.
+
+This follows the convention-over-configuration principle: makers get a working app immediately after their first publish, and only need to customize what deviates from the default layout.
+
 ## Publish Lifecycle
 
 1. Create/edit draft metadata (`entity_definitions` + `entity_fields`).
 2. Publish immutable schema snapshot (`entity_published_versions`).
-3. Runtime CRUD uses latest published version only.
-4. Draft changes are inert until next publish.
+3. Auto-generate default form and view if none exist.
+4. Runtime CRUD uses latest published version only.
+5. Draft changes are inert until next publish.
 
 ## Runtime Validation
 
@@ -101,6 +125,11 @@ Current invariants:
 - Unknown fields are rejected.
 - Required fields must be present unless a default is provided.
 - Field values are type-checked deterministically.
+- Text field `max_length` is enforced on runtime writes.
+- Number field `min_value` / `max_value` constraints are enforced on runtime writes.
+- Calculated field expressions are evaluated server-side on runtime writes.
+- Runtime payloads that attempt to set calculated fields directly are rejected.
+- Active entity-scoped business rules execute during runtime writes: validation actions (`show_error`) block writes, value actions (`set_default_value`, `set_field_value`) patch payloads, and requiredness actions (`set_required`, `set_optional`) adjust required checks.
 - Relation values must reference an existing target runtime record.
 - Unique constraints are enforced via a tenant/entity/field hash index.
 - Runtime record deletion is blocked when incoming relation references still exist.

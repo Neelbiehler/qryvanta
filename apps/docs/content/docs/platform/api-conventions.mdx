@@ -35,11 +35,24 @@ Keep handlers focused on:
 
 - `GET /api/entities` lists metadata entities.
 - `POST /api/entities` creates metadata entities.
+- `PUT /api/entities/:entity_logical_name` updates entity metadata (display name, description, plural display name, icon).
 - `GET /api/entities/:entity_logical_name/fields` lists draft fields.
 - `POST /api/entities/:entity_logical_name/fields` creates/updates draft fields.
+- `GET /api/entities/:entity_logical_name/business-rules` lists draft business rules.
+- `POST /api/entities/:entity_logical_name/business-rules` creates/updates a business rule.
+- `GET /api/entities/:entity_logical_name/business-rules/:business_rule_logical_name` returns one business rule definition.
+- `PUT /api/entities/:entity_logical_name/business-rules/:business_rule_logical_name` updates a business rule definition.
+- `DELETE /api/entities/:entity_logical_name/business-rules/:business_rule_logical_name` deletes a business rule definition.
 - `POST /api/entities/:entity_logical_name/publish` publishes immutable schema version.
+- `GET /api/entities/:entity_logical_name/publish-checks` runs pre-publish validation and returns publish blockers without creating a new schema version.
 - `GET /api/entities/:entity_logical_name/published` returns latest published schema.
+- `GET /api/publish/checks` runs workspace-level publish checks and returns aggregated blockers for entities and apps.
+- `POST /api/publish/checks` validates or executes selective publish for requested entities/apps (`dry_run: true` validates only, `dry_run: false` publishes when validation passes), including dependency-aware entity relation checks for in-flight selected entities.
+- `POST /api/publish/diff` returns draft-vs-published diff previews for selected entities/apps.
+- `GET /api/publish/history?limit=12` returns persisted workspace publish run history for drill-down and selection replay.
+- Workspace publish issue payloads may include `dependency_path` edge metadata (for example, `sales -> contact` or `contact.account_id -> account`).
 - `GET /api/runtime/:entity_logical_name/records?limit=50&offset=0` lists runtime records.
+- `GET /api/runtime/:entity_logical_name/business-rules` lists active business rules for runtime clients.
 - `POST /api/runtime/:entity_logical_name/records/query` queries runtime records with typed operators, alias-aware link entities, recursive `where` groups, sorting, and pagination.
 - `POST /api/runtime/:entity_logical_name/records` creates runtime record.
 - `GET /api/runtime/:entity_logical_name/records/:record_id` fetches one runtime record.
@@ -52,6 +65,9 @@ Keep handlers focused on:
 - `POST /api/apps` creates an app.
 - `GET /api/apps/:app_logical_name/entities` lists app navigation bindings.
 - `POST /api/apps/:app_logical_name/entities` saves app navigation binding and optional app-scoped presentation overrides (`form_field_logical_names`, `list_field_logical_names`, `default_view_mode`).
+- `GET /api/apps/:app_logical_name/sitemap` returns admin sitemap configuration for one app.
+- `PUT /api/apps/:app_logical_name/sitemap` saves sitemap hierarchy with validation for bound entity targets and optional `default_form` / `default_view` references.
+- `GET /api/apps/:app_logical_name/publish-checks` runs app-level publish validation and returns publish blockers.
 - `GET /api/apps/:app_logical_name/permissions` lists app role entity permissions.
 - `PUT /api/apps/:app_logical_name/permissions` saves app role entity permissions.
 
@@ -59,8 +75,13 @@ Keep handlers focused on:
 
 - `GET /api/workspace/apps` lists apps accessible to the current subject.
 - `GET /api/workspace/apps/:app_logical_name/navigation` lists worker-visible app entities.
+- `GET /api/workspace/apps/:app_logical_name/dashboards/:dashboard_logical_name` returns worker dashboard metadata for sitemap dashboard targets.
 - `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/capabilities` returns effective worker capabilities.
 - `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/schema` returns published schema for worker forms.
+- `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/forms` lists standalone form definitions for the entity within app scope.
+- `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/forms/:form_logical_name` returns one standalone form definition (tab/section/field layout) for the entity within app scope.
+- `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/views` lists standalone view definitions for the entity within app scope.
+- `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/views/:view_logical_name` returns one standalone view definition (columns/sort/filters) for the entity within app scope.
 - `GET|POST /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/records` lists/creates records with app-scoped permissions.
 - `POST /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/records/query` queries records with app-scoped permissions using alias-aware runtime query grammar.
 - `GET|PUT|DELETE /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/records/:record_id` reads/writes/deletes records with app-scoped permissions.

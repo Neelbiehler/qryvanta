@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { type DragEvent, type KeyboardEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -44,6 +44,15 @@ type FormFieldPlacement = {
   label_override: string | null;
 };
 
+type FormSubgrid = {
+  logical_name: string;
+  display_name: string;
+  target_entity_logical_name: string;
+  relation_field_logical_name: string;
+  position: number;
+  columns: string[];
+};
+
 type FormSection = {
   logical_name: string;
   display_name: string;
@@ -51,6 +60,7 @@ type FormSection = {
   visible: boolean;
   columns: number;
   fields: FormFieldPlacement[];
+  subgrids: FormSubgrid[];
 };
 
 type FormTab = {
@@ -104,6 +114,42 @@ function normalizeTabs(input: unknown[] | undefined): FormTab[] {
               })
             : [];
 
+          const subgrids = Array.isArray((section as { subgrids?: unknown[] }).subgrids)
+            ? ((section as { subgrids?: unknown[] }).subgrids ?? []).map(
+                (subgridCandidate, subgridIndex) => {
+                  const subgrid = (subgridCandidate ?? {}) as Partial<FormSubgrid>;
+                  return {
+                    logical_name:
+                      typeof subgrid.logical_name === "string"
+                        ? subgrid.logical_name
+                        : `subgrid_${tabIndex + 1}_${sectionIndex + 1}_${subgridIndex + 1}`,
+                    display_name:
+                      typeof subgrid.display_name === "string"
+                        ? subgrid.display_name
+                        : `Sub-grid ${subgridIndex + 1}`,
+                    target_entity_logical_name:
+                      typeof subgrid.target_entity_logical_name === "string"
+                        ? subgrid.target_entity_logical_name
+                        : "",
+                    relation_field_logical_name:
+                      typeof subgrid.relation_field_logical_name === "string"
+                        ? subgrid.relation_field_logical_name
+                        : "",
+                    position:
+                      typeof subgrid.position === "number"
+                        ? subgrid.position
+                        : subgridIndex,
+                    columns: Array.isArray(subgrid.columns)
+                      ? subgrid.columns
+                          .filter((value): value is string => typeof value === "string")
+                          .map((value) => value.trim())
+                          .filter((value) => value.length > 0)
+                      : [],
+                  } satisfies FormSubgrid;
+                },
+              )
+            : [];
+
           return {
             logical_name:
               typeof section.logical_name === "string"
@@ -120,6 +166,7 @@ function normalizeTabs(input: unknown[] | undefined): FormTab[] {
                 ? section.columns
                 : 2,
             fields,
+            subgrids,
           } satisfies FormSection;
         })
       : [createDefaultSection(0, 0)];
@@ -144,6 +191,7 @@ function createDefaultSection(tabIndex: number, sectionIndex: number): FormSecti
     visible: true,
     columns: 2,
     fields: [],
+    subgrids: [],
   };
 }
 
@@ -165,8 +213,23 @@ function reorderPositions(tabs: FormTab[]): FormTab[] {
       ...section,
       position: sectionIndex,
       fields: section.fields.map((field, fieldIndex) => ({ ...field, position: fieldIndex })),
+      subgrids: section.subgrids.map((subgrid, subgridIndex) => ({
+        ...subgrid,
+        position: subgridIndex,
+      })),
     })),
   }));
+}
+
+function reorderByIndices<T>(items: T[], sourceIndex: number, targetIndex: number): T[] {
+  if (sourceIndex === targetIndex) {
+    return items;
+  }
+
+  const next = [...items];
+  const [entry] = next.splice(sourceIndex, 1);
+  next.splice(targetIndex, 0, entry);
+  return next;
 }
 
 function normalizeHeaderFields(input: string): string[] {
@@ -190,6 +253,11 @@ export function FormDesignerPanel({
     (initialForm?.form_type as FormTypeValue | undefined) ?? "main",
   );
   const [tabs, setTabs] = useState<FormTab[]>(() => normalizeTabs(initialForm?.tabs));
+  const [history, setHistory] = useState<FormTab[][]>([]);
+  const [future, setFuture] = useState<FormTab[][]>([]);
+  const [activeDropLineId, setActiveDropLineId] = useState<string | null>(null);
+  const [dragLabel, setDragLabel] = useState<string | null>(null);
+  const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
   const [activeTabIndex, setActiveTabIndex] = useState(0);
   const [selection, setSelection] = useState<SelectionState>({ kind: "tab", tabIndex: 0 });
   const [headerFieldsText, setHeaderFieldsText] = useState(
@@ -201,8 +269,59 @@ export function FormDesignerPanel({
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const publishedFields = publishedSchema?.fields ?? [];
+  const publishedFields = useMemo(
+    () => publishedSchema?.fields ?? [],
+    [publishedSchema],
+  );
   const hasPublishedSchema = publishedSchema !== null;
+
+  const initialSnapshot = useMemo(
+    () =>
+      JSON.stringify({
+        logical_name: initialForm?.logical_name ?? "main_form",
+        display_name: initialForm?.display_name ?? "Main Form",
+        form_type: (initialForm?.form_type as FormTypeValue | undefined) ?? "main",
+        tabs: normalizeTabs(initialForm?.tabs),
+        header_fields: initialForm?.header_fields ?? [],
+      }),
+    [initialForm],
+  );
+
+  const currentSnapshot = useMemo(
+    () =>
+      JSON.stringify({
+        logical_name: logicalName,
+        display_name: displayName,
+        form_type: formType,
+        tabs: reorderPositions(tabs),
+        header_fields: normalizeHeaderFields(headerFieldsText),
+      }),
+    [displayName, formType, headerFieldsText, logicalName, tabs],
+  );
+
+  const hasDraftChanges = currentSnapshot !== initialSnapshot;
+
+  useEffect(() => {
+    function onKeyDown(event: globalThis.KeyboardEvent) {
+      if (!event.metaKey && !event.ctrlKey && !event.altKey && event.key === "?") {
+        if (isEditableTarget(event.target)) {
+          return;
+        }
+        event.preventDefault();
+        setIsShortcutHelpOpen((current) => !current);
+        return;
+      }
+
+      if (event.key === "Escape") {
+        setIsShortcutHelpOpen(false);
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, []);
 
   const filteredPaletteFields = useMemo(() => {
     const query = paletteQuery.trim().toLowerCase();
@@ -230,8 +349,45 @@ export function FormDesignerPanel({
 
   const activeTab = tabs[activeTabIndex] ?? tabs[0] ?? createDefaultTab(0);
 
-  function updateTabs(mutator: (current: FormTab[]) => FormTab[]): void {
-    setTabs((current) => reorderPositions(mutator(current)));
+  function updateTabs(
+    mutator: (current: FormTab[]) => FormTab[],
+    options: { trackHistory?: boolean } = {},
+  ): void {
+    const trackHistory = options.trackHistory ?? true;
+    setTabs((current) => {
+      const next = reorderPositions(mutator(current));
+      if (trackHistory && JSON.stringify(next) !== JSON.stringify(current)) {
+        setHistory((previous) => [...previous.slice(-49), current]);
+        setFuture([]);
+      }
+      return next;
+    });
+  }
+
+  function undo(): void {
+    const previous = history.at(-1);
+    if (!previous) {
+      return;
+    }
+
+    setHistory((current) => current.slice(0, -1));
+    setFuture((current) => [tabs, ...current].slice(0, 50));
+    setTabs(previous);
+    setSelection({ kind: "tab", tabIndex: 0 });
+    setActiveTabIndex(0);
+  }
+
+  function redo(): void {
+    const next = future.at(0);
+    if (!next) {
+      return;
+    }
+
+    setFuture((current) => current.slice(1));
+    setHistory((current) => [...current, tabs].slice(-50));
+    setTabs(next);
+    setSelection({ kind: "tab", tabIndex: 0 });
+    setActiveTabIndex(0);
   }
 
   function addTab(): void {
@@ -261,14 +417,159 @@ export function FormDesignerPanel({
     sectionIndex: number,
     column: number,
   ): void {
-    if (placedFieldNames.has(fieldLogicalName)) {
+    placeFieldInSection(fieldLogicalName, tabIndex, sectionIndex, column, null, "palette");
+  }
+
+  function moveSelectionByOffset(offset: number): void {
+    if (selection.kind === "tab") {
+      const targetIndex = selection.tabIndex + offset;
+      if (targetIndex < 0 || targetIndex >= tabs.length) {
+        return;
+      }
+      updateTabs((current) => reorderByIndices(current, selection.tabIndex, targetIndex));
+      setActiveTabIndex(targetIndex);
+      setSelection({ kind: "tab", tabIndex: targetIndex });
+      return;
+    }
+
+    if (selection.kind === "section") {
+      const tab = tabs[selection.tabIndex];
+      if (!tab) {
+        return;
+      }
+
+      const targetIndex = selection.sectionIndex + offset;
+      if (targetIndex < 0 || targetIndex >= tab.sections.length) {
+        return;
+      }
+
+      updateTabs((current) =>
+        current.map((currentTab, tabIndex) => {
+          if (tabIndex !== selection.tabIndex) {
+            return currentTab;
+          }
+
+          return {
+            ...currentTab,
+            sections: reorderByIndices(
+              currentTab.sections,
+              selection.sectionIndex,
+              targetIndex,
+            ),
+          };
+        }),
+      );
+      setSelection({
+        kind: "section",
+        tabIndex: selection.tabIndex,
+        sectionIndex: targetIndex,
+      });
+      return;
+    }
+
+    if (selection.kind !== "field" || !selectedField || !selectedSection) {
+      return;
+    }
+
+    const fieldsInColumn = selectedSection.fields
+      .filter((field) => field.column === selectedField.column)
+      .sort((left, right) => left.position - right.position);
+    const currentColumnIndex = fieldsInColumn.findIndex(
+      (field) =>
+        field.field_logical_name === selectedField.field_logical_name &&
+        field.position === selectedField.position,
+    );
+    if (currentColumnIndex < 0) {
+      return;
+    }
+
+    const targetColumnIndex = currentColumnIndex + offset;
+    if (targetColumnIndex < 0 || targetColumnIndex >= fieldsInColumn.length) {
+      return;
+    }
+
+    placeFieldInSection(
+      selectedField.field_logical_name,
+      selection.tabIndex,
+      selection.sectionIndex,
+      selectedField.column,
+      targetColumnIndex,
+      "canvas",
+    );
+    setSelection({
+      kind: "section",
+      tabIndex: selection.tabIndex,
+      sectionIndex: selection.sectionIndex,
+    });
+  }
+
+  function handleCanvasKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
+      event.preventDefault();
+      if (event.shiftKey) {
+        redo();
+      } else {
+        undo();
+      }
+      return;
+    }
+
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "y") {
+      event.preventDefault();
+      redo();
+      return;
+    }
+
+    if (!event.altKey) {
+      return;
+    }
+
+    if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
+      event.preventDefault();
+      moveSelectionByOffset(-1);
+      return;
+    }
+
+    if (event.key === "ArrowDown" || event.key === "ArrowRight") {
+      event.preventDefault();
+      moveSelectionByOffset(1);
+    }
+  }
+
+  function placeFieldInSection(
+    fieldLogicalName: string,
+    tabIndex: number,
+    sectionIndex: number,
+    column: number,
+    insertAt: number | null,
+    source: "palette" | "canvas",
+  ): void {
+    if (source === "palette" && placedFieldNames.has(fieldLogicalName)) {
       setErrorMessage(`Field '${fieldLogicalName}' is already placed in this form.`);
       return;
     }
 
     setErrorMessage(null);
-    updateTabs((current) =>
-      current.map((tab, currentTabIndex) => {
+    updateTabs((current) => {
+      let movingField: FormFieldPlacement | null = null;
+      const withoutMoving = current.map((tab) => ({
+        ...tab,
+        sections: tab.sections.map((section) => {
+          const nextFields = section.fields.filter((field) => {
+            if (field.field_logical_name !== fieldLogicalName) {
+              return true;
+            }
+            movingField = field;
+            return false;
+          });
+          return {
+            ...section,
+            fields: nextFields,
+          };
+        }),
+      }));
+
+      return withoutMoving.map((tab, currentTabIndex) => {
         if (currentTabIndex !== tabIndex) {
           return tab;
         }
@@ -280,11 +581,12 @@ export function FormDesignerPanel({
               return section;
             }
 
-            return {
-              ...section,
-              fields: [
-                ...section.fields,
-                {
+            const nextField: FormFieldPlacement = movingField
+              ? {
+                  ...movingField,
+                  column,
+                }
+              : {
                   field_logical_name: fieldLogicalName,
                   column,
                   position: section.fields.length,
@@ -292,13 +594,29 @@ export function FormDesignerPanel({
                   read_only: false,
                   required_override: null,
                   label_override: null,
-                },
-              ],
+                };
+
+            const targetColumnFields = section.fields
+              .filter((field) => field.column === column)
+              .sort((left, right) => left.position - right.position);
+            const otherFields = section.fields.filter((field) => field.column !== column);
+            const targetIndex =
+              insertAt === null
+                ? targetColumnFields.length
+                : Math.max(0, Math.min(insertAt, targetColumnFields.length));
+            const nextTargetColumnFields = [...targetColumnFields];
+            nextTargetColumnFields.splice(targetIndex, 0, nextField);
+
+            return {
+              ...section,
+              fields: [...otherFields, ...nextTargetColumnFields],
             };
           }),
         };
-      }),
-    );
+      });
+    });
+
+    setSelection({ kind: "section", tabIndex, sectionIndex });
   }
 
   function deleteField(tabIndex: number, sectionIndex: number, fieldIndex: number): void {
@@ -459,6 +777,115 @@ export function FormDesignerPanel({
     );
   }
 
+  function addSubgridToSelectedSection(): void {
+    if (!selectedSection || (selection.kind !== "section" && selection.kind !== "field")) {
+      return;
+    }
+
+    const tabIndex = selection.tabIndex;
+    const sectionIndex = selection.sectionIndex;
+    const nextIndex = selectedSection.subgrids.length;
+
+    updateTabs((current) =>
+      current.map((tab, currentTabIndex) => {
+        if (currentTabIndex !== tabIndex) {
+          return tab;
+        }
+
+        return {
+          ...tab,
+          sections: tab.sections.map((section, currentSectionIndex) => {
+            if (currentSectionIndex !== sectionIndex) {
+              return section;
+            }
+
+            return {
+              ...section,
+              subgrids: [
+                ...section.subgrids,
+                {
+                  logical_name: `subgrid_${tabIndex + 1}_${sectionIndex + 1}_${nextIndex + 1}`,
+                  display_name: `Sub-grid ${nextIndex + 1}`,
+                  target_entity_logical_name: "",
+                  relation_field_logical_name: "",
+                  position: nextIndex,
+                  columns: [],
+                },
+              ],
+            };
+          }),
+        };
+      }),
+    );
+  }
+
+  function updateSubgridInSelectedSection(
+    subgridIndex: number,
+    patch: Partial<FormSubgrid>,
+  ): void {
+    if (!selectedSection || (selection.kind !== "section" && selection.kind !== "field")) {
+      return;
+    }
+
+    const tabIndex = selection.tabIndex;
+    const sectionIndex = selection.sectionIndex;
+
+    updateTabs((current) =>
+      current.map((tab, currentTabIndex) => {
+        if (currentTabIndex !== tabIndex) {
+          return tab;
+        }
+
+        return {
+          ...tab,
+          sections: tab.sections.map((section, currentSectionIndex) => {
+            if (currentSectionIndex !== sectionIndex) {
+              return section;
+            }
+
+            return {
+              ...section,
+              subgrids: section.subgrids.map((subgrid, currentSubgridIndex) =>
+                currentSubgridIndex === subgridIndex ? { ...subgrid, ...patch } : subgrid,
+              ),
+            };
+          }),
+        };
+      }),
+    );
+  }
+
+  function removeSubgridFromSelectedSection(subgridIndex: number): void {
+    if (!selectedSection || (selection.kind !== "section" && selection.kind !== "field")) {
+      return;
+    }
+
+    const tabIndex = selection.tabIndex;
+    const sectionIndex = selection.sectionIndex;
+
+    updateTabs((current) =>
+      current.map((tab, currentTabIndex) => {
+        if (currentTabIndex !== tabIndex) {
+          return tab;
+        }
+
+        return {
+          ...tab,
+          sections: tab.sections.map((section, currentSectionIndex) => {
+            if (currentSectionIndex !== sectionIndex) {
+              return section;
+            }
+
+            return {
+              ...section,
+              subgrids: section.subgrids.filter((_, currentSubgridIndex) => currentSubgridIndex !== subgridIndex),
+            };
+          }),
+        };
+      }),
+    );
+  }
+
   return (
     <div className="space-y-4">
       <Card>
@@ -474,8 +901,25 @@ export function FormDesignerPanel({
             <StatusBadge tone={hasPublishedSchema ? "success" : "warning"}>
               {hasPublishedSchema ? "Published schema ready" : "Publish required"}
             </StatusBadge>
+            <StatusBadge tone={hasDraftChanges ? "warning" : "neutral"}>
+              {hasDraftChanges ? "Draft changes" : "Draft saved"}
+            </StatusBadge>
             <Button type="button" variant={isPreviewMode ? "default" : "outline"} onClick={() => setIsPreviewMode((current) => !current)}>
               {isPreviewMode ? "Exit Preview" : "Preview Mode"}
+            </Button>
+            <Button type="button" variant="outline" onClick={undo} disabled={history.length === 0}>
+              Undo
+            </Button>
+            <Button type="button" variant="outline" onClick={redo} disabled={future.length === 0}>
+              Redo
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsShortcutHelpOpen((current) => !current)}
+              title="Toggle shortcuts (?)"
+            >
+              Shortcuts
             </Button>
             <Button type="button" disabled={isSaving} onClick={handleSave}>
               {isSaving ? "Saving..." : "Save Form"}
@@ -544,7 +988,10 @@ export function FormDesignerPanel({
                   draggable
                   onDragStart={(event) => {
                     event.dataTransfer.setData("text/plain", field.logical_name);
+                    event.dataTransfer.setData("text/form-field-source", "palette");
+                    setDragLabel(field.display_name || field.logical_name);
                   }}
+                  onDragEnd={() => setDragLabel(null)}
                   className="w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-left text-sm hover:border-emerald-300"
                 >
                   <p className="font-medium text-zinc-900">{field.display_name}</p>
@@ -619,7 +1066,7 @@ export function FormDesignerPanel({
               ))}
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-3" tabIndex={0} onKeyDown={handleCanvasKeyDown}>
               {activeTab.sections.map((section, sectionIndex) => (
                 <div
                   key={`${section.logical_name}-${sectionIndex}`}
@@ -634,7 +1081,10 @@ export function FormDesignerPanel({
                 >
                   <div className="mb-2 flex items-center justify-between">
                     <p className="text-sm font-semibold text-zinc-800">{section.display_name}</p>
-                    <StatusBadge tone="neutral">Columns {section.columns}</StatusBadge>
+                    <div className="flex items-center gap-2">
+                      <StatusBadge tone="neutral">Columns {section.columns}</StatusBadge>
+                      <StatusBadge tone="neutral">Sub-grids {section.subgrids.length}</StatusBadge>
+                    </div>
                   </div>
                   <div
                     className={
@@ -658,14 +1108,20 @@ export function FormDesignerPanel({
                           onDrop={(event) => {
                             event.preventDefault();
                             const fieldLogicalName = event.dataTransfer.getData("text/plain");
+                            const source =
+                              event.dataTransfer.getData("text/form-field-source") === "canvas"
+                                ? "canvas"
+                                : "palette";
                             if (!fieldLogicalName) {
                               return;
                             }
-                            addFieldToSection(
+                            placeFieldInSection(
                               fieldLogicalName,
                               activeTabIndex,
                               sectionIndex,
                               columnIndex,
+                              null,
+                              source,
                             );
                           }}
                         >
@@ -684,43 +1140,103 @@ export function FormDesignerPanel({
                               );
 
                               return (
-                                <button
-                                  key={`${field.field_logical_name}-${field.position}`}
-                                  type="button"
-                                  className="w-full rounded-md border border-zinc-200 bg-zinc-50 px-2 py-2 text-left"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    setSelection({
-                                      kind: "field",
-                                      tabIndex: activeTabIndex,
-                                      sectionIndex,
-                                      fieldIndex,
-                                    });
-                                  }}
-                                >
-                                  <p className="text-sm font-medium text-zinc-800">
-                                    {field.label_override?.trim() || metadata?.display_name || field.field_logical_name}
-                                  </p>
-                                  <p className="font-mono text-xs text-zinc-500">
-                                    {field.field_logical_name}
-                                  </p>
-                                  {!isPreviewMode ? (
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        deleteField(activeTabIndex, sectionIndex, fieldIndex);
-                                      }}
-                                      className="mt-1"
-                                    >
-                                      Remove
-                                    </Button>
-                                  ) : null}
-                                </button>
+                                <div key={`${field.field_logical_name}-${field.position}`} className="space-y-1">
+                                  <ColumnDropLine
+                                    lineId={`field-insert-${activeTabIndex}-${sectionIndex}-${columnIndex}-${field.position}`}
+                                    activeLineId={activeDropLineId}
+                                    onSetActiveLine={setActiveDropLineId}
+                                    onDrop={(event) => {
+                                      const fieldLogicalName = event.dataTransfer.getData("text/plain");
+                                      const source =
+                                        event.dataTransfer.getData("text/form-field-source") === "canvas"
+                                          ? "canvas"
+                                          : "palette";
+                                      if (!fieldLogicalName) {
+                                        return;
+                                      }
+                                      placeFieldInSection(
+                                        fieldLogicalName,
+                                        activeTabIndex,
+                                        sectionIndex,
+                                        columnIndex,
+                                        fieldsInColumn.findIndex(
+                                          (candidate) =>
+                                            candidate.field_logical_name === field.field_logical_name &&
+                                            candidate.position === field.position,
+                                        ),
+                                        source,
+                                      );
+                                    }}
+                                  />
+                                  <button
+                                    type="button"
+                                    draggable
+                                    onDragStart={(event) => {
+                                      event.dataTransfer.setData("text/plain", field.field_logical_name);
+                                      event.dataTransfer.setData("text/form-field-source", "canvas");
+                                      event.dataTransfer.effectAllowed = "move";
+                                      setDragLabel(metadata?.display_name || field.field_logical_name);
+                                    }}
+                                    onDragEnd={() => setDragLabel(null)}
+                                    className="w-full rounded-md border border-zinc-200 bg-zinc-50 px-2 py-2 text-left"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setSelection({
+                                        kind: "field",
+                                        tabIndex: activeTabIndex,
+                                        sectionIndex,
+                                        fieldIndex,
+                                      });
+                                    }}
+                                  >
+                                    <p className="text-sm font-medium text-zinc-800">
+                                      {field.label_override?.trim() || metadata?.display_name || field.field_logical_name}
+                                    </p>
+                                    <p className="font-mono text-xs text-zinc-500">
+                                      {field.field_logical_name}
+                                    </p>
+                                    {!isPreviewMode ? (
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          deleteField(activeTabIndex, sectionIndex, fieldIndex);
+                                        }}
+                                        className="mt-1"
+                                      >
+                                        Remove
+                                      </Button>
+                                    ) : null}
+                                  </button>
+                                </div>
                               );
                             })}
+
+                            <ColumnDropLine
+                              lineId={`field-insert-${activeTabIndex}-${sectionIndex}-${columnIndex}-end`}
+                              activeLineId={activeDropLineId}
+                              onSetActiveLine={setActiveDropLineId}
+                              onDrop={(event) => {
+                                const fieldLogicalName = event.dataTransfer.getData("text/plain");
+                                const source =
+                                  event.dataTransfer.getData("text/form-field-source") === "canvas"
+                                    ? "canvas"
+                                    : "palette";
+                                if (!fieldLogicalName) {
+                                  return;
+                                }
+                                placeFieldInSection(
+                                  fieldLogicalName,
+                                  activeTabIndex,
+                                  sectionIndex,
+                                  columnIndex,
+                                  fieldsInColumn.length,
+                                  source,
+                                );
+                              }}
+                            />
 
                             {!isPreviewMode ? (
                               <Select
@@ -753,6 +1269,21 @@ export function FormDesignerPanel({
                       );
                     })}
                   </div>
+                  {section.subgrids.length > 0 ? (
+                    <div className="mt-3 space-y-1 rounded-md border border-dashed border-zinc-300 bg-zinc-100 p-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                        Sub-grids
+                      </p>
+                      {section.subgrids
+                        .slice()
+                        .sort((left, right) => left.position - right.position)
+                        .map((subgrid) => (
+                          <p key={subgrid.logical_name} className="text-xs text-zinc-700">
+                            {subgrid.display_name} ({subgrid.target_entity_logical_name || "target"})
+                          </p>
+                        ))}
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -836,6 +1367,87 @@ export function FormDesignerPanel({
                   />
                   <Label htmlFor="selected_section_visible">Visible</Label>
                 </div>
+
+                <div className="space-y-2 border-t border-zinc-200 pt-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
+                      Sub-grids
+                    </p>
+                    <Button type="button" size="sm" variant="outline" onClick={addSubgridToSelectedSection}>
+                      Add Sub-grid
+                    </Button>
+                  </div>
+
+                  {selectedSection.subgrids.length > 0 ? (
+                    selectedSection.subgrids
+                      .slice()
+                      .sort((left, right) => left.position - right.position)
+                      .map((subgrid, subgridIndex) => (
+                        <div key={`${subgrid.logical_name}-${subgridIndex}`} className="space-y-2 rounded-md border border-zinc-200 p-2">
+                          <Input
+                            value={subgrid.display_name}
+                            onChange={(event) =>
+                              updateSubgridInSelectedSection(subgridIndex, {
+                                display_name: event.target.value,
+                              })
+                            }
+                            placeholder="Display name"
+                          />
+                          <Input
+                            value={subgrid.logical_name}
+                            onChange={(event) =>
+                              updateSubgridInSelectedSection(subgridIndex, {
+                                logical_name: event.target.value,
+                              })
+                            }
+                            placeholder="Logical name"
+                          />
+                          <Input
+                            value={subgrid.target_entity_logical_name}
+                            onChange={(event) =>
+                              updateSubgridInSelectedSection(subgridIndex, {
+                                target_entity_logical_name: event.target.value,
+                              })
+                            }
+                            placeholder="Target entity logical name"
+                          />
+                          <Input
+                            value={subgrid.relation_field_logical_name}
+                            onChange={(event) =>
+                              updateSubgridInSelectedSection(subgridIndex, {
+                                relation_field_logical_name: event.target.value,
+                              })
+                            }
+                            placeholder="Target relation field logical name"
+                          />
+                          <Input
+                            value={subgrid.columns.join(", ")}
+                            onChange={(event) =>
+                              updateSubgridInSelectedSection(subgridIndex, {
+                                columns: event.target.value
+                                  .split(",")
+                                  .map((value) => value.trim())
+                                  .filter((value, index, values) =>
+                                    value.length > 0 && values.indexOf(value) === index,
+                                  ),
+                              })
+                            }
+                            placeholder="Columns (comma-separated, optional)"
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => removeSubgridFromSelectedSection(subgridIndex)}
+                          >
+                            Remove Sub-grid
+                          </Button>
+                        </div>
+                      ))
+                  ) : (
+                    <p className="text-xs text-zinc-500">No sub-grids in this section.</p>
+                  )}
+                </div>
               </div>
             ) : null}
 
@@ -913,9 +1525,70 @@ export function FormDesignerPanel({
           This entity does not have a published schema yet. Publish the entity before saving form definitions.
         </Notice>
       ) : null}
+      {isShortcutHelpOpen ? (
+        <Notice tone="neutral">
+          <p className="font-semibold">Form Designer Shortcuts</p>
+          <ul className="mt-1 list-disc pl-5 text-sm">
+            <li>`?` toggle this help</li>
+            <li>`Ctrl/Cmd + Z` undo</li>
+            <li>`Ctrl/Cmd + Y` redo</li>
+            <li>`Ctrl/Cmd + Shift + Z` redo</li>
+            <li>`Alt + Arrow` reorder selected tab/section/field</li>
+            <li>`Escape` close this help</li>
+          </ul>
+        </Notice>
+      ) : null}
+      {dragLabel ? (
+        <Notice tone="neutral">Dragging `{dragLabel}` - drop on highlighted insertion line.</Notice>
+      ) : null}
       {errorMessage ? <Notice tone="error">{errorMessage}</Notice> : null}
       {statusMessage ? <Notice tone="success">{statusMessage}</Notice> : null}
     </div>
   );
 }
 
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  const tagName = target.tagName;
+  return tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT" || target.isContentEditable;
+}
+
+type ColumnDropLineProps = {
+  lineId: string;
+  activeLineId: string | null;
+  onSetActiveLine: (lineId: string | null) => void;
+  label?: string;
+  onDrop: (event: DragEvent<HTMLDivElement>) => void;
+};
+
+function ColumnDropLine({
+  lineId,
+  activeLineId,
+  onSetActiveLine,
+  label,
+  onDrop,
+}: ColumnDropLineProps) {
+  const isActive = activeLineId === lineId;
+  return (
+    <div
+      className={`rounded border border-dashed px-2 py-0.5 text-[10px] transition ${isActive ? "border-emerald-400 bg-emerald-100 text-emerald-900" : "border-transparent text-transparent hover:border-emerald-300 hover:bg-emerald-100 hover:text-emerald-800"}`}
+      onDragOver={(event) => {
+        event.preventDefault();
+        onSetActiveLine(lineId);
+      }}
+      onDragEnter={() => onSetActiveLine(lineId)}
+      onDragLeave={() => onSetActiveLine(null)}
+      onDrop={(event) => {
+        event.preventDefault();
+        onSetActiveLine(null);
+        onDrop(event);
+      }}
+      aria-hidden
+    >
+      {label ?? "Insert here"}
+    </div>
+  );
+}

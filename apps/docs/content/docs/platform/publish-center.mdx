@@ -1,0 +1,113 @@
+---
+title: Publish Center
+description: Workspace-level publish readiness checks for entities and apps.
+---
+
+Phase status: in progress (Phase 2).
+
+The Maker workspace now supports aggregated publish validation before creating new versions.
+
+## Workspace Checks
+
+- `GET /api/publish/checks` runs publish checks across all entities and apps in tenant scope.
+- `POST /api/publish/checks` supports selective validation and publish for chosen entities/apps:
+  - `dry_run: true` validates the selection without publishing.
+  - `dry_run: false` executes selective publish after checks pass.
+- `POST /api/publish/diff` builds a draft-vs-published diff preview for selected entities/apps.
+- `GET /api/publish/history?limit=12` returns persisted workspace publish run history for cross-device visibility.
+- Response includes:
+  - `is_publishable`
+  - `checked_entities`
+  - `checked_apps`
+  - `issues[]` with `scope`, `scope_logical_name`, `category`, `severity`, `message`, optional `fix_path`, and optional `dependency_path` (`app -> entity` or `entity.field -> entity`).
+
+## Maker Surface
+
+- App Studio includes `Run Workspace Checks` and `Run App Publish Checks` actions.
+- App Studio includes selective publish checklists with a unified two-step flow: `Validate Selection` then `Publish Selection`.
+- Workspace issues render with deep links so makers can jump to the relevant editor route.
+- Workspace issues are grouped by severity and category for faster triage.
+- Publish run history is server-backed via audit storage and available across devices.
+- Publish history supports run-level drill-down with requested vs published scope detail and one-click selection restore.
+- Entity and app checks remain available for focused triage.
+- Publish Diff Preview shows selected entities/apps and issue counts per scope before running selective publish.
+- Publish Diff Preview includes field-level deltas (`added`, `removed`, `updated`) plus form/view summaries per entity and binding-level app surface summaries.
+- Form/view diff baselines are now sourced from persisted publish-time snapshots, enabling true draft-vs-published structural comparison.
+
+## Current Scope
+
+- Entity checks: draft field requirements, relation target dependency checks, form/view field reference integrity.
+- App checks: binding completeness, sitemap target consistency, default form/view reference integrity.
+- Selective publish supports dependency-aware entity relationship validation: relation targets included in the same entity selection are treated as in-flight dependencies instead of immediate blockers.
+- Selective publish supports dependency-aware app validation: if an app references an entity included in the same publish run and that entity passes checks, app schema dependency checks are resolved against that in-flight publish set.
+- Selective publish now reports unknown selected app/entity logical names as structured `issues[]` entries (`category = unknown`) instead of failing the request with a generic API error.
+- App dependency failures now include graph-oriented messaging (`app -> entity`) so makers can identify dependency edges directly from `issues[]` output.
+- Entity relation dependency failures now include graph-oriented messaging (`entity.field -> entity`) so makers can identify unresolved relationship edges quickly.
+- Selective publish runs are persisted in audit storage and surfaced in Publish Center history, replacing browser-only local history.
+- History payload now includes requested entity/app logical-name arrays to support selection replay and rollback-oriented workflows.
+
+## API Examples
+
+Example issue with dependency edge metadata:
+
+```json
+{
+  "scope": "app",
+  "scope_logical_name": "sales",
+  "category": "schema",
+  "severity": "error",
+  "message": "dependency check failed: app 'sales' -> entity 'contact' requires a published schema or inclusion in this publish selection",
+  "fix_path": "/maker/apps",
+  "dependency_path": "sales -> contact"
+}
+```
+
+Example entity-relation dependency issue:
+
+```json
+{
+  "scope": "entity",
+  "scope_logical_name": "contact",
+  "category": "relationship",
+  "severity": "error",
+  "message": "dependency check failed: entity 'contact' relation field 'account_id' -> entity 'account' requires a published schema or inclusion in this publish selection",
+  "fix_path": "/maker/entities/contact",
+  "dependency_path": "contact.account_id -> account"
+}
+```
+
+Example history entry from `GET /api/publish/history`:
+
+```json
+{
+  "run_id": "run-173",
+  "run_at": "2026-02-24T15:42:18Z",
+  "subject": "maker@example.com",
+  "requested_entities": 2,
+  "requested_apps": 1,
+  "requested_entity_logical_names": ["contact", "account"],
+  "requested_app_logical_names": ["sales"],
+  "published_entities": ["contact", "account"],
+  "validated_apps": ["sales"],
+  "issue_count": 0,
+  "is_publishable": true
+}
+```
+
+## Planned
+
+- Publish-history-backed rollback execution workflows.
+
+## Troubleshooting by Category
+
+| Category | Typical Cause | Recommended Fix Path |
+|---|---|---|
+| `schema` | Unpublished entity schema, missing required field metadata, or invalid field setup | `/maker/entities/{entity}` |
+| `relationship` | Lookup/relation target entity missing or not publishable | `/maker/entities/{entity}` |
+| `form` | Form references missing fields, invalid sections/controls, or default form mismatch | `/maker/entities/{entity}/forms` |
+| `view` | View references missing fields, invalid sort/filter config, or default view mismatch | `/maker/entities/{entity}/views` |
+| `sitemap` | App sitemap points to missing/invalid targets or invalid group/area config | `/maker/apps/{app}/sitemap` |
+| `binding` | App entity binding incomplete or inconsistent with available forms/views | `/maker/apps` |
+| `unknown` | Selected logical name does not exist, or uncategorized validation error | `/maker/entities` or `/maker/apps` |
+
+For app dependency failures, prefer `dependency_path` (for example, `sales -> contact`) to identify the exact edge to fix first.

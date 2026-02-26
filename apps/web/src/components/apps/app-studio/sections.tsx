@@ -1,4 +1,4 @@
-import { type DragEvent, type FormEvent, useMemo } from "react";
+import { type DragEvent, type FormEvent, type KeyboardEvent, useMemo, useState } from "react";
 import Link from "next/link";
 
 import {
@@ -6,6 +6,7 @@ import {
   Checkbox,
   Input,
   Label,
+  Notice,
   Select,
   StatusBadge,
   Table,
@@ -245,8 +246,13 @@ type NavigationBindingSectionProps = {
   selectedEntityFields: FieldResponse[];
   isLoadingEntityFields: boolean;
   isBindingEntity: boolean;
+  isReorderingBinding: boolean;
   isLoadingAppData: boolean;
   onBindEntity: (event: FormEvent<HTMLFormElement>) => void;
+  onReorderBinding: (
+    entityLogicalName: string,
+    direction: "up" | "down",
+  ) => void;
   onChangeSelectedApp: (appLogicalName: string) => void;
   onUpdateBindingDraft: (next: BindingDraft) => void;
   selectedApp: string;
@@ -261,14 +267,28 @@ export function NavigationBindingSection({
   selectedEntityFields,
   isLoadingEntityFields,
   isBindingEntity,
+  isReorderingBinding,
   isLoadingAppData,
   onBindEntity,
+  onReorderBinding,
   onChangeSelectedApp,
   onUpdateBindingDraft,
   selectedApp,
   selectedAppDisplayName,
   bindingDraft,
 }: NavigationBindingSectionProps) {
+  const orderedBindings = useMemo(
+    () =>
+      [...bindings].sort((left, right) => {
+        if (left.navigation_order !== right.navigation_order) {
+          return left.navigation_order - right.navigation_order;
+        }
+
+        return left.entity_logical_name.localeCompare(right.entity_logical_name);
+      }),
+    [bindings],
+  );
+
   return (
     <div className="space-y-3 rounded-md border border-zinc-200 bg-white p-4">
       <div>
@@ -420,11 +440,12 @@ export function NavigationBindingSection({
             <TableHead>Order</TableHead>
             <TableHead>Default View</TableHead>
             <TableHead>Presentation</TableHead>
+            <TableHead className="text-right">Move</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {bindings.length > 0 ? (
-            bindings.map((binding) => (
+          {orderedBindings.length > 0 ? (
+            orderedBindings.map((binding, index) => (
               <TableRow
                 key={`${binding.app_logical_name}.${binding.entity_logical_name}`}
               >
@@ -439,11 +460,41 @@ export function NavigationBindingSection({
                 <TableCell className="text-xs text-zinc-600">
                   {resolveBindingFormCount(binding)} form(s) / {resolveBindingViewCount(binding)} view(s)
                 </TableCell>
+                <TableCell className="text-right">
+                  <div className="inline-flex items-center gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={
+                        isReorderingBinding ||
+                        isLoadingAppData ||
+                        index === 0
+                      }
+                      onClick={() => onReorderBinding(binding.entity_logical_name, "up")}
+                    >
+                      Up
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={
+                        isReorderingBinding ||
+                        isLoadingAppData ||
+                        index === orderedBindings.length - 1
+                      }
+                      onClick={() => onReorderBinding(binding.entity_logical_name, "down")}
+                    >
+                      Down
+                    </Button>
+                  </div>
+                </TableCell>
               </TableRow>
             ))
           ) : (
             <TableRow>
-              <TableCell colSpan={5} className="text-zinc-500">
+              <TableCell colSpan={6} className="text-zinc-500">
                 No entity bindings for this app.
               </TableCell>
             </TableRow>
@@ -477,6 +528,8 @@ function FieldLayoutDesigner({
   onChangeDefaultFormLogicalName,
   onChangeDefaultListViewLogicalName,
 }: FieldLayoutDesignerProps) {
+  const [activeDropLineId, setActiveDropLineId] = useState<string | null>(null);
+  const [dragLabel, setDragLabel] = useState<string | null>(null);
   const selectedForm = useMemo(
     () =>
       forms.find((form) => form.logicalName === defaultFormLogicalName) ??
@@ -536,24 +589,72 @@ function FieldLayoutDesigner({
     event.dataTransfer.setData("text/app-field-logical-name", logicalName);
     event.dataTransfer.setData("text/app-field-source", source);
     event.dataTransfer.effectAllowed = "move";
+    const field = selectedEntityFields.find((candidate) => candidate.logical_name === logicalName);
+    setDragLabel(field?.display_name ?? logicalName);
   }
 
   function onDropToTarget(event: DragEvent<HTMLDivElement>, target: "form" | "view") {
+    onDropToTargetAtIndex(event, target, null);
+  }
+
+  function onDropToTargetAtIndex(
+    event: DragEvent<HTMLDivElement>,
+    target: "form" | "view",
+    index: number | null,
+  ) {
     event.preventDefault();
+    setDragLabel(null);
     const logicalName = event.dataTransfer.getData("text/app-field-logical-name").trim();
+    const source = (event.dataTransfer.getData("text/app-field-source") || "available") as
+      | "available"
+      | "form"
+      | "view";
     if (!logicalName) {
       return;
     }
 
+    const sourceFields = source === "form"
+      ? selectedForm.fieldLogicalNames
+      : source === "view"
+        ? selectedListView.fieldLogicalNames
+        : [];
+    const targetFields = target === "form"
+      ? selectedForm.fieldLogicalNames
+      : selectedListView.fieldLogicalNames;
+
+    const normalizedTarget = targetFields.filter((field) => field !== logicalName);
+    const targetIndex = index === null
+      ? normalizedTarget.length
+      : Math.max(0, Math.min(index, normalizedTarget.length));
+    const insertedTarget = [...normalizedTarget];
+    insertedTarget.splice(targetIndex, 0, logicalName);
+
+    const normalizedSource =
+      source === "available" || source === target
+        ? sourceFields
+        : sourceFields.filter((field) => field !== logicalName);
+
     if (target === "form") {
+      if (source === "view") {
+        updateListView({
+          ...selectedListView,
+          fieldLogicalNames: normalizedSource,
+        });
+      }
       updateForm({
         ...selectedForm,
-        fieldLogicalNames: appendUniqueField(selectedForm.fieldLogicalNames, logicalName),
+        fieldLogicalNames: insertedTarget,
       });
     } else {
+      if (source === "form") {
+        updateForm({
+          ...selectedForm,
+          fieldLogicalNames: normalizedSource,
+        });
+      }
       updateListView({
         ...selectedListView,
-        fieldLogicalNames: appendUniqueField(selectedListView.fieldLogicalNames, logicalName),
+        fieldLogicalNames: insertedTarget,
       });
     }
   }
@@ -840,7 +941,12 @@ function FieldLayoutDesigner({
             })
           }
           onDrop={(event) => onDropToTarget(event, "form")}
+          onDropAtIndex={(event, index) => onDropToTargetAtIndex(event, "form", index)}
+          dropLinePrefix={`form-${selectedForm.logicalName}`}
+          activeDropLineId={activeDropLineId}
+          onSetActiveDropLineId={setActiveDropLineId}
           onDragStart={onDragStart}
+          onDragEnd={() => setDragLabel(null)}
         />
 
         <FieldDropZone
@@ -877,9 +983,18 @@ function FieldLayoutDesigner({
             })
           }
           onDrop={(event) => onDropToTarget(event, "view")}
+          onDropAtIndex={(event, index) => onDropToTargetAtIndex(event, "view", index)}
+          dropLinePrefix={`view-${selectedListView.logicalName}`}
+          activeDropLineId={activeDropLineId}
+          onSetActiveDropLineId={setActiveDropLineId}
           onDragStart={onDragStart}
+          onDragEnd={() => setDragLabel(null)}
         />
       </div>
+
+      {dragLabel ? (
+        <Notice tone="neutral">Dragging `{dragLabel}` - drop on highlighted insertion line.</Notice>
+      ) : null}
 
       <details className="rounded-md border border-zinc-200 bg-white p-2">
         <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-zinc-500">
@@ -930,11 +1045,16 @@ type FieldDropZoneProps = {
   onMoveField: (logicalName: string, direction: "up" | "down") => void;
   onRemoveField: (logicalName: string) => void;
   onDrop: (event: DragEvent<HTMLDivElement>) => void;
+  onDropAtIndex: (event: DragEvent<HTMLDivElement>, index: number) => void;
+  dropLinePrefix: string;
+  activeDropLineId: string | null;
+  onSetActiveDropLineId: (value: string | null) => void;
   onDragStart: (
     event: DragEvent<HTMLButtonElement>,
     logicalName: string,
     source: "available" | "form" | "view",
   ) => void;
+  onDragEnd: () => void;
 };
 
 function FieldDropZone({
@@ -947,7 +1067,12 @@ function FieldDropZone({
   onMoveField,
   onRemoveField,
   onDrop,
+  onDropAtIndex,
+  dropLinePrefix,
+  activeDropLineId,
+  onSetActiveDropLineId,
   onDragStart,
+  onDragEnd,
 }: FieldDropZoneProps) {
   return (
     <div
@@ -963,17 +1088,33 @@ function FieldDropZone({
 
       <div className="max-h-48 space-y-1 overflow-y-auto pr-1">
         {fieldLogicalNames.length > 0 ? (
-          fieldLogicalNames.map((logicalName, index) => {
+          <>
+            <DropInsertionLine
+              lineId={`${dropLinePrefix}-insert-0`}
+              activeLineId={activeDropLineId}
+              onSetActiveLine={onSetActiveDropLineId}
+              onDrop={(event) => onDropAtIndex(event, 0)}
+            />
+            {fieldLogicalNames.map((logicalName, index) => {
             const label = fieldLabelByLogicalName.get(logicalName) ?? logicalName;
             return (
-              <div
-                key={`${title}-${logicalName}-${index}`}
-                className="rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1"
-              >
+              <div key={`${title}-${logicalName}-${index}`} className="space-y-1">
+                <div className="rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1">
                 <button
                   type="button"
                   draggable
+                  onKeyDown={(event: KeyboardEvent<HTMLButtonElement>) => {
+                    if (event.altKey && (event.key === "ArrowUp" || event.key === "ArrowLeft")) {
+                      event.preventDefault();
+                      onMoveField(logicalName, "up");
+                    }
+                    if (event.altKey && (event.key === "ArrowDown" || event.key === "ArrowRight")) {
+                      event.preventDefault();
+                      onMoveField(logicalName, "down");
+                    }
+                  }}
                   onDragStart={(event) => onDragStart(event, logicalName, dragSource)}
+                  onDragEnd={onDragEnd}
                   className="w-full text-left"
                 >
                   <p className="text-xs font-medium text-zinc-900">{label}</p>
@@ -1006,9 +1147,17 @@ function FieldDropZone({
                     Remove
                   </Button>
                 </div>
+                </div>
+                <DropInsertionLine
+                  lineId={`${dropLinePrefix}-insert-${index + 1}`}
+                  activeLineId={activeDropLineId}
+                  onSetActiveLine={onSetActiveDropLineId}
+                  onDrop={(event) => onDropAtIndex(event, index + 1)}
+                />
               </div>
             );
-          })
+          })}
+          </>
         ) : (
           <p className="text-[11px] text-zinc-500">Drop fields here.</p>
         )}
@@ -1031,6 +1180,54 @@ function FieldDropZone({
           </option>
         ))}
       </Select>
+    </div>
+  );
+}
+
+type DropInsertionLineProps = {
+  lineId?: string;
+  activeLineId?: string | null;
+  onSetActiveLine?: (value: string | null) => void;
+  label?: string;
+  onDrop: (event: DragEvent<HTMLDivElement>) => void;
+};
+
+function DropInsertionLine({
+  lineId,
+  activeLineId,
+  onSetActiveLine,
+  label,
+  onDrop,
+}: DropInsertionLineProps) {
+  const isActive = lineId !== undefined && activeLineId === lineId;
+  return (
+    <div
+      className={`rounded border border-dashed px-2 py-0.5 text-[10px] transition ${isActive ? "border-emerald-400 bg-emerald-100 text-emerald-900" : "border-transparent text-transparent hover:border-emerald-300 hover:bg-emerald-100 hover:text-emerald-800"}`}
+      onDragOver={(event) => {
+        event.preventDefault();
+        if (lineId && onSetActiveLine) {
+          onSetActiveLine(lineId);
+        }
+      }}
+      onDragEnter={() => {
+        if (lineId && onSetActiveLine) {
+          onSetActiveLine(lineId);
+        }
+      }}
+      onDragLeave={() => {
+        if (onSetActiveLine) {
+          onSetActiveLine(null);
+        }
+      }}
+      onDrop={(event) => {
+        if (onSetActiveLine) {
+          onSetActiveLine(null);
+        }
+        onDrop(event);
+      }}
+      aria-hidden
+    >
+      {label ?? "Insert here"}
     </div>
   );
 }

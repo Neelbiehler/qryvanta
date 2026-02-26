@@ -73,6 +73,23 @@ impl EntityDefinition {
     pub fn icon(&self) -> Option<&str> {
         self.icon.as_deref()
     }
+
+    /// Returns a copy with updated mutable metadata fields.
+    pub fn with_updates(
+        &self,
+        display_name: impl Into<String>,
+        description: Option<String>,
+        plural_display_name: Option<String>,
+        icon: Option<String>,
+    ) -> AppResult<Self> {
+        Self::new_with_details(
+            self.logical_name.as_str(),
+            display_name,
+            description,
+            plural_display_name,
+            icon,
+        )
+    }
 }
 
 /// Supported metadata field types.
@@ -297,9 +314,29 @@ pub struct EntityFieldDefinition {
     relation_target_entity: Option<NonEmptyString>,
     option_set_logical_name: Option<NonEmptyString>,
     description: Option<String>,
+    calculation_expression: Option<String>,
     max_length: Option<i32>,
     min_value: Option<f64>,
     max_value: Option<f64>,
+}
+
+/// Input payload for updating mutable metadata field attributes.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EntityFieldMutableUpdateInput {
+    /// Updated display name.
+    pub display_name: String,
+    /// Optional freeform field description.
+    pub description: Option<String>,
+    /// Optional default value.
+    pub default_value: Option<Value>,
+    /// Optional calculation expression for computed fields.
+    pub calculation_expression: Option<String>,
+    /// Optional text max length constraint.
+    pub max_length: Option<i32>,
+    /// Optional number minimum value constraint.
+    pub min_value: Option<f64>,
+    /// Optional number maximum value constraint.
+    pub max_value: Option<f64>,
 }
 
 impl EntityFieldDefinition {
@@ -345,6 +382,42 @@ impl EntityFieldDefinition {
         relation_target_entity: Option<String>,
         option_set_logical_name: Option<String>,
         description: Option<String>,
+        max_length: Option<i32>,
+        min_value: Option<f64>,
+        max_value: Option<f64>,
+    ) -> AppResult<Self> {
+        Self::new_with_details_and_calculation(
+            entity_logical_name,
+            logical_name,
+            display_name,
+            field_type,
+            is_required,
+            is_unique,
+            default_value,
+            relation_target_entity,
+            option_set_logical_name,
+            description,
+            None,
+            max_length,
+            min_value,
+            max_value,
+        )
+    }
+
+    /// Creates a validated metadata field definition with optional calculation expression.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_details_and_calculation(
+        entity_logical_name: impl Into<String>,
+        logical_name: impl Into<String>,
+        display_name: impl Into<String>,
+        field_type: FieldType,
+        is_required: bool,
+        is_unique: bool,
+        default_value: Option<Value>,
+        relation_target_entity: Option<String>,
+        option_set_logical_name: Option<String>,
+        description: Option<String>,
+        calculation_expression: Option<String>,
         max_length: Option<i32>,
         min_value: Option<f64>,
         max_value: Option<f64>,
@@ -395,6 +468,21 @@ impl EntityFieldDefinition {
 
         if let Some(default_value) = &default_value {
             field_type.validate_value(default_value)?;
+        }
+
+        let calculation_expression = normalize_optional_text(calculation_expression);
+        if calculation_expression.is_some() {
+            if !matches!(field_type, FieldType::Text | FieldType::Number) {
+                return Err(AppError::Validation(
+                    "calculation_expression is only allowed for text and number fields".to_owned(),
+                ));
+            }
+
+            if default_value.is_some() {
+                return Err(AppError::Validation(
+                    "calculated fields cannot define default_value".to_owned(),
+                ));
+            }
         }
 
         match field_type {
@@ -454,6 +542,7 @@ impl EntityFieldDefinition {
             relation_target_entity,
             option_set_logical_name,
             description: normalize_optional_text(description),
+            calculation_expression,
             max_length,
             min_value,
             max_value,
@@ -520,6 +609,12 @@ impl EntityFieldDefinition {
         self.description.as_deref()
     }
 
+    /// Returns optional calculation expression used for runtime computed values.
+    #[must_use]
+    pub fn calculation_expression(&self) -> Option<&str> {
+        self.calculation_expression.as_deref()
+    }
+
     /// Returns optional text max length constraint.
     #[must_use]
     pub fn max_length(&self) -> Option<i32> {
@@ -567,9 +662,87 @@ impl EntityFieldDefinition {
         )
     }
 
+    /// Returns a copy with updated mutable metadata fields and calculation expression.
+    pub fn with_mutable_updates_and_calculation(
+        &self,
+        input: EntityFieldMutableUpdateInput,
+    ) -> AppResult<Self> {
+        let EntityFieldMutableUpdateInput {
+            display_name,
+            description,
+            default_value,
+            calculation_expression,
+            max_length,
+            min_value,
+            max_value,
+        } = input;
+
+        Self::new_with_details_and_calculation(
+            self.entity_logical_name().as_str(),
+            self.logical_name().as_str(),
+            display_name,
+            self.field_type,
+            self.is_required,
+            self.is_unique,
+            default_value,
+            self.relation_target_entity()
+                .map(|value| value.as_str().to_owned()),
+            self.option_set_logical_name()
+                .map(|value| value.as_str().to_owned()),
+            description,
+            calculation_expression,
+            max_length,
+            min_value,
+            max_value,
+        )
+    }
+
     /// Validates a runtime value against this field definition.
     pub fn validate_runtime_value(&self, value: &Value) -> AppResult<()> {
-        self.field_type.validate_value(value)
+        self.field_type.validate_value(value)?;
+
+        match self.field_type {
+            FieldType::Text => {
+                if let Some(max_length) = self.max_length
+                    && let Some(text) = value.as_str()
+                    && text.chars().count() > max_length as usize
+                {
+                    return Err(AppError::Validation(format!(
+                        "field '{}' exceeds max_length {}",
+                        self.logical_name.as_str(),
+                        max_length
+                    )));
+                }
+            }
+            FieldType::Number => {
+                let Some(number) = value.as_f64() else {
+                    return Ok(());
+                };
+
+                if let Some(minimum) = self.min_value
+                    && number < minimum
+                {
+                    return Err(AppError::Validation(format!(
+                        "field '{}' must be greater than or equal to {}",
+                        self.logical_name.as_str(),
+                        minimum
+                    )));
+                }
+
+                if let Some(maximum) = self.max_value
+                    && number > maximum
+                {
+                    return Err(AppError::Validation(format!(
+                        "field '{}' must be less than or equal to {}",
+                        self.logical_name.as_str(),
+                        maximum
+                    )));
+                }
+            }
+            _ => {}
+        }
+
+        Ok(())
     }
 }
 
@@ -808,6 +981,61 @@ mod tests {
     }
 
     #[test]
+    fn text_field_enforces_max_length_at_runtime() {
+        let field = EntityFieldDefinition::new_with_details(
+            "contact",
+            "name",
+            "Name",
+            FieldType::Text,
+            true,
+            false,
+            None,
+            None,
+            None,
+            None,
+            Some(3),
+            None,
+            None,
+        )
+        .unwrap_or_else(|_| unreachable!());
+
+        let valid = field.validate_runtime_value(&json!("abc"));
+        assert!(valid.is_ok());
+
+        let invalid = field.validate_runtime_value(&json!("abcd"));
+        assert!(invalid.is_err());
+    }
+
+    #[test]
+    fn number_field_enforces_min_and_max_at_runtime() {
+        let field = EntityFieldDefinition::new_with_details(
+            "invoice",
+            "amount",
+            "Amount",
+            FieldType::Number,
+            true,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(10.0),
+            Some(20.0),
+        )
+        .unwrap_or_else(|_| unreachable!());
+
+        let too_low = field.validate_runtime_value(&json!(9));
+        assert!(too_low.is_err());
+
+        let in_range = field.validate_runtime_value(&json!(15));
+        assert!(in_range.is_ok());
+
+        let too_high = field.validate_runtime_value(&json!(21));
+        assert!(too_high.is_err());
+    }
+
+    #[test]
     fn published_schema_deserializes_missing_option_sets_for_backwards_compatibility() {
         let entity = EntityDefinition::new("contact", "Contact").unwrap_or_else(|_| unreachable!());
         let field = EntityFieldDefinition::new(
@@ -821,8 +1049,8 @@ mod tests {
             None,
         )
         .unwrap_or_else(|_| unreachable!());
-        let schema =
-            PublishedEntitySchema::new(entity, 1, vec![field], Vec::new()).unwrap_or_else(|_| unreachable!());
+        let schema = PublishedEntitySchema::new(entity, 1, vec![field], Vec::new())
+            .unwrap_or_else(|_| unreachable!());
 
         let mut schema_json = serde_json::to_value(schema).unwrap_or_else(|_| unreachable!());
         if let Some(object) = schema_json.as_object_mut() {

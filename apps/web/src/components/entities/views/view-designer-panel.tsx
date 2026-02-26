@@ -206,6 +206,44 @@ export function ViewDesignerPanel({
   );
   const hasPublishedSchema = publishedSchema !== null;
 
+  const initialSnapshot = useMemo(
+    () =>
+      JSON.stringify({
+        logical_name: initialView?.logical_name ?? "main_view",
+        display_name: initialView?.display_name ?? "Main View",
+        view_type: initialView?.view_type ?? "grid",
+        is_default: initialView?.is_default ?? false,
+        columns: normalizeColumns(initialView?.columns),
+        default_sort: normalizeDefaultSort(initialView?.default_sort),
+        filter_criteria: normalizeFilterGroup(initialView?.filter_criteria),
+      }),
+    [initialView],
+  );
+
+  const currentSnapshot = useMemo(
+    () =>
+      JSON.stringify({
+        logical_name: logicalName,
+        display_name: displayName,
+        view_type: viewType,
+        is_default: isDefault,
+        columns,
+        default_sort: defaultSort,
+        filter_criteria: filterGroup,
+      }),
+    [
+      columns,
+      defaultSort,
+      displayName,
+      filterGroup,
+      isDefault,
+      logicalName,
+      viewType,
+    ],
+  );
+
+  const hasDraftChanges = currentSnapshot !== initialSnapshot;
+
   const filteredPaletteFields = useMemo(() => {
     const query = paletteQuery.trim().toLowerCase();
     if (!query) {
@@ -380,6 +418,9 @@ export function ViewDesignerPanel({
             <StatusBadge tone="neutral">Views {initialViews.length}</StatusBadge>
             <StatusBadge tone={hasPublishedSchema ? "success" : "warning"}>
               {hasPublishedSchema ? "Published schema ready" : "Publish required"}
+            </StatusBadge>
+            <StatusBadge tone={hasDraftChanges ? "warning" : "neutral"}>
+              {hasDraftChanges ? "Draft changes" : "Draft saved"}
             </StatusBadge>
             <Button type="button" disabled={isSaving} onClick={handleSave}>
               {isSaving ? "Saving..." : "Save View"}
@@ -793,4 +834,3 @@ export function ViewDesignerPanel({
     </div>
   );
 }
-

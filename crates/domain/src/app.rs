@@ -122,6 +122,7 @@ impl FromStr for AppEntityViewMode {
 
 impl AppEntityBinding {
     /// Creates a validated app entity binding.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         app_logical_name: impl Into<String>,
         entity_logical_name: impl Into<String>,
