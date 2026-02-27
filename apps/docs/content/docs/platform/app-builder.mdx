@@ -58,7 +58,12 @@ The current app-builder baseline supports metadata-driven workspace behavior wit
 - Derived sitemap ordering remains deterministic for equal navigation positions (`navigation_order`, then entity logical name), reducing reorder drift between drag/drop and keyboard reorder saves.
 - Entity workbench runtime query supports typed condition arrays (logical mode, operators, sort) with local saved presets (browser-local storage), including JSON import/export for sharing.
 - Maker and admin workbenches use sectioned command views (schema/runtime, app/navigation/permissions, roles/registration/temporary access) to reduce control-plane overload.
-- Worker entity workspaces provide command-bar style controls (create toggle, refresh, grid/json view mode, quick search) to support high-throughput record handling.
+- Worker entity workspaces provide compact list controls (create, refresh, grid/json view mode, density, quick search) to support high-throughput record handling.
+- Worker app viewer now uses a Dynamics-style shell baseline: blue-tinted command bar, persistent resizable sitemap rail, quick-find sitemap filtering, and pinned navigation links for operator workflows.
+- Worker command bars now expose page-context actions (for example `New`, `Refresh`, and route-specific back navigation), while the app rail supports desktop collapse/expand and mobile drawer navigation.
+- Worker pinned navigation now keeps manual drag order in local storage so frequent entity/dashboard links stay in user-defined sequence across sessions.
+- Worker app home pages no longer duplicate full sitemap cards in the content pane; navigation is sidebar-first, and the content area focuses on concise app overview shortcuts.
+- Worker entity list experiences now use a denser command-and-grid composition (command bar + quick find + view/form selectors + styled data grid) aligned with Dynamics-style operator workflows.
 
 ## Workspace Form and View Retrieval
 

@@ -1,5 +1,10 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+
+export const metadata: Metadata = {
+  title: "My Apps — Worker Portal",
+};
 
 import { Card, CardContent, CardHeader, CardTitle } from "@qryvanta/ui";
 
