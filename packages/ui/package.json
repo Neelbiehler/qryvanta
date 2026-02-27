@@ -58,6 +58,7 @@
   ],
   "scripts": {
     "build": "tsup src/index.ts src/accordion.ts src/tabs.ts src/tooltip.ts src/property-panel.ts src/dropdown-menu.ts src/dialog.ts src/toast.ts src/split-pane.ts src/tree-view.ts src/data-grid.ts --format esm --dts --clean --tsconfig tsconfig.build.json",
+    "dev": "tsup src/index.ts src/accordion.ts src/tabs.ts src/tooltip.ts src/property-panel.ts src/dropdown-menu.ts src/dialog.ts src/toast.ts src/split-pane.ts src/tree-view.ts src/data-grid.ts --format esm --dts --watch --tsconfig tsconfig.build.json",
     "check": "tsc --noEmit",
     "prepublishOnly": "pnpm check && pnpm build"
   },

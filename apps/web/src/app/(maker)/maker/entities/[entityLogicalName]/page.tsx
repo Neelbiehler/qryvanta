@@ -157,16 +157,16 @@ export default async function MakerEntityWorkbenchPage({
               {publishedSchema ? `Published v${publishedSchema.version}` : "Draft only"}
             </StatusBadge>
             <Link
-              href={`/maker/entities/${encodeURIComponent(entityLogicalName)}/forms`}
+              href="/maker/studio/_default"
               className={cn(buttonVariants({ variant: "outline" }))}
             >
-              Forms
+              Open Studio Forms
             </Link>
             <Link
-              href={`/maker/entities/${encodeURIComponent(entityLogicalName)}/views`}
+              href="/maker/studio/_default"
               className={cn(buttonVariants({ variant: "outline" }))}
             >
-              Views
+              Open Studio Views
             </Link>
             <Link
               href={`/maker/entities/${encodeURIComponent(entityLogicalName)}/business-rules`}

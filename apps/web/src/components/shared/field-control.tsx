@@ -61,9 +61,11 @@ export function FieldControl({
     (placement.required_override !== null
       ? placement.required_override
       : field.is_required);
+  const isSystemIdentifier = field.logical_name === "record_id";
   const isReadOnly =
     (ruleState.readOnlyOverrides.get(field.logical_name) ?? placement.read_only) ||
-    !canEdit;
+    !canEdit ||
+    isSystemIdentifier;
 
   if (field.option_set_logical_name) {
     const optionSet = optionSets.find(
@@ -91,8 +93,8 @@ export function FieldControl({
             required={isRequired}
           >
             <option value="">-- Select --</option>
-            {[...optionSet.options]
-              .sort((left, right) => left.position - right.position)
+            {optionSet.options
+              .toSorted((left, right) => left.position - right.position)
               .map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
@@ -159,6 +161,8 @@ export function FieldControl({
           value={displayValue}
           onChange={(event) => onFieldValueChange(field.logical_name, event.target.value)}
           placeholder='{"value":"example"}'
+          spellCheck={false}
+          autoComplete="off"
           readOnly={isReadOnly}
           required={isRequired}
           rows={jsonRows}
