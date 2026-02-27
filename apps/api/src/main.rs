@@ -6,6 +6,7 @@ mod api_config;
 mod api_router;
 mod api_services;
 mod auth;
+mod dev_seed;
 mod dto;
 mod error;
 mod handlers;
@@ -22,12 +23,18 @@ use crate::api_config::SessionStoreBackend;
 async fn main() -> Result<(), AppError> {
     dotenvy::dotenv().ok();
     api_config::init_tracing();
+    let command = std::env::args().nth(1);
 
     let config = api_config::ApiConfig::load()?;
 
     let pool = api_services::connect_and_migrate(&config.database_url).await?;
     if config.migrate_only {
         info!("database migrations applied successfully");
+        return Ok(());
+    }
+
+    if command.as_deref() == Some("seed-dev") {
+        dev_seed::run(pool, &config).await?;
         return Ok(());
     }
 
