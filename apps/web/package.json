@@ -19,7 +19,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@qryvanta/api-types": "workspace:*",
     "@qryvanta/ui": "workspace:*",
-    "@tailwindcss/postcss": "^4.2.0",
+    "@tailwindcss/postcss": "^4.2.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.575.0",

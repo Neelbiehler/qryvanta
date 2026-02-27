@@ -39,6 +39,25 @@ pnpm --filter @qryvanta/landing dev
 pnpm --filter @qryvanta/docs dev
 ```
 
+## Development CRM/ERP Seed
+
+Populate a realistic tenant with CRM + ERP metadata and sample records:
+
+```bash
+pnpm dev:seed
+```
+
+The seed targets `DEV_DEFAULT_TENANT_ID` when set (from `.env`), creates/updates the tenant named `Northwind Industrial Group`, and upserts sample `account`, `contact`, `deal`, and `invoice` records.
+
+It ensures seeded tenant identities and role assignments are in place, including full owner access through the system `tenant_owner` role.
+
+Beyond records, the seed provisions a full model-driven tenant surface: `sales_hub` and `finance_ops` apps, entity bindings, curated forms, grid views, and app sitemaps.
+
+Seeded local users:
+
+- Admin: `admin@qryvanta.local` / `admin` (full tenant rights)
+- Standard user: `user@qryvanta.local` / `admin` (worker-focused app access via `standard_user` role)
+
 Default local ports:
 
 - API: `http://localhost:3001`

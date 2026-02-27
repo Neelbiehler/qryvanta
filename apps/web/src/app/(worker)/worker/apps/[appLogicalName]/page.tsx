@@ -1,24 +1,20 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-  StatusBadge,
-  buttonVariants,
-} from "@qryvanta/ui";
+import { StatusBadge, buttonVariants } from "@qryvanta/ui";
 
 import { AccessDeniedCard } from "@/components/shared/access-denied-card";
-import { apiServerFetch, type AppSitemapResponse } from "@/lib/api";
+import { WorkerAppHomePanel } from "@/components/apps/worker-app-home-panel";
+import { WorkerCommandRibbon } from "@/components/apps/worker-command-ribbon";
+import { WorkerSitemapSidebar } from "@/components/apps/worker-sitemap-sidebar";
+import { WorkerSplitShell } from "@/components/apps/worker-split-shell";
 import {
   flattenSitemapToDashboardNavigation,
   flattenSitemapToNavigation,
 } from "@/components/apps/workspace-entity/helpers";
-import { cn } from "@/lib/utils";
+import { apiServerFetch, type AppSitemapResponse } from "@/lib/api";
 
 type WorkerAppHomePageProps = {
   params: Promise<{
@@ -26,9 +22,14 @@ type WorkerAppHomePageProps = {
   }>;
 };
 
-export default async function WorkerAppHomePage({
-  params,
-}: WorkerAppHomePageProps) {
+export async function generateMetadata({ params }: WorkerAppHomePageProps): Promise<Metadata> {
+  const { appLogicalName } = await params;
+  return {
+    title: `${appLogicalName} — Worker Portal`,
+  };
+}
+
+export default async function WorkerAppHomePage({ params }: WorkerAppHomePageProps) {
   const { appLogicalName } = await params;
   const cookieHeader = (await cookies()).toString();
   const navigationResponse = await apiServerFetch(
@@ -54,150 +55,42 @@ export default async function WorkerAppHomePage({
     throw new Error("Failed to load app navigation");
   }
 
-  const sitemap =
-    (await navigationResponse.json()) as AppSitemapResponse;
-  const sortedNavigation = flattenSitemapToNavigation(sitemap);
-  const dashboardNavigation = flattenSitemapToDashboardNavigation(sitemap);
+  const sitemap = (await navigationResponse.json()) as AppSitemapResponse;
+  const entityItems = flattenSitemapToNavigation(sitemap);
+  const dashboardItems = flattenSitemapToDashboardNavigation(sitemap);
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
-              Worker Apps
-            </p>
-            <CardTitle className="font-serif text-3xl">{appLogicalName}</CardTitle>
-            <CardDescription>
-              Model-driven sitemap for this business app. Pick an entity workspace to begin operations.
-            </CardDescription>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge tone="neutral">Areas {sortedNavigation.length}</StatusBadge>
-            <StatusBadge tone="neutral">Dashboards {dashboardNavigation.length}</StatusBadge>
-            <Link
-              href="/worker/apps"
-              className={cn(buttonVariants({ variant: "outline" }))}
-            >
-              Back to apps
-            </Link>
-          </div>
-        </CardHeader>
-      </Card>
-
-      <div className="grid gap-4 xl:grid-cols-[300px_1fr]">
-        <Card className="h-fit border-zinc-200 bg-zinc-50">
-          <CardHeader>
-            <CardTitle className="text-base">Sitemap</CardTitle>
-            <CardDescription>Entity areas ordered for operator workflow.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {sortedNavigation.length > 0 ? (
-              sortedNavigation.map((item) => (
-                <Link
-                  key={item.entity_logical_name}
-                  href={`/worker/apps/${appLogicalName}/${item.entity_logical_name}`}
-                  className="block rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm transition hover:border-emerald-300"
-                >
-                  <p className="font-medium text-zinc-900">
-                    {item.display_name}
-                  </p>
-                  <p className="font-mono text-[11px] text-zinc-500">
-                    {item.entity_logical_name}
-                  </p>
-                </Link>
-              ))
-            ) : (
-              <p className="text-xs text-zinc-500">No entities configured yet.</p>
-            )}
-
-            {dashboardNavigation.length > 0 ? (
-              <>
-                <p className="pt-2 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                  Dashboards
-                </p>
-                {dashboardNavigation.map((item) => (
-                  <Link
-                    key={item.dashboard_logical_name}
-                    href={`/worker/apps/${appLogicalName}/dashboards/${item.dashboard_logical_name}`}
-                    className="block rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm transition hover:border-sky-300"
-                  >
-                    <p className="font-medium text-zinc-900">{item.display_name}</p>
-                    <p className="font-mono text-[11px] text-zinc-500">
-                      {item.dashboard_logical_name}
-                    </p>
-                  </Link>
-                ))}
-              </>
-            ) : null}
-          </CardContent>
-        </Card>
-
-        <Card className="border-zinc-200 bg-white">
-          <CardHeader>
-            <CardTitle>Entity Work Areas</CardTitle>
-            <CardDescription>
-              Open a workspace to view records, create data, and run daily business processes.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-3 md:grid-cols-2">
-            {sortedNavigation.length > 0 ? (
-              sortedNavigation.map((item) => (
-                <div
-                  key={`${item.entity_logical_name}.card`}
-                  className="rounded-md border border-zinc-200 p-3"
-                >
-                  <p className="text-sm font-semibold text-zinc-900">
-                    {item.display_name}
-                  </p>
-                  <p className="font-mono text-[11px] text-zinc-500">
-                    {item.entity_logical_name}
-                  </p>
-                  <p className="mt-1 text-xs text-zinc-600">
-                    Position {item.position}
-                  </p>
-                  <Link
-                    href={`/worker/apps/${appLogicalName}/${item.entity_logical_name}`}
-                    className={cn(buttonVariants({ size: "sm", variant: "outline" }), "mt-3")}
-                  >
-                    Open Workspace
-                  </Link>
-                </div>
-              ))
-            ) : (
-              <p className="text-sm text-zinc-500">No entities are configured for this app yet.</p>
-            )}
-
-            {dashboardNavigation.map((item) => (
-              <div
-                key={`${item.dashboard_logical_name}.dashboard-card`}
-                className="rounded-md border border-zinc-200 p-3"
+    <WorkerSplitShell
+      storageKey={`worker_sidebar_width_${appLogicalName}`}
+      sidebar={<WorkerSitemapSidebar appLogicalName={appLogicalName} sitemap={sitemap} />}
+      content={
+        <div className="h-full overflow-y-auto bg-zinc-50">
+          <WorkerCommandRibbon
+            eyebrow="Worker Portal"
+            title={appLogicalName}
+            subtitle={`${entityItems.length} workspace${entityItems.length !== 1 ? "s" : ""} · ${dashboardItems.length} dashboard${dashboardItems.length !== 1 ? "s" : ""}`}
+            badges={
+              <StatusBadge tone="neutral">
+                {sitemap.areas.length} area{sitemap.areas.length !== 1 ? "s" : ""}
+              </StatusBadge>
+            }
+            actions={
+              <Link
+                href="/worker/apps"
+                className={buttonVariants({ size: "sm", variant: "outline" })}
               >
-                <p className="text-sm font-semibold text-zinc-900">{item.display_name}</p>
-                <p className="font-mono text-[11px] text-zinc-500">
-                  {item.dashboard_logical_name}
-                </p>
-                <p className="mt-1 text-xs text-zinc-600">Dashboard Position {item.position}</p>
-                <Link
-                  href={`/worker/apps/${appLogicalName}/dashboards/${item.dashboard_logical_name}`}
-                  className={cn(buttonVariants({ size: "sm", variant: "outline" }), "mt-3")}
-                >
-                  Open Dashboard
-                </Link>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="flex justify-end">
-        <Link
-          href="/worker/apps"
-          className={cn(buttonVariants({ variant: "outline" }))}
-        >
-          Return to app catalog
-        </Link>
-      </div>
-    </div>
+                ← My Apps
+              </Link>
+            }
+          />
+          <WorkerAppHomePanel
+            appLogicalName={appLogicalName}
+            sitemap={sitemap}
+            entityItems={entityItems}
+            dashboardItems={dashboardItems}
+          />
+        </div>
+      }
+    />
   );
 }

@@ -20,6 +20,7 @@
     "dev:web": "pnpm --filter @qryvanta/web dev",
     "dev:docs": "pnpm --filter @qryvanta/docs dev",
     "dev:api": "pnpm --filter @qryvanta/api dev",
+    "dev:seed": "pnpm --filter @qryvanta/api seed:dev",
     "dev:worker": "cargo run -p qryvanta-worker",
     "infra:up": "docker compose up -d postgres redis",
     "infra:down": "docker compose down",

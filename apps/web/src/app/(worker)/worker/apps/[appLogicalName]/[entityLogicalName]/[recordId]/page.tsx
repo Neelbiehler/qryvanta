@@ -28,6 +28,9 @@ import {
   flattenSitemapToNavigation,
   parseFormResponse,
 } from "@/components/apps/workspace-entity/helpers";
+import { WorkerCommandRibbon } from "@/components/apps/worker-command-ribbon";
+import { WorkerSitemapSidebar } from "@/components/apps/worker-sitemap-sidebar";
+import { WorkerSplitShell } from "@/components/apps/worker-split-shell";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
@@ -142,51 +145,66 @@ export default async function RecordDetailPage({
         (item) => item.entity_logical_name === entityLogicalName,
       ) ?? null
     : null;
+  const listHref = `/worker/apps/${encodeURIComponent(appLogicalName)}/${encodeURIComponent(entityLogicalName)}`;
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
-              Record Detail
-            </p>
-            <CardTitle className="font-serif text-3xl">
-              {schema.entity_display_name}
-            </CardTitle>
-            <CardDescription>
-              <span className="font-mono text-xs">{record.record_id}</span>
-            </CardDescription>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge tone="success">Published v{schema.version}</StatusBadge>
-            <StatusBadge tone={capabilities.can_update ? "success" : "warning"}>
-              Update {capabilities.can_update ? "Allowed" : "Blocked"}
-            </StatusBadge>
-            <Link
-              href={`/worker/apps/${appLogicalName}/${entityLogicalName}`}
-              className={cn(buttonVariants({ variant: "outline" }))}
-            >
-              Back to list
-            </Link>
-          </div>
-        </CardHeader>
-      </Card>
-
-      <Card className="border-zinc-200 bg-white">
-        <CardContent className="pt-6">
-          <RecordDetailPanel
+    <WorkerSplitShell
+      storageKey={`worker_sidebar_width_${appLogicalName}`}
+      sidebar={
+        sitemap ? (
+          <WorkerSitemapSidebar
             appLogicalName={appLogicalName}
-            entityLogicalName={entityLogicalName}
-            capabilities={capabilities}
-            forms={forms}
-            businessRules={businessRules}
-            initialFormLogicalName={requestedForm ?? navItem?.default_form ?? null}
-            record={record}
-            schema={schema}
+            sitemap={sitemap}
+            activeEntityLogicalName={entityLogicalName}
           />
-        </CardContent>
-      </Card>
-    </div>
+        ) : (
+          <Card className="h-fit border-zinc-200 bg-zinc-50">
+            <CardHeader>
+              <CardTitle className="text-base">Sitemap</CardTitle>
+              <CardDescription>Navigation unavailable for this app.</CardDescription>
+            </CardHeader>
+          </Card>
+        )
+      }
+      content={<div className="min-h-0 overflow-y-auto bg-zinc-50">
+        <WorkerCommandRibbon
+          title={`${schema.entity_display_name} · Record`}
+          subtitle={record.record_id}
+          badges={
+            <>
+              <StatusBadge tone="success">Schema v{schema.version}</StatusBadge>
+              <StatusBadge tone={capabilities.can_update ? "success" : "warning"}>
+                Update {capabilities.can_update ? "Allowed" : "Blocked"}
+              </StatusBadge>
+            </>
+          }
+          actions={
+            <>
+              <Link
+                href={listHref}
+                className={buttonVariants({ size: "sm", variant: "outline" })}
+              >
+                Back to List
+              </Link>
+            </>
+          }
+        />
+
+        <Card className="m-4 shadow-sm">
+          <CardContent className="pt-4">
+            <RecordDetailPanel
+              appLogicalName={appLogicalName}
+              entityLogicalName={entityLogicalName}
+              capabilities={capabilities}
+              forms={forms}
+              businessRules={businessRules}
+              initialFormLogicalName={requestedForm ?? navItem?.default_form ?? null}
+              record={record}
+              schema={schema}
+            />
+          </CardContent>
+        </Card>
+      </div>}
+    />
   );
 }

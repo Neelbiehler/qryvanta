@@ -21,6 +21,10 @@ export { Label } from "./components/label";
 export { Notice, type NoticeProps } from "./components/notice";
 export { PageHeader } from "./components/page-header";
 export { SearchFilterBar, type SearchFilterBarProps } from "./components/search-filter-bar";
+export {
+  SegmentedControl,
+  type SegmentedControlOption,
+} from "./components/segmented-control";
 export { Select } from "./components/select";
 export { Separator } from "./components/separator";
 export { Sidebar } from "./components/sidebar";

@@ -18,6 +18,10 @@ type SurfaceLayoutProps = {
   surfaceId: SurfaceId;
   user: UserIdentityResponse;
   commandBar?: React.ReactNode;
+  hideSidebar?: boolean;
+  disableGlobalCommand?: boolean;
+  disableSurfaceSwitcher?: boolean;
+  mainClassName?: string;
 };
 
 /**
@@ -31,6 +35,10 @@ export function SurfaceLayout({
   surfaceId,
   user,
   commandBar,
+  hideSidebar = false,
+  disableGlobalCommand = false,
+  disableSurfaceSwitcher = false,
+  mainClassName,
 }: SurfaceLayoutProps) {
   const accessibleSurfaces = readAccessibleSurfaces(user);
   const definition = SURFACES[surfaceId];
@@ -52,20 +60,31 @@ export function SurfaceLayout({
     <div 
       className={cn(
         "grid min-h-screen grid-cols-1 bg-app transition-all duration-300 ease-in-out",
-        collapsed ? "lg:grid-cols-[64px_1fr]" : "lg:grid-cols-[260px_1fr]"
+        hideSidebar
+          ? "lg:grid-cols-1"
+          : collapsed
+            ? "lg:grid-cols-[64px_1fr]"
+            : "lg:grid-cols-[260px_1fr]"
       )}
       suppressHydrationWarning
     >
-      <SurfaceSidebar
-        surface={surfaceId}
-        accessibleSurfaces={accessibleSurfaces}
-        collapsed={collapsed}
-        onToggle={toggleCollapsed}
-      />
+      {hideSidebar ? null : (
+        <SurfaceSidebar
+          surface={surfaceId}
+          accessibleSurfaces={accessibleSurfaces}
+          collapsed={collapsed}
+          onToggle={toggleCollapsed}
+        />
+      )}
       <div className="flex min-h-screen min-w-0 flex-col">
-        <Header user={user} surfaceId={surfaceId} />
+        <Header
+          user={user}
+          surfaceId={surfaceId}
+          disableGlobalCommand={disableGlobalCommand}
+          disableSurfaceSwitcher={disableSurfaceSwitcher}
+        />
         {commandBar ? <div className="shrink-0">{commandBar}</div> : null}
-        <main className="flex-1 px-4 py-5 md:px-8 md:py-8">{children}</main>
+        <main className={cn("flex-1 px-4 py-5 md:px-8 md:py-8", mainClassName)}>{children}</main>
       </div>
     </div>
   );
