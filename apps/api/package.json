@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "cargo run -p qryvanta-api",
+    "seed:dev": "cargo run -p qryvanta-api -- seed-dev",
     "build": "cargo build -p qryvanta-api",
     "check": "cargo check --workspace --all-targets",
     "lint": "cargo clippy --workspace --all-targets -- -D warnings",

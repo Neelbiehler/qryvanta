@@ -118,6 +118,7 @@ For high-frequency ops polling, set `WORKFLOW_QUEUE_STATS_CACHE_TTL_SECONDS` to 
 ## Daily Commands
 
 - `pnpm dev`: run API, web, landing, and docs.
+- `pnpm dev:seed`: seed a realistic CRM/ERP development tenant dataset (includes users `admin@qryvanta.local`/`admin` and `user@qryvanta.local`/`admin`, roles, apps, forms, views, workflows, and sitemaps).
 - `pnpm infra:up`: start local Postgres + Redis.
 - `pnpm infra:down`: stop local infrastructure.
 - `pnpm dev:docs`: run docs app only.
