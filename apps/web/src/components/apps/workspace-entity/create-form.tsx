@@ -18,6 +18,12 @@ import type {
   ParsedFormResponse,
 } from "@/components/apps/workspace-entity/metadata-types";
 
+const AUTO_GENERATED_FIELD_NAMES = new Set([
+  "record_id",
+  "subject_record_id",
+  "subject",
+]);
+
 type MetadataDrivenCreateFormProps = {
   activeForm: ParsedFormResponse | null;
   appLogicalName: string;
@@ -69,15 +75,18 @@ export function MetadataDrivenCreateForm({
 
   return (
     <form
-      className="space-y-4 rounded-md border border-emerald-100 bg-white p-4"
+      className="space-y-5 rounded-xl border border-emerald-100 bg-white p-5 shadow-sm"
       onSubmit={onSubmit}
     >
-      <div>
-        <p className="text-sm font-medium text-zinc-800">
-          New {entityDisplayName} Record
+      <div className="border-b border-emerald-50 pb-3">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-700">
+          New Record
         </p>
-        <p className="text-xs text-zinc-500">
-          Using form: {activeForm.display_name} ({activeForm.form_type}) in {appLogicalName}.
+        <p className="mt-0.5 text-base font-semibold text-zinc-900">
+          {entityDisplayName}
+        </p>
+        <p className="text-xs text-zinc-400">
+          {activeForm.display_name} &middot; {activeForm.form_type} &middot; {appLogicalName}
         </p>
       </div>
 
@@ -96,7 +105,7 @@ export function MetadataDrivenCreateForm({
       ))}
 
       <Button disabled={!canCreate || isSaving} type="submit">
-        {isSaving ? "Saving..." : "Create Record"}
+        {isSaving ? "Saving…" : "Create Record"}
       </Button>
     </form>
   );
@@ -130,8 +139,10 @@ function FormTabRenderer({
   return (
     <div className="space-y-4">
       {showTabHeader ? (
-        <div className="border-b border-zinc-200 pb-1">
-          <p className="text-sm font-semibold text-zinc-700">{tab.display_name}</p>
+        <div className="border-b border-emerald-100 pb-1.5">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-emerald-700">
+            {tab.display_name}
+          </p>
         </div>
       ) : null}
 
@@ -172,7 +183,11 @@ function FormSectionRenderer({
 }: FormSectionRendererProps) {
   const visibleFields = section.fields
     .filter((fieldPlacement) => {
-      return fieldPlacement.visible && !ruleState.hiddenFieldNames.has(fieldPlacement.field_logical_name);
+      return (
+        fieldPlacement.visible &&
+        !AUTO_GENERATED_FIELD_NAMES.has(fieldPlacement.field_logical_name) &&
+        !ruleState.hiddenFieldNames.has(fieldPlacement.field_logical_name)
+      );
     })
     .sort((left, right) => left.position - right.position);
 
@@ -197,8 +212,8 @@ function FormSectionRenderer({
         : "grid gap-4 grid-cols-1";
 
   return (
-    <fieldset className="space-y-3">
-      <legend className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">
+    <fieldset className="space-y-3 rounded-lg border border-emerald-50 bg-emerald-50/30 p-3">
+      <legend className="-ml-1 px-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-700">
         {section.display_name}
       </legend>
       <div className={gridClass}>
@@ -256,19 +271,24 @@ function FlatCreateForm({
 }: FlatCreateFormProps) {
   return (
     <form
-      className="space-y-4 rounded-md border border-emerald-100 bg-white p-4"
+      className="space-y-5 rounded-xl border border-emerald-100 bg-white p-5 shadow-sm"
       onSubmit={onSubmit}
     >
-      <div>
-        <p className="text-sm font-medium text-zinc-800">New {entityDisplayName} Record</p>
-        <p className="text-xs text-zinc-500">
-          Fill fields and create a runtime row in {appLogicalName}.
+      <div className="border-b border-emerald-50 pb-3">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-700">
+          New Record
         </p>
+        <p className="mt-0.5 text-base font-semibold text-zinc-900">{entityDisplayName}</p>
+        <p className="text-xs text-zinc-400">{appLogicalName}</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
         {fields
-          .filter((field) => !ruleState.hiddenFieldNames.has(field.logical_name))
+          .filter(
+            (field) =>
+              !AUTO_GENERATED_FIELD_NAMES.has(field.logical_name) &&
+              !ruleState.hiddenFieldNames.has(field.logical_name),
+          )
           .map((field) => (
             <FieldControl
               key={field.logical_name}
@@ -292,7 +312,7 @@ function FlatCreateForm({
       </div>
 
       <Button disabled={!canCreate || isSaving} type="submit">
-        {isSaving ? "Saving..." : "Create Record"}
+        {isSaving ? "Saving…" : "Create Record"}
       </Button>
     </form>
   );

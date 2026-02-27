@@ -1,161 +1,147 @@
-import {
-  CommandBar,
-  CommandBarAction,
-  CommandBarGroup,
-  CommandBarSeparator,
-  Label,
-  SearchFilterBar,
-  Select,
-  StatusBadge,
-} from "@qryvanta/ui";
+import { Button, Input, SegmentedControl, StatusBadge } from "@qryvanta/ui";
+import { Grid3X3, LayoutList, Plus, RefreshCw, Search } from "lucide-react";
 
-import type {
-  AppEntityCapabilitiesResponse,
-} from "@/lib/api";
-import type {
-  ParsedFormResponse,
-  ParsedViewResponse,
-} from "@/components/apps/workspace-entity/metadata-types";
+import type { AppEntityCapabilitiesResponse } from "@/lib/api";
 
 export type WorkerViewMode = "grid" | "json";
+export type WorkerGridDensity = "comfortable" | "compact";
 
 type WorkspaceToolbarProps = {
   capabilities: AppEntityCapabilitiesResponse;
   filteredRecordCount: number;
   schemaVersion: number;
-  forms: ParsedFormResponse[];
-  views: ParsedViewResponse[];
-  activeFormLogicalName: string | null;
-  activeViewLogicalName: string | null;
-  onActiveFormChange: (name: string) => void;
-  onActiveViewChange: (name: string) => void;
   onRefresh: () => void;
+  onCreateNew: () => void;
   onSearchChange: (value: string) => void;
-  onToggleCreatePanel: () => void;
   onViewModeChange: (viewMode: WorkerViewMode) => void;
+  onDensityChange: (density: WorkerGridDensity) => void;
   isRefreshingRecords: boolean;
   recordSearch: string;
-  showCreatePanel: boolean;
   viewMode: WorkerViewMode;
+  density: WorkerGridDensity;
 };
+
+const VIEW_OPTIONS = [
+  {
+    value: "grid" as WorkerViewMode,
+    label: "Grid",
+    icon: <Grid3X3 className="h-3 w-3" />,
+  },
+  {
+    value: "json" as WorkerViewMode,
+    label: "JSON",
+    icon: <LayoutList className="h-3 w-3" />,
+  },
+] as const;
+
+const DENSITY_OPTIONS = [
+  { value: "comfortable" as WorkerGridDensity, label: "Comfortable" },
+  { value: "compact" as WorkerGridDensity, label: "Compact" },
+] as const;
 
 export function WorkspaceToolbar({
   capabilities,
   filteredRecordCount,
   schemaVersion,
-  forms,
-  views,
-  activeFormLogicalName,
-  activeViewLogicalName,
-  onActiveFormChange,
-  onActiveViewChange,
   onRefresh,
+  onCreateNew,
   onSearchChange,
-  onToggleCreatePanel,
   onViewModeChange,
+  onDensityChange,
   isRefreshingRecords,
   recordSearch,
-  showCreatePanel,
   viewMode,
+  density,
 }: WorkspaceToolbarProps) {
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 pb-2">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
-          Command Bar
-        </p>
-        <p className="text-xs text-zinc-500">Model-driven runtime view</p>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <StatusBadge tone="success">Schema v{schemaVersion}</StatusBadge>
+    <div className="space-y-2">
+      {/* Status badges */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <StatusBadge tone="neutral">Schema v{schemaVersion}</StatusBadge>
         <StatusBadge tone={capabilities.can_create ? "success" : "warning"}>
-          Create {capabilities.can_create ? "Enabled" : "Disabled"}
+          {capabilities.can_create ? "Can create" : "Create blocked"}
         </StatusBadge>
-        <StatusBadge tone={capabilities.can_delete ? "warning" : "neutral"}>
-          Delete {capabilities.can_delete ? "Enabled" : "Disabled"}
-        </StatusBadge>
-        {isRefreshingRecords ? <StatusBadge tone="neutral">Refreshing records</StatusBadge> : null}
+        {capabilities.can_delete ? (
+          <StatusBadge tone="warning">Can delete</StatusBadge>
+        ) : null}
+        {isRefreshingRecords ? (
+          <StatusBadge tone="neutral">Refreshing…</StatusBadge>
+        ) : null}
         <StatusBadge tone="info" dot>
-          Records {filteredRecordCount}
+          {filteredRecordCount} record{filteredRecordCount !== 1 ? "s" : ""}
         </StatusBadge>
       </div>
 
-      <CommandBar className="rounded-md border border-zinc-200 bg-white px-2">
-        <CommandBarGroup>
-          <CommandBarAction
+      {/* Command bar */}
+      <div className="flex flex-wrap items-center gap-1 rounded-lg border border-emerald-100 bg-white px-2 py-1.5 shadow-sm xl:flex-nowrap">
+        {/* Primary actions */}
+        <div className="flex items-center gap-1">
+          <Button
             type="button"
-            variant={showCreatePanel ? "primary" : "default"}
-            onClick={onToggleCreatePanel}
+            variant="default"
+            size="sm"
+            onClick={onCreateNew}
+            disabled={!capabilities.can_create}
+            className="h-7 gap-1.5 px-2.5 text-xs"
           >
-            {showCreatePanel ? "Hide Quick Create" : "Quick Create"}
-          </CommandBarAction>
-          <CommandBarAction type="button" variant="default" onClick={onRefresh}>
+            <Plus aria-hidden="true" className="h-3.5 w-3.5" />
+            New
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onRefresh}
+            className="h-7 gap-1.5 px-2.5 text-xs"
+          >
+            <RefreshCw
+              aria-hidden="true"
+              className={`h-3.5 w-3.5 ${isRefreshingRecords ? "animate-spin" : ""}`}
+            />
             Refresh
-          </CommandBarAction>
-        </CommandBarGroup>
-        <CommandBarSeparator />
-        <CommandBarGroup>
-          <CommandBarAction
-            type="button"
-            variant={viewMode === "grid" ? "primary" : "default"}
-            onClick={() => onViewModeChange("grid")}
-          >
-            Grid View
-          </CommandBarAction>
-          <CommandBarAction
-            type="button"
-            variant={viewMode === "json" ? "primary" : "default"}
-            onClick={() => onViewModeChange("json")}
-          >
-            JSON View
-          </CommandBarAction>
-        </CommandBarGroup>
-      </CommandBar>
+          </Button>
+        </div>
 
-      <SearchFilterBar
-        searchValue={recordSearch}
-        onSearchValueChange={onSearchChange}
-        searchPlaceholder="Search by record id or field value"
-        filters={
-          <>
-            {views.length > 1 ? (
-              <div className="space-y-1">
-                <Label htmlFor="view-selector">Active View</Label>
-                <Select
-                  id="view-selector"
-                  value={activeViewLogicalName ?? ""}
-                  onChange={(event) => onActiveViewChange(event.target.value)}
-                >
-                  {views.map((view) => (
-                    <option key={view.logical_name} value={view.logical_name}>
-                      {view.display_name}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-            ) : null}
+        {/* Separator */}
+        <div aria-hidden="true" className="mx-1 h-5 w-px shrink-0 bg-emerald-100" />
 
-            {forms.length > 1 ? (
-              <div className="space-y-1">
-                <Label htmlFor="form-selector">Active Form</Label>
-                <Select
-                  id="form-selector"
-                  value={activeFormLogicalName ?? ""}
-                  onChange={(event) => onActiveFormChange(event.target.value)}
-                >
-                  {forms.map((form) => (
-                    <option key={form.logical_name} value={form.logical_name}>
-                      {form.display_name} ({form.form_type})
-                    </option>
-                  ))}
-                </Select>
-              </div>
-            ) : null}
-          </>
-        }
-        actions={<p className="text-xs text-zinc-500">{filteredRecordCount} visible row(s)</p>}
-      />
+        {/* View mode */}
+        <SegmentedControl
+          value={viewMode}
+          onChange={onViewModeChange}
+          size="sm"
+          options={VIEW_OPTIONS}
+        />
+
+        {/* Separator */}
+        <div aria-hidden="true" className="mx-1 h-5 w-px shrink-0 bg-emerald-100" />
+
+        {/* Density */}
+        <SegmentedControl
+          value={density}
+          onChange={onDensityChange}
+          size="sm"
+          options={DENSITY_OPTIONS}
+        />
+
+        {/* Search (right-aligned) */}
+        <div className="flex w-full items-center gap-2 xl:ml-auto xl:w-auto">
+          <div className="relative w-full xl:w-64">
+            <Search
+              aria-hidden="true"
+              className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400"
+            />
+            <Input
+              value={recordSearch}
+              onChange={(event) => onSearchChange(event.currentTarget.value)}
+              placeholder="Quick find records…"
+              autoComplete="off"
+              spellCheck={false}
+              className="h-8 pl-8 text-xs"
+            />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

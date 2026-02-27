@@ -14,7 +14,14 @@ import {
 } from "@qryvanta/ui";
 
 import { AccessDeniedCard } from "@/components/shared/access-denied-card";
-import { apiServerFetch, type WorkspaceDashboardResponse } from "@/lib/api";
+import { WorkerCommandRibbon } from "@/components/apps/worker-command-ribbon";
+import { WorkerSitemapSidebar } from "@/components/apps/worker-sitemap-sidebar";
+import { WorkerSplitShell } from "@/components/apps/worker-split-shell";
+import {
+  apiServerFetch,
+  type AppSitemapResponse,
+  type WorkspaceDashboardResponse,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
@@ -35,10 +42,13 @@ export default async function WorkerDashboardPage({
   const { appLogicalName, dashboardLogicalName } = await params;
   const cookieHeader = (await cookies()).toString();
 
-  const dashboardResponse = await apiServerFetch(
-    `/api/workspace/apps/${appLogicalName}/dashboards/${dashboardLogicalName}`,
-    cookieHeader,
-  );
+  const [dashboardResponse, navigationResponse] = await Promise.all([
+    apiServerFetch(
+      `/api/workspace/apps/${appLogicalName}/dashboards/${dashboardLogicalName}`,
+      cookieHeader,
+    ),
+    apiServerFetch(`/api/workspace/apps/${appLogicalName}/navigation`, cookieHeader),
+  ]);
 
   if (dashboardResponse.status === 401) {
     redirect("/login");
@@ -82,64 +92,82 @@ export default async function WorkerDashboardPage({
   }
 
   const dashboard = (await dashboardResponse.json()) as WorkspaceDashboardResponse;
+  const sitemap = navigationResponse.ok
+    ? ((await navigationResponse.json()) as AppSitemapResponse)
+    : null;
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
-              Worker Dashboards
-            </p>
-            <CardTitle className="font-serif text-3xl">{dashboard.display_name}</CardTitle>
-            <CardDescription>
-              Baseline metadata-driven dashboard widgets derived from app bindings.
-            </CardDescription>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge tone="neutral">Widgets {dashboard.widgets.length}</StatusBadge>
-            <Link
-              href={`/worker/apps/${appLogicalName}`}
-              className={cn(buttonVariants({ variant: "outline" }))}
-            >
-              Back to app
-            </Link>
-          </div>
-        </CardHeader>
-      </Card>
+    <WorkerSplitShell
+      storageKey={`worker_sidebar_width_${appLogicalName}`}
+      sidebar={
+        sitemap ? (
+          <WorkerSitemapSidebar
+            appLogicalName={appLogicalName}
+            sitemap={sitemap}
+            activeDashboardLogicalName={dashboardLogicalName}
+          />
+        ) : (
+          <Card className="h-fit border-zinc-200 bg-zinc-50">
+            <CardHeader>
+              <CardTitle className="text-base">Sitemap</CardTitle>
+              <CardDescription>Navigation unavailable for this app.</CardDescription>
+            </CardHeader>
+          </Card>
+        )
+      }
+      content={<div className="min-h-0 overflow-y-auto bg-zinc-50">
+        <WorkerCommandRibbon
+          title={dashboard.display_name}
+          subtitle={`/${appLogicalName}/dashboards/${dashboardLogicalName}`}
+          badges={<StatusBadge tone="neutral">Widgets {dashboard.widgets.length}</StatusBadge>}
+          actions={
+            <>
+              <Link
+                href={`/worker/apps/${encodeURIComponent(appLogicalName)}/dashboards/${encodeURIComponent(dashboardLogicalName)}`}
+                className={buttonVariants({ size: "sm", variant: "outline" })}
+              >
+                Refresh
+              </Link>
+              <Link
+                href={`/worker/apps/${appLogicalName}`}
+                className={buttonVariants({ size: "sm", variant: "outline" })}
+              >
+                Back to App
+              </Link>
+            </>
+          }
+        />
 
-      <Card className="border-zinc-200 bg-white">
-        <CardHeader>
-          <CardTitle>Dashboard Widgets</CardTitle>
-          <CardDescription>
-            Chart metadata is available now; data-query rendering is the next phase.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {dashboard.widgets.length > 0 ? (
-            dashboard.widgets.map((widget) => (
-              <div key={widget.logical_name} className="rounded-md border border-zinc-200 p-3">
-                <p className="text-sm font-semibold text-zinc-900">{widget.display_name}</p>
-                <p className="mt-1 font-mono text-[11px] text-zinc-500">
-                  {widget.chart.logical_name}
-                </p>
-                <div className="mt-2 space-y-1 text-xs text-zinc-600">
-                  <p>Entity: {widget.chart.entity_logical_name}</p>
-                  <p>Chart Type: {widget.chart.chart_type}</p>
-                  <p>Aggregation: {widget.chart.aggregation}</p>
-                  <p>
-                    View: {widget.chart.view_logical_name ?? "(default binding view)"}
-                  </p>
+        <Card className="m-4 shadow-sm">
+          <CardHeader>
+            <CardTitle>Dashboard Widgets</CardTitle>
+            <CardDescription>
+              Chart metadata is available now; data-query rendering is the next phase.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {dashboard.widgets.length > 0 ? (
+              dashboard.widgets.map((widget) => (
+                <div key={widget.logical_name} className="rounded-lg border border-emerald-100 bg-emerald-50/30 p-3">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-700">Widget</p>
+                  <p className="mt-0.5 text-sm font-semibold text-zinc-900">{widget.display_name}</p>
+                  <p className="font-mono text-[10px] text-zinc-400">{widget.chart.logical_name}</p>
+                  <div className="mt-2 space-y-0.5 text-xs text-zinc-600">
+                    <p>Entity: <span className="font-medium text-zinc-800">{widget.chart.entity_logical_name}</span></p>
+                    <p>Type: <span className="font-medium text-zinc-800">{widget.chart.chart_type}</span></p>
+                    <p>Aggregation: <span className="font-medium text-zinc-800">{widget.chart.aggregation}</span></p>
+                    <p>View: <span className="font-medium text-zinc-800">{widget.chart.view_logical_name ?? "(default)"}</span></p>
+                  </div>
                 </div>
-              </div>
-            ))
-          ) : (
-            <p className="text-sm text-zinc-500">
-              No widgets are available yet. Add app entity bindings to generate baseline KPI cards.
-            </p>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+              ))
+            ) : (
+              <p className="col-span-full text-sm text-zinc-500">
+                No widgets configured yet. Add app entity bindings to generate KPI cards.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </div>}
+    />
   );
 }

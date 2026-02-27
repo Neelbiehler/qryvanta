@@ -13,7 +13,11 @@ import {
   buttonVariants,
 } from "@qryvanta/ui";
 
-import { RecordDetailPanel } from "@/components/apps/record-detail-panel";
+import { RecordCreatePanel } from "@/components/apps/record-create-panel";
+import { WorkerCommandRibbon } from "@/components/apps/worker-command-ribbon";
+import { WorkerSitemapSidebar } from "@/components/apps/worker-sitemap-sidebar";
+import { WorkerSplitShell } from "@/components/apps/worker-split-shell";
+import { parseFormResponse } from "@/components/apps/workspace-entity/helpers";
 import { AccessDeniedCard } from "@/components/shared/access-denied-card";
 import {
   apiServerFetch,
@@ -22,42 +26,27 @@ import {
   type BusinessRuleResponse,
   type FormResponse,
   type PublishedSchemaResponse,
-  type RuntimeRecordResponse,
 } from "@/lib/api";
-import {
-  flattenSitemapToNavigation,
-  parseFormResponse,
-} from "@/components/apps/workspace-entity/helpers";
-import { WorkerCommandRibbon } from "@/components/apps/worker-command-ribbon";
-import { WorkerSitemapSidebar } from "@/components/apps/worker-sitemap-sidebar";
-import { WorkerSplitShell } from "@/components/apps/worker-split-shell";
-import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = {
-  title: "Record Detail",
-  description: "View and edit a runtime record using metadata-driven forms.",
+  title: "New Record",
+  description: "Create a new runtime record using metadata-driven forms.",
 };
 
-type RecordDetailPageProps = {
-  params: Promise<{
-    appLogicalName: string;
-    entityLogicalName: string;
-    recordId: string;
-  }>;
-  searchParams: Promise<{
-    form?: string;
-  }>;
+type WorkerEntityNewRecordPageProps = {
+  params: Promise<{ appLogicalName: string; entityLogicalName: string }>;
+  searchParams: Promise<{ form?: string; view?: string }>;
 };
 
-export default async function RecordDetailPage({
+export default async function WorkerEntityNewRecordPage({
   params,
   searchParams,
-}: RecordDetailPageProps) {
-  const { appLogicalName, entityLogicalName, recordId } = await params;
-  const { form: requestedForm } = await searchParams;
+}: WorkerEntityNewRecordPageProps) {
+  const { appLogicalName, entityLogicalName } = await params;
+  const { form: requestedForm, view: requestedView } = await searchParams;
   const cookieHeader = (await cookies()).toString();
 
-  const [schemaResponse, capabilitiesResponse, recordResponse, formsResponse, navigationResponse, businessRulesResponse] =
+  const [schemaResponse, capabilitiesResponse, formsResponse, navigationResponse, businessRulesResponse] =
     await Promise.all([
       apiServerFetch(
         `/api/workspace/apps/${appLogicalName}/entities/${entityLogicalName}/schema`,
@@ -65,10 +54,6 @@ export default async function RecordDetailPage({
       ),
       apiServerFetch(
         `/api/workspace/apps/${appLogicalName}/entities/${entityLogicalName}/capabilities`,
-        cookieHeader,
-      ),
-      apiServerFetch(
-        `/api/workspace/apps/${appLogicalName}/entities/${entityLogicalName}/records/${recordId}`,
         cookieHeader,
       ),
       apiServerFetch(
@@ -87,65 +72,28 @@ export default async function RecordDetailPage({
     return (
       <AccessDeniedCard
         section="Worker Apps"
-        title="Record Access"
-        message="Your account does not have read access to this record."
+        title="Create Record"
+        message="Your account does not have access to this app entity."
       />
     );
   }
 
-  if (!schemaResponse.ok || !capabilitiesResponse.ok) {
-    throw new Error("Failed to load record detail");
-  }
-
-  if (recordResponse.status === 404) {
-    return (
-      <div className="space-y-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="font-serif text-3xl">Record Not Found</CardTitle>
-            <CardDescription>
-              The record with ID &quot;{recordId}&quot; does not exist or has been deleted.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Link
-              href={`/worker/apps/${appLogicalName}/${entityLogicalName}`}
-              className={cn(buttonVariants({ variant: "outline" }))}
-            >
-              Back to entity list
-            </Link>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (!recordResponse.ok) {
-    throw new Error("Failed to load record");
+  if (!schemaResponse.ok || !capabilitiesResponse.ok || !formsResponse.ok) {
+    throw new Error("Failed to load create record workspace");
   }
 
   const schema = (await schemaResponse.json()) as PublishedSchemaResponse;
   const capabilities =
     (await capabilitiesResponse.json()) as AppEntityCapabilitiesResponse;
-  const record = (await recordResponse.json()) as RuntimeRecordResponse;
-
-  const rawForms = formsResponse.ok
-    ? ((await formsResponse.json()) as FormResponse[])
-    : [];
+  const rawForms = (await formsResponse.json()) as FormResponse[];
   const forms = rawForms.map(parseFormResponse);
-  const businessRules = businessRulesResponse.ok
-    ? ((await businessRulesResponse.json()) as BusinessRuleResponse[])
-    : [];
-
   const sitemap = navigationResponse.ok
     ? ((await navigationResponse.json()) as AppSitemapResponse)
     : null;
-  const navItem = sitemap
-    ? flattenSitemapToNavigation(sitemap).find(
-        (item) => item.entity_logical_name === entityLogicalName,
-      ) ?? null
-    : null;
-  const listHref = `/worker/apps/${encodeURIComponent(appLogicalName)}/${encodeURIComponent(entityLogicalName)}`;
+  const businessRules = businessRulesResponse.ok
+    ? ((await businessRulesResponse.json()) as BusinessRuleResponse[])
+    : [];
+  const listHref = `/worker/apps/${encodeURIComponent(appLogicalName)}/${encodeURIComponent(entityLogicalName)}${requestedView ? `?view=${encodeURIComponent(requestedView)}` : ""}`;
 
   return (
     <WorkerSplitShell
@@ -168,13 +116,13 @@ export default async function RecordDetailPage({
       }
       content={<div className="min-h-0 overflow-y-auto bg-zinc-50">
         <WorkerCommandRibbon
-          title={`${schema.entity_display_name} · Record`}
-          subtitle={record.record_id}
+          title={`${schema.entity_display_name} · New`}
+          subtitle={`/${appLogicalName}/${entityLogicalName}/new`}
           badges={
             <>
               <StatusBadge tone="success">Schema v{schema.version}</StatusBadge>
-              <StatusBadge tone={capabilities.can_update ? "success" : "warning"}>
-                Update {capabilities.can_update ? "Allowed" : "Blocked"}
+              <StatusBadge tone={capabilities.can_create ? "success" : "warning"}>
+                Create {capabilities.can_create ? "Allowed" : "Blocked"}
               </StatusBadge>
             </>
           }
@@ -192,15 +140,15 @@ export default async function RecordDetailPage({
 
         <Card className="m-4 shadow-sm">
           <CardContent className="pt-4">
-            <RecordDetailPanel
+            <RecordCreatePanel
               appLogicalName={appLogicalName}
               entityLogicalName={entityLogicalName}
               capabilities={capabilities}
+              schema={schema}
               forms={forms}
               businessRules={businessRules}
-              initialFormLogicalName={requestedForm ?? navItem?.default_form ?? null}
-              record={record}
-              schema={schema}
+              initialFormLogicalName={requestedForm ?? null}
+              returnViewLogicalName={requestedView ?? null}
             />
           </CardContent>
         </Card>
