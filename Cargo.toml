@@ -18,7 +18,7 @@ license = "Apache-2.0"
 [workspace.dependencies]
 async-trait = "0.1.89"
 axum = { version = "0.8.8", features = ["macros"] }
-chrono = { version = "0.4.43", default-features = false, features = ["clock", "serde"] }
+chrono = { version = "0.4.44", default-features = false, features = ["clock", "serde"] }
 dotenvy = "0.15.7"
 http = "1.4.0"
 reqwest = { version = "0.13.2", features = ["json"] }
