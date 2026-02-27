@@ -38,6 +38,8 @@ import { cn } from "@/lib/utils";
 type HeaderProps = {
   user: UserIdentityResponse;
   surfaceId?: SurfaceId;
+  disableGlobalCommand?: boolean;
+  disableSurfaceSwitcher?: boolean;
 };
 
 type HeaderCommandTarget = {
@@ -54,7 +56,12 @@ function segmentToLabel(segment: string): string {
     .join(" ");
 }
 
-export function Header({ user, surfaceId }: HeaderProps) {
+export function Header({
+  user,
+  surfaceId,
+  disableGlobalCommand = false,
+  disableSurfaceSwitcher = false,
+}: HeaderProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -133,6 +140,10 @@ export function Header({ user, surfaceId }: HeaderProps) {
   const pageTitle = breadcrumbs.at(-1)?.label ?? surfaceLabel;
 
   useEffect(() => {
+    if (disableGlobalCommand) {
+      return;
+    }
+
     function handleKeyboardShortcut(event: KeyboardEvent) {
       if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) {
         return;
@@ -155,7 +166,7 @@ export function Header({ user, surfaceId }: HeaderProps) {
     return () => {
       window.removeEventListener("keydown", handleKeyboardShortcut);
     };
-  }, []);
+  }, [disableGlobalCommand]);
 
   async function handleLogout() {
     startTransition(() => {
@@ -221,34 +232,36 @@ export function Header({ user, surfaceId }: HeaderProps) {
         </div>
 
         {/* Center: Command Bar */}
-        <form
-          className="flex max-w-md flex-1 items-center"
-          onSubmit={handleOpenCommandTarget}
-        >
-          <div className="relative flex-1">
-            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
-            <Input
-              ref={commandInputRef}
-              value={commandText}
-              onChange={(event) => setCommandText(event.target.value)}
-              placeholder="Jump to... (press /)"
-              list="surface-command-targets"
-              className="h-8 border-emerald-100 pl-8 pr-16 text-sm placeholder:text-zinc-400"
-            />
-            <div className="absolute right-2 top-1/2 -translate-y-1/2">
-              <kbd className="hidden rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-[10px] font-medium text-zinc-400 sm:inline">
-                /
-              </kbd>
+        {disableGlobalCommand ? <div className="flex-1" /> : (
+          <form
+            className="flex max-w-md flex-1 items-center"
+            onSubmit={handleOpenCommandTarget}
+          >
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
+              <Input
+                ref={commandInputRef}
+                value={commandText}
+                onChange={(event) => setCommandText(event.target.value)}
+                placeholder="Jump to... (press /)"
+                list="surface-command-targets"
+                className="h-8 border-emerald-100 pl-8 pr-16 text-sm placeholder:text-zinc-400"
+              />
+              <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                <kbd className="hidden rounded border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-[10px] font-medium text-zinc-400 sm:inline">
+                  /
+                </kbd>
+              </div>
+              <datalist id="surface-command-targets">
+                {commandTargets.map((target) => (
+                  <option key={target.href} value={target.href}>
+                    {target.label}
+                  </option>
+                ))}
+              </datalist>
             </div>
-            <datalist id="surface-command-targets">
-              {commandTargets.map((target) => (
-                <option key={target.href} value={target.href}>
-                  {target.label}
-                </option>
-              ))}
-            </datalist>
-          </div>
-        </form>
+          </form>
+        )}
 
         {/* Right: User Actions */}
         <div className="flex items-center gap-2">
@@ -281,35 +294,37 @@ export function Header({ user, surfaceId }: HeaderProps) {
                 </p>
               </div>
 
-              <div className="px-3 py-1.5">
-                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
-                  Switch Surface
-                </p>
-                {accessibleSurfaces.map((id) => {
-                  const target = SURFACES[id];
-                  const isCurrent = surfaceId === id;
-                  return (
-                    <DropdownMenuItem
-                      key={id}
-                      disabled={isCurrent}
-                      onClick={() => {
-                        router.push(target.basePath);
-                      }}
-                      className={cn(
-                        "text-xs",
-                        isCurrent && "bg-zinc-50 text-zinc-500",
-                      )}
-                    >
-                      {target.label}
-                      {isCurrent && (
-                        <span className="ml-auto text-[10px] text-zinc-400">
-                          Current
-                        </span>
-                      )}
-                    </DropdownMenuItem>
-                  );
-                })}
-              </div>
+              {disableSurfaceSwitcher ? null : (
+                <div className="px-3 py-1.5">
+                  <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+                    Switch Surface
+                  </p>
+                  {accessibleSurfaces.map((id) => {
+                    const target = SURFACES[id];
+                    const isCurrent = surfaceId === id;
+                    return (
+                      <DropdownMenuItem
+                        key={id}
+                        disabled={isCurrent}
+                        onClick={() => {
+                          router.push(target.basePath);
+                        }}
+                        className={cn(
+                          "text-xs",
+                          isCurrent && "bg-zinc-50 text-zinc-500",
+                        )}
+                      >
+                        {target.label}
+                        {isCurrent && (
+                          <span className="ml-auto text-[10px] text-zinc-400">
+                            Current
+                          </span>
+                        )}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </div>
+              )}
 
               <div className="border-t border-zinc-100 px-3 py-1.5">
                 <DropdownMenuItem

@@ -19,54 +19,75 @@ export const metadata: Metadata = {
 
 export default function MakerHomePage() {
   return (
-    <div className="grid gap-4 lg:grid-cols-3">
-      <Card>
+    <div className="space-y-6">
+      <Card className="border-emerald-200 bg-gradient-to-r from-emerald-50/60 to-white">
         <CardHeader>
-          <CardTitle>Entity Modeling</CardTitle>
+          <CardTitle className="text-lg">Studio</CardTitle>
           <CardDescription>
-            Define metadata fields, publish versions, and validate runtime data.
+            The unified low-code workspace. Design forms, configure views, and
+            compose your app — all in one place.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Link href="/maker/entities" className={cn(buttonVariants())}>
-            Open Entities
+          <Link href="/maker/studio/_default" className={cn(buttonVariants())}>
+            Open Studio
           </Link>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>App Studio</CardTitle>
-          <CardDescription>
-            Bind entities into apps and apply role-scoped runtime access.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Link
-            href="/maker/apps"
-            className={cn(buttonVariants({ variant: "outline" }))}
-          >
-            Open App Studio
-          </Link>
-        </CardContent>
-      </Card>
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <CardTitle>Entity Modeling</CardTitle>
+            <CardDescription>
+              Define metadata fields, publish versions, and validate runtime
+              data.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link
+              href="/maker/entities"
+              className={cn(buttonVariants({ variant: "outline" }))}
+            >
+              Open Entities
+            </Link>
+          </CardContent>
+        </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Automation</CardTitle>
-          <CardDescription>
-            Configure internal triggers/actions and inspect execution history.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Link
-            href="/maker/automation"
-            className={cn(buttonVariants({ variant: "outline" }))}
-          >
-            Open Automation
-          </Link>
-        </CardContent>
-      </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Studio</CardTitle>
+            <CardDescription>
+              Unified app, form, view, security, and publish composition workspace.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link
+              href="/maker/studio/_default"
+              className={cn(buttonVariants({ variant: "outline" }))}
+            >
+              Open Unified Studio
+            </Link>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Automation</CardTitle>
+            <CardDescription>
+              Configure internal triggers/actions and inspect execution history.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link
+              href="/maker/automation"
+              className={cn(buttonVariants({ variant: "outline" }))}
+            >
+              Open Automation
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
