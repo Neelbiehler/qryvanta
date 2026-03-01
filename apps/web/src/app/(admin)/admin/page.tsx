@@ -58,6 +58,23 @@ export default function AdminHomePage() {
           </Link>
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Search Sync Health</CardTitle>
+          <CardDescription>
+            Monitor Qrywell indexing queue, retries, and recent failed jobs.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Link
+            href="/admin/search-sync"
+            className={cn(buttonVariants({ variant: "outline" }))}
+          >
+            Open Sync Health
+          </Link>
+        </CardContent>
+      </Card>
     </div>
   );
 }

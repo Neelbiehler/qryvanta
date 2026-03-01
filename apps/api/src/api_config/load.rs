@@ -148,6 +148,28 @@ impl ApiConfig {
             parse_env_u32("WORKFLOW_WORKER_MAX_PARTITION_COUNT", 128)?;
         let workflow_queue_stats_cache_ttl_seconds =
             parse_env_u32("WORKFLOW_QUEUE_STATS_CACHE_TTL_SECONDS", 0)?;
+        let qrywell_api_base_url = env::var("QRYWELL_API_BASE_URL")
+            .ok()
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty());
+        let qrywell_api_key = env::var("QRYWELL_API_KEY")
+            .ok()
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty());
+        let qrywell_sync_poll_interval_ms = parse_env_u64("QRYWELL_SYNC_POLL_INTERVAL_MS", 3000)?;
+        let qrywell_sync_batch_size = parse_env_usize("QRYWELL_SYNC_BATCH_SIZE", 25)?;
+        let qrywell_sync_max_attempts = parse_env_i32("QRYWELL_SYNC_MAX_ATTEMPTS", 12)?;
+
+        if qrywell_sync_batch_size == 0 {
+            return Err(AppError::Validation(
+                "QRYWELL_SYNC_BATCH_SIZE must be greater than zero".to_owned(),
+            ));
+        }
+        if qrywell_sync_max_attempts <= 0 {
+            return Err(AppError::Validation(
+                "QRYWELL_SYNC_MAX_ATTEMPTS must be greater than zero".to_owned(),
+            ));
+        }
 
         if workflow_worker_max_partition_count == 0 {
             return Err(AppError::Validation(
@@ -192,6 +214,11 @@ impl ApiConfig {
             workflow_worker_max_claim_limit,
             workflow_worker_max_partition_count,
             workflow_queue_stats_cache_ttl_seconds,
+            qrywell_api_base_url,
+            qrywell_api_key,
+            qrywell_sync_poll_interval_ms,
+            qrywell_sync_batch_size,
+            qrywell_sync_max_attempts,
         })
     }
 }
@@ -221,6 +248,24 @@ fn parse_env_u32(name: &str, default: u32) -> Result<u32, AppError> {
 fn parse_env_usize(name: &str, default: usize) -> Result<usize, AppError> {
     match env::var(name) {
         Ok(value) => value.parse::<usize>().map_err(|error| {
+            AppError::Validation(format!("invalid {name} value '{value}': {error}"))
+        }),
+        Err(_) => Ok(default),
+    }
+}
+
+fn parse_env_u64(name: &str, default: u64) -> Result<u64, AppError> {
+    match env::var(name) {
+        Ok(value) => value.parse::<u64>().map_err(|error| {
+            AppError::Validation(format!("invalid {name} value '{value}': {error}"))
+        }),
+        Err(_) => Ok(default),
+    }
+}
+
+fn parse_env_i32(name: &str, default: i32) -> Result<i32, AppError> {
+    match env::var(name) {
+        Ok(value) => value.parse::<i32>().map_err(|error| {
             AppError::Validation(format!("invalid {name} value '{value}': {error}"))
         }),
         Err(_) => Ok(default),

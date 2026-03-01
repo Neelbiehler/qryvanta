@@ -2,9 +2,7 @@
   "name": "@qryvanta/web",
   "private": true,
   "scripts": {
-    "predev": "pnpm --filter @qryvanta/ui build",
     "dev": "next dev --webpack -p 3000",
-    "prebuild": "pnpm --filter @qryvanta/ui build",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",

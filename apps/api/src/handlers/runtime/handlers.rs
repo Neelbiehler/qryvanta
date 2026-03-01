@@ -60,10 +60,26 @@ pub async fn create_runtime_record_handler(
         );
     }
 
-    Ok((
-        StatusCode::CREATED,
-        Json(RuntimeRecordResponse::from(record)),
-    ))
+    let response = RuntimeRecordResponse::from(record);
+    if let Err(error) = crate::qrywell_sync::enqueue_runtime_record_upsert(
+        &state.postgres_pool,
+        user.tenant_id(),
+        entity_logical_name.as_str(),
+        &response,
+        state.qrywell_sync_max_attempts,
+    )
+    .await
+    {
+        warn!(
+            error = %error,
+            tenant_id = %user.tenant_id(),
+            entity_logical_name = %entity_logical_name,
+            record_id = %response.record_id,
+            "qrywell sync failed after runtime record creation"
+        );
+    }
+
+    Ok((StatusCode::CREATED, Json(response)))
 }
 
 pub async fn query_runtime_records_handler(
@@ -107,7 +123,26 @@ pub async fn update_runtime_record_handler(
         )
         .await?;
 
-    Ok(Json(RuntimeRecordResponse::from(record)))
+    let response = RuntimeRecordResponse::from(record);
+    if let Err(error) = crate::qrywell_sync::enqueue_runtime_record_upsert(
+        &state.postgres_pool,
+        user.tenant_id(),
+        entity_logical_name.as_str(),
+        &response,
+        state.qrywell_sync_max_attempts,
+    )
+    .await
+    {
+        warn!(
+            error = %error,
+            tenant_id = %user.tenant_id(),
+            entity_logical_name = %entity_logical_name,
+            record_id = %response.record_id,
+            "qrywell sync failed after runtime record update"
+        );
+    }
+
+    Ok(Json(response))
 }
 
 pub async fn get_runtime_record_handler(
@@ -132,6 +167,24 @@ pub async fn delete_runtime_record_handler(
         .metadata_service
         .delete_runtime_record(&user, entity_logical_name.as_str(), record_id.as_str())
         .await?;
+
+    if let Err(error) = crate::qrywell_sync::enqueue_runtime_record_delete(
+        &state.postgres_pool,
+        user.tenant_id(),
+        entity_logical_name.as_str(),
+        record_id.as_str(),
+        state.qrywell_sync_max_attempts,
+    )
+    .await
+    {
+        warn!(
+            error = %error,
+            tenant_id = %user.tenant_id(),
+            entity_logical_name = %entity_logical_name,
+            record_id = %record_id,
+            "qrywell delete sync failed after runtime record deletion"
+        );
+    }
 
     Ok(StatusCode::NO_CONTENT)
 }

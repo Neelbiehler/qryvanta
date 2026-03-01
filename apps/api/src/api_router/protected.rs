@@ -186,6 +186,30 @@ pub(super) fn build_protected_routes() -> Router<AppState> {
             post(handlers::publish::workspace_publish_diff_handler),
         )
         .route(
+            "/api/search/qrywell",
+            post(handlers::search::qrywell_search_handler),
+        )
+        .route(
+            "/api/search/qrywell/events/click",
+            post(handlers::search::qrywell_search_click_event_handler),
+        )
+        .route(
+            "/api/search/qrywell/queue-health",
+            get(handlers::search::qrywell_sync_health_handler),
+        )
+        .route(
+            "/api/search/qrywell/analytics",
+            get(handlers::search::qrywell_search_analytics_handler),
+        )
+        .route(
+            "/api/search/qrywell/sync/{entity_logical_name}",
+            post(handlers::search::qrywell_sync_entity_handler),
+        )
+        .route(
+            "/api/search/qrywell/sync-all",
+            post(handlers::search::qrywell_sync_all_handler),
+        )
+        .route(
             "/api/runtime/{entity_logical_name}/records",
             get(handlers::runtime::list_runtime_records_handler)
                 .post(handlers::runtime::create_runtime_record_handler),

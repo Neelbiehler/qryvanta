@@ -243,10 +243,29 @@ pub async fn workspace_create_record_handler(
         );
     }
 
-    Ok((
-        StatusCode::CREATED,
-        Json(RuntimeRecordResponse::from(record)),
-    ))
+    Ok((StatusCode::CREATED, {
+        let response = RuntimeRecordResponse::from(record);
+        if let Err(error) = crate::qrywell_sync::enqueue_runtime_record_upsert(
+            &state.postgres_pool,
+            user.tenant_id(),
+            entity_logical_name.as_str(),
+            &response,
+            state.qrywell_sync_max_attempts,
+        )
+        .await
+        {
+            warn!(
+                error = %error,
+                tenant_id = %user.tenant_id(),
+                app_logical_name = %app_logical_name,
+                entity_logical_name = %entity_logical_name,
+                record_id = %response.record_id,
+                "qrywell sync enqueue failed after workspace record creation"
+            );
+        }
+
+        Json(response)
+    }))
 }
 
 pub async fn workspace_query_records_handler(
@@ -294,7 +313,27 @@ pub async fn workspace_get_record_handler(
         )
         .await?;
 
-    Ok(Json(RuntimeRecordResponse::from(record)))
+    let response = RuntimeRecordResponse::from(record);
+    if let Err(error) = crate::qrywell_sync::enqueue_runtime_record_upsert(
+        &state.postgres_pool,
+        user.tenant_id(),
+        entity_logical_name.as_str(),
+        &response,
+        state.qrywell_sync_max_attempts,
+    )
+    .await
+    {
+        warn!(
+            error = %error,
+            tenant_id = %user.tenant_id(),
+            app_logical_name = %app_logical_name,
+            entity_logical_name = %entity_logical_name,
+            record_id = %response.record_id,
+            "qrywell sync enqueue failed after workspace record update"
+        );
+    }
+
+    Ok(Json(response))
 }
 
 pub async fn workspace_update_record_handler(
@@ -331,6 +370,25 @@ pub async fn workspace_delete_record_handler(
             record_id.as_str(),
         )
         .await?;
+
+    if let Err(error) = crate::qrywell_sync::enqueue_runtime_record_delete(
+        &state.postgres_pool,
+        user.tenant_id(),
+        entity_logical_name.as_str(),
+        record_id.as_str(),
+        state.qrywell_sync_max_attempts,
+    )
+    .await
+    {
+        warn!(
+            error = %error,
+            tenant_id = %user.tenant_id(),
+            app_logical_name = %app_logical_name,
+            entity_logical_name = %entity_logical_name,
+            record_id = %record_id,
+            "qrywell sync enqueue failed after workspace record deletion"
+        );
+    }
 
     Ok(StatusCode::NO_CONTENT)
 }

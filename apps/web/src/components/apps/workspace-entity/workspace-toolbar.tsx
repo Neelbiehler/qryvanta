@@ -1,5 +1,6 @@
 import { Button, Input, SegmentedControl, StatusBadge } from "@qryvanta/ui";
 import { Grid3X3, LayoutList, Plus, RefreshCw, Search } from "lucide-react";
+import type { ReactNode } from "react";
 
 import type { AppEntityCapabilitiesResponse } from "@/lib/api";
 
@@ -21,7 +22,7 @@ type WorkspaceToolbarProps = {
   density: WorkerGridDensity;
 };
 
-const VIEW_OPTIONS = [
+const VIEW_OPTIONS: { value: WorkerViewMode; label: string; icon: ReactNode }[] = [
   {
     value: "grid" as WorkerViewMode,
     label: "Grid",
@@ -32,12 +33,12 @@ const VIEW_OPTIONS = [
     label: "JSON",
     icon: <LayoutList className="h-3 w-3" />,
   },
-] as const;
+];
 
-const DENSITY_OPTIONS = [
+const DENSITY_OPTIONS: { value: WorkerGridDensity; label: string }[] = [
   { value: "comfortable" as WorkerGridDensity, label: "Comfortable" },
   { value: "compact" as WorkerGridDensity, label: "Compact" },
-] as const;
+];
 
 export function WorkspaceToolbar({
   capabilities,

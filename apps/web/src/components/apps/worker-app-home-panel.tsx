@@ -46,7 +46,7 @@ export function WorkerAppHomePanel({
   entityItems,
   dashboardItems,
 }: WorkerAppHomePanelProps) {
-  const sortedAreas = sitemap.areas.toSorted((a, b) => a.position - b.position);
+  const sortedAreas = [...sitemap.areas].sort((a, b) => a.position - b.position);
 
   return (
     <div className="space-y-6 p-4">
@@ -189,7 +189,7 @@ export function WorkerAppHomePanel({
           </div>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {sortedAreas.map((area) => {
-              const sortedGroups = area.groups.toSorted((a, b) => a.position - b.position);
+              const sortedGroups = [...area.groups].sort((a, b) => a.position - b.position);
               const totalItems = sortedGroups.reduce((sum, g) => sum + g.sub_areas.length, 0);
 
               return (

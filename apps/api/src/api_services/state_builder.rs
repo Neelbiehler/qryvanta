@@ -88,5 +88,11 @@ pub fn build_app_state(pool: PgPool, config: &ApiConfig) -> Result<AppState, App
         postgres_pool: pool,
         redis_client,
         redis_required: config.requires_redis(),
+        qrywell_api_base_url: config.qrywell_api_base_url.clone(),
+        qrywell_api_key: config.qrywell_api_key.clone(),
+        qrywell_sync_poll_interval_ms: config.qrywell_sync_poll_interval_ms,
+        qrywell_sync_batch_size: config.qrywell_sync_batch_size,
+        qrywell_sync_max_attempts: config.qrywell_sync_max_attempts,
+        http_client: reqwest::Client::new(),
     })
 }

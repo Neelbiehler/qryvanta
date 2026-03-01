@@ -62,6 +62,11 @@ pub struct ApiConfig {
     pub workflow_worker_max_claim_limit: usize,
     pub workflow_worker_max_partition_count: u32,
     pub workflow_queue_stats_cache_ttl_seconds: u32,
+    pub qrywell_api_base_url: Option<String>,
+    pub qrywell_api_key: Option<String>,
+    pub qrywell_sync_poll_interval_ms: u64,
+    pub qrywell_sync_batch_size: usize,
+    pub qrywell_sync_max_attempts: i32,
 }
 
 impl ApiConfig {

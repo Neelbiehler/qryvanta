@@ -1,0 +1,97 @@
+# Qrywell Search Integration
+
+Qryvanta can use Qrywell as an external search engine for retrieval over indexed knowledge.
+
+## Configuration
+
+Set these API environment variables:
+
+- `QRYWELL_API_BASE_URL` - base URL for the Qrywell API (for example `http://127.0.0.1:4201`)
+- `QRYWELL_API_KEY` - optional shared API key header forwarded as `x-qrywell-api-key`
+- `QRYWELL_SYNC_POLL_INTERVAL_MS` - background sync worker polling cadence (default `3000`)
+- `QRYWELL_SYNC_BATCH_SIZE` - claimed queue jobs per worker iteration (default `25`)
+- `QRYWELL_SYNC_MAX_ATTEMPTS` - threshold before jobs are marked failed (default `12`)
+
+## API Contract
+
+Protected endpoint:
+
+- `POST /api/search/qrywell`
+- `POST /api/search/qrywell/events/click`
+- `GET /api/search/qrywell/analytics`
+- `POST /api/search/qrywell/sync/{entity_logical_name}`
+- `POST /api/search/qrywell/sync-all`
+- `GET /api/search/qrywell/queue-health`
+
+Request body:
+
+```json
+{
+  "query": "connector reliability roadmap",
+  "limit": 8,
+  "roles": ["employee", "manager"],
+  "include_debug": true
+}
+```
+
+Behavior:
+
+- Qryvanta forwards the query to `POST /v0/search` in Qrywell.
+- Qryvanta uses authenticated session identity as viewer context:
+  - `user_id` from current user subject
+  - `tenant_id` from current tenant
+  - `roles` from request payload
+- Response returns ranked evidence passages from Qrywell.
+- Qryvanta automatically builds metadata-driven facet filters from tenant schema (entity names and option-set labels) before forwarding queries.
+- The planner is schema-first and tenant-local; it does not hardcode business entities or field names.
+- When `include_debug=true`, response includes planner telemetry fields (`debug_query_normalized`, `debug_selected_entity`, `debug_planned_filter_count`, `debug_negated_filter_count`).
+- Frontend can send click analytics via `POST /api/search/qrywell/events/click` for relevance feedback loops.
+- Admin/ops can consume `GET /api/search/qrywell/analytics` for top queries, rank click share, zero-click queries, and low-relevance click signals.
+
+## Smart Sync Behavior
+
+Qryvanta now keeps Qrywell search data fresh automatically for runtime record writes:
+
+- Runtime record `create` -> enqueue upsert sync job
+- Runtime record `update` -> enqueue upsert sync job with latest transformed payload
+- Runtime record `delete` -> enqueue delete sync job
+
+Sync jobs are persisted in Postgres (`qrywell_sync_jobs`) and processed by a background API worker with exponential backoff retries.
+
+Queue health response includes:
+
+- pending, processing, and failed counts
+- recent failed jobs with error details and retry counts
+- cumulative succeeded/failed attempt counters
+- last attempt/success/failure timestamps for activity visibility when queue depth is zero
+
+Transformation model:
+
+- Title is derived from common business fields (`title`, `name`, `subject`, `code`) with fallback to `<entity> <record_id>`.
+- Content is built from flattened JSON key paths and values for semantic search.
+- Scalar runtime fields are also emitted as generic facets, enabling connector-agnostic structured filtering.
+- Tenant scope is propagated from authenticated Qryvanta tenant.
+
+Manual backfill endpoint:
+
+- `POST /api/search/qrywell/sync/{entity_logical_name}` with body:
+
+```json
+{
+  "limit": 200,
+  "offset": 0
+}
+```
+
+Full-tenant backfill endpoint:
+
+- `POST /api/search/qrywell/sync-all` with the same body shape (`limit`, `offset`) to iterate all published entities.
+
+## Ingestion Path
+
+For Qrywell to return useful results, push source records from Qryvanta into Qrywell using:
+
+- `POST /v0/connectors/qryvanta/records:ingest`
+- `POST /v0/connectors/qryvanta/records:delete`
+
+Each record should include `record_id`, `entity_logical_name`, `title`, `content`, `tenant_id`, and optional `roles` for ACL filtering.
