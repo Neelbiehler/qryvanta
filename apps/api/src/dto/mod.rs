@@ -56,8 +56,9 @@ pub use security::{
     UpdateAuditRetentionPolicyRequest, UpdateTenantRegistrationModeRequest,
 };
 pub use workflows::{
-    ExecuteWorkflowRequest, SaveWorkflowRequest, WorkflowResponse, WorkflowRunAttemptResponse,
-    WorkflowRunResponse,
+    DispatchScheduleTriggerRequest, ExecuteWorkflowRequest, RetryWorkflowStepRequest,
+    RetryWorkflowStepStrategyDto, SaveWorkflowRequest, WorkflowResponse,
+    WorkflowRunAttemptResponse, WorkflowRunResponse,
 };
 
 #[cfg(test)]
@@ -76,26 +77,27 @@ mod tests {
         AuthRegisterRequest, BindAppEntityRequest, BusinessRuleResponse, CreateAppRequest,
         CreateBusinessRuleRequest, CreateEntityRequest, CreateFieldRequest, CreateFormRequest,
         CreateOptionSetRequest, CreateRoleRequest, CreateRuntimeRecordRequest,
-        CreateTemporaryAccessGrantRequest, CreateViewRequest, EntityResponse,
-        ExecuteWorkflowRequest, FieldResponse, FormResponse, GenericMessageResponse,
-        HealthResponse, InviteRequest, OptionSetResponse, PublishCheckCategoryDto,
-        PublishCheckIssueResponse, PublishCheckScopeDto, PublishCheckSeverityDto,
-        PublishChecksResponse, PublishSurfaceDeltaItemResponse, PublishedSchemaResponse,
-        QrywellSearchAnalyticsResponse, QrywellSearchClickEventRequest,
+        CreateTemporaryAccessGrantRequest, CreateViewRequest, DispatchScheduleTriggerRequest,
+        EntityResponse, ExecuteWorkflowRequest, FieldResponse, FormResponse,
+        GenericMessageResponse, HealthResponse, InviteRequest, OptionSetResponse,
+        PublishCheckCategoryDto, PublishCheckIssueResponse, PublishCheckScopeDto,
+        PublishCheckSeverityDto, PublishChecksResponse, PublishSurfaceDeltaItemResponse,
+        PublishedSchemaResponse, QrywellSearchAnalyticsResponse, QrywellSearchClickEventRequest,
         QrywellSearchLowRelevanceClickResponse, QrywellSearchRankMetricResponse,
         QrywellSearchRequest, QrywellSearchResponse, QrywellSearchTopQueryResponse,
         QrywellSearchZeroClickQueryResponse, QrywellSyncAllResponse, QrywellSyncHealthResponse,
         QrywellSyncRequest, QrywellSyncResponse, QueryRuntimeRecordsRequest,
-        RemoveRoleAssignmentRequest, RevokeTemporaryAccessGrantRequest, RoleAssignmentResponse,
-        RoleResponse, RunWorkspacePublishRequest, RunWorkspacePublishResponse,
-        RuntimeFieldPermissionResponse, RuntimeRecordResponse, SaveAppRoleEntityPermissionRequest,
-        SaveAppSitemapRequest, SaveRuntimeFieldPermissionsRequest, SaveWorkflowRequest,
-        TemporaryAccessGrantResponse, TenantRegistrationModeResponse,
-        UpdateAuditRetentionPolicyRequest, UpdateEntityRequest, UpdateFieldRequest,
-        UpdateRuntimeRecordRequest, UpdateTenantRegistrationModeRequest, UserIdentityResponse,
-        ViewResponse, WorkflowResponse, WorkflowRunAttemptResponse, WorkflowRunResponse,
-        WorkspaceDashboardResponse, WorkspacePublishChecksResponse, WorkspacePublishDiffRequest,
-        WorkspacePublishDiffResponse, WorkspacePublishHistoryEntryResponse,
+        RemoveRoleAssignmentRequest, RetryWorkflowStepRequest, RetryWorkflowStepStrategyDto,
+        RevokeTemporaryAccessGrantRequest, RoleAssignmentResponse, RoleResponse,
+        RunWorkspacePublishRequest, RunWorkspacePublishResponse, RuntimeFieldPermissionResponse,
+        RuntimeRecordResponse, SaveAppRoleEntityPermissionRequest, SaveAppSitemapRequest,
+        SaveRuntimeFieldPermissionsRequest, SaveWorkflowRequest, TemporaryAccessGrantResponse,
+        TenantRegistrationModeResponse, UpdateAuditRetentionPolicyRequest, UpdateEntityRequest,
+        UpdateFieldRequest, UpdateRuntimeRecordRequest, UpdateTenantRegistrationModeRequest,
+        UserIdentityResponse, ViewResponse, WorkflowResponse, WorkflowRunAttemptResponse,
+        WorkflowRunResponse, WorkspaceDashboardResponse, WorkspacePublishChecksResponse,
+        WorkspacePublishDiffRequest, WorkspacePublishDiffResponse,
+        WorkspacePublishHistoryEntryResponse,
     };
 
     use crate::error::ErrorResponse;
@@ -115,6 +117,9 @@ mod tests {
         super::workflows::WorkflowConditionOperatorDto::export(&config)?;
         super::workflows::WorkflowStepDto::export(&config)?;
         ExecuteWorkflowRequest::export(&config)?;
+        DispatchScheduleTriggerRequest::export(&config)?;
+        RetryWorkflowStepRequest::export(&config)?;
+        RetryWorkflowStepStrategyDto::export(&config)?;
         CreateFieldRequest::export(&config)?;
         CreateBusinessRuleRequest::export(&config)?;
         CreateFormRequest::export(&config)?;
@@ -194,6 +199,7 @@ mod tests {
         WorkflowResponse::export(&config)?;
         WorkflowRunResponse::export(&config)?;
         WorkflowRunAttemptResponse::export(&config)?;
+        super::workflows::WorkflowRunStepTraceResponse::export(&config)?;
         RoleResponse::export(&config)?;
         RoleAssignmentResponse::export(&config)?;
         TenantRegistrationModeResponse::export(&config)?;

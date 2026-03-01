@@ -1,4 +1,11 @@
 {
   "title": "Operations",
-  "pages": ["index", "self-hosting", "configuration", "email-delivery", "observability"]
+  "pages": [
+    "index",
+    "self-hosting",
+    "configuration",
+    "email-delivery",
+    "workflow-integration-runbook",
+    "observability"
+  ]
 }

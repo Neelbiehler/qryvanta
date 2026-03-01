@@ -230,6 +230,7 @@ pub async fn workspace_create_record_handler(
             &user,
             entity_logical_name.as_str(),
             record.record_id().as_str(),
+            record.data(),
         )
         .await
     {
@@ -342,6 +343,17 @@ pub async fn workspace_update_record_handler(
     Path((app_logical_name, entity_logical_name, record_id)): Path<(String, String, String)>,
     Json(payload): Json<UpdateRuntimeRecordRequest>,
 ) -> ApiResult<Json<RuntimeRecordResponse>> {
+    let previous_record = state
+        .app_service
+        .get_record(
+            &user,
+            app_logical_name.as_str(),
+            entity_logical_name.as_str(),
+            record_id.as_str(),
+        )
+        .await
+        .ok();
+
     let record = state
         .app_service
         .update_record(
@@ -353,6 +365,29 @@ pub async fn workspace_update_record_handler(
         )
         .await?;
 
+    if let Err(error) = state
+        .workflow_service
+        .dispatch_runtime_record_updated(
+            &user,
+            entity_logical_name.as_str(),
+            record.record_id().as_str(),
+            previous_record
+                .as_ref()
+                .map(|runtime_record| runtime_record.data()),
+            record.data(),
+        )
+        .await
+    {
+        warn!(
+            error = %error,
+            tenant_id = %user.tenant_id(),
+            app_logical_name = %app_logical_name,
+            entity_logical_name = %entity_logical_name,
+            record_id = %record.record_id().as_str(),
+            "workflow dispatch failed after workspace record update"
+        );
+    }
+
     Ok(Json(RuntimeRecordResponse::from(record)))
 }
 
@@ -361,6 +396,17 @@ pub async fn workspace_delete_record_handler(
     Extension(user): Extension<UserIdentity>,
     Path((app_logical_name, entity_logical_name, record_id)): Path<(String, String, String)>,
 ) -> ApiResult<StatusCode> {
+    let deleted_record = state
+        .app_service
+        .get_record(
+            &user,
+            app_logical_name.as_str(),
+            entity_logical_name.as_str(),
+            record_id.as_str(),
+        )
+        .await
+        .ok();
+
     state
         .app_service
         .delete_record(
@@ -370,6 +416,28 @@ pub async fn workspace_delete_record_handler(
             record_id.as_str(),
         )
         .await?;
+
+    if let Err(error) = state
+        .workflow_service
+        .dispatch_runtime_record_deleted(
+            &user,
+            entity_logical_name.as_str(),
+            record_id.as_str(),
+            deleted_record
+                .as_ref()
+                .map(|runtime_record| runtime_record.data()),
+        )
+        .await
+    {
+        warn!(
+            error = %error,
+            tenant_id = %user.tenant_id(),
+            app_logical_name = %app_logical_name,
+            entity_logical_name = %entity_logical_name,
+            record_id = %record_id,
+            "workflow dispatch failed after workspace record deletion"
+        );
+    }
 
     if let Err(error) = crate::qrywell_sync::enqueue_runtime_record_delete(
         &state.postgres_pool,

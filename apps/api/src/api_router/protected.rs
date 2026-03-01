@@ -43,8 +43,16 @@ pub(super) fn build_protected_routes() -> Router<AppState> {
             get(handlers::workflows::list_workflow_run_attempts_handler),
         )
         .route(
+            "/api/workflows/{workflow_logical_name}/runs/{run_id}/retry-step",
+            post(handlers::workflows::retry_workflow_run_step_handler),
+        )
+        .route(
             "/api/workflows/{workflow_logical_name}/execute",
             post(handlers::workflows::execute_workflow_handler),
+        )
+        .route(
+            "/api/workflows/triggers/schedule/dispatch",
+            post(handlers::workflows::dispatch_schedule_trigger_handler),
         )
         .route(
             "/api/workspace/apps",

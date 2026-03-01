@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use qryvanta_application::{AppService, ContactBootstrapService, MetadataService, WorkflowService};
 use qryvanta_core::AppError;
+use qryvanta_infrastructure::HttpWorkflowActionDispatcher;
 use sqlx::PgPool;
 
 use crate::api_config::ApiConfig;
@@ -44,6 +45,13 @@ pub fn build_app_state(pool: PgPool, config: &ApiConfig) -> Result<AppState, App
 
     let app_runtime_service = Arc::new(metadata_service.clone());
     let workflow_runtime_service = Arc::new(metadata_service.clone());
+    let workflow_email_service = super::email::build_email_service(config)?;
+    let workflow_action_dispatcher = Arc::new(HttpWorkflowActionDispatcher::new(
+        reqwest::Client::new(),
+        workflow_email_service,
+        3,
+        250,
+    ));
 
     Ok(AppState {
         app_service: AppService::new(
@@ -69,6 +77,7 @@ pub fn build_app_state(pool: PgPool, config: &ApiConfig) -> Result<AppState, App
             repositories.audit_repository.clone(),
             config.workflow_execution_mode,
         )
+        .with_action_dispatcher(workflow_action_dispatcher)
         .with_queue_stats_cache(
             workflow_queue_stats_cache,
             config.workflow_queue_stats_cache_ttl_seconds,

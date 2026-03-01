@@ -13,6 +13,21 @@ pub enum WorkflowTrigger {
         /// Entity logical name that emits the trigger.
         entity_logical_name: String,
     },
+    /// Runtime record update event trigger.
+    RuntimeRecordUpdated {
+        /// Entity logical name that emits the trigger.
+        entity_logical_name: String,
+    },
+    /// Runtime record delete event trigger.
+    RuntimeRecordDeleted {
+        /// Entity logical name that emits the trigger.
+        entity_logical_name: String,
+    },
+    /// Scheduler tick trigger.
+    ScheduleTick {
+        /// Schedule key for the tick source (for example: hourly, daily_utc_0900).
+        schedule_key: String,
+    },
 }
 
 impl WorkflowTrigger {
@@ -22,6 +37,9 @@ impl WorkflowTrigger {
         match self {
             Self::Manual => "manual",
             Self::RuntimeRecordCreated { .. } => "runtime_record_created",
+            Self::RuntimeRecordUpdated { .. } => "runtime_record_updated",
+            Self::RuntimeRecordDeleted { .. } => "runtime_record_deleted",
+            Self::ScheduleTick { .. } => "schedule_tick",
         }
     }
 
@@ -33,6 +51,13 @@ impl WorkflowTrigger {
             Self::RuntimeRecordCreated {
                 entity_logical_name,
             } => Some(entity_logical_name.as_str()),
+            Self::RuntimeRecordUpdated {
+                entity_logical_name,
+            } => Some(entity_logical_name.as_str()),
+            Self::RuntimeRecordDeleted {
+                entity_logical_name,
+            } => Some(entity_logical_name.as_str()),
+            Self::ScheduleTick { schedule_key } => Some(schedule_key.as_str()),
         }
     }
 }
@@ -293,10 +318,25 @@ fn validate_trigger(trigger: &WorkflowTrigger) -> AppResult<()> {
         WorkflowTrigger::Manual => Ok(()),
         WorkflowTrigger::RuntimeRecordCreated {
             entity_logical_name,
+        }
+        | WorkflowTrigger::RuntimeRecordUpdated {
+            entity_logical_name,
+        }
+        | WorkflowTrigger::RuntimeRecordDeleted {
+            entity_logical_name,
         } => {
             if entity_logical_name.trim().is_empty() {
                 return Err(AppError::Validation(
                     "trigger entity_logical_name must not be empty".to_owned(),
+                ));
+            }
+
+            Ok(())
+        }
+        WorkflowTrigger::ScheduleTick { schedule_key } => {
+            if schedule_key.trim().is_empty() {
+                return Err(AppError::Validation(
+                    "schedule_tick trigger requires a non-empty schedule_key".to_owned(),
                 ));
             }
 

@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use qryvanta_core::{AppError, AppResult, TenantId};
 use qryvanta_domain::{WorkflowAction, WorkflowDefinition, WorkflowStep, WorkflowTrigger};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Workflow execution mode used by application services.
@@ -148,6 +149,27 @@ pub struct WorkflowRunAttempt {
     pub error_message: Option<String>,
     /// Attempt execution timestamp.
     pub executed_at: DateTime<Utc>,
+    /// Ordered execution trace for workflow steps in this attempt.
+    pub step_traces: Vec<WorkflowRunStepTrace>,
+}
+
+/// One step-level execution trace entry for workflow run debugging.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WorkflowRunStepTrace {
+    /// Deterministic step path within workflow graph (e.g. "0", "1.then.0").
+    pub step_path: String,
+    /// Step type that executed.
+    pub step_type: String,
+    /// Step status value.
+    pub status: String,
+    /// Input payload observed at this step.
+    pub input_payload: Value,
+    /// Output payload produced by this step.
+    pub output_payload: Value,
+    /// Optional error message for failed steps.
+    pub error_message: Option<String>,
+    /// Duration spent executing this step in milliseconds.
+    pub duration_ms: Option<u64>,
 }
 
 /// Internal run creation payload for repository implementations.

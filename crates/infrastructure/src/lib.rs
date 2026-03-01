@@ -5,6 +5,7 @@
 mod aes_secret_encryptor;
 mod argon2_password_hasher;
 mod console_email_service;
+mod http_workflow_action_dispatcher;
 mod in_memory_metadata_repository;
 mod in_memory_workflow_queue_stats_cache;
 mod postgres_app_repository;
@@ -29,6 +30,7 @@ mod totp_provider;
 pub use aes_secret_encryptor::AesSecretEncryptor;
 pub use argon2_password_hasher::Argon2PasswordHasher;
 pub use console_email_service::ConsoleEmailService;
+pub use http_workflow_action_dispatcher::HttpWorkflowActionDispatcher;
 pub use in_memory_metadata_repository::InMemoryMetadataRepository;
 pub use in_memory_workflow_queue_stats_cache::InMemoryWorkflowQueueStatsCache;
 pub use postgres_app_repository::PostgresAppRepository;
