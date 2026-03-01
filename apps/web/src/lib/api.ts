@@ -70,6 +70,8 @@ import type {
   WorkspacePublishHistoryEntryResponse,
   SaveRuntimeFieldPermissionsRequest,
   SaveWorkflowRequest,
+  RetryWorkflowStepRequest,
+  RetryWorkflowStepStrategyDto,
   TemporaryAccessGrantResponse,
   TenantRegistrationModeResponse,
   ExecuteWorkflowRequest,
@@ -82,6 +84,7 @@ import type {
   WorkflowConditionOperatorDto,
   WorkflowRunAttemptResponse,
   WorkflowRunResponse,
+  WorkflowRunStepTraceResponse,
   WorkspacePublishChecksResponse,
 } from "@qryvanta/api-types";
 
@@ -171,6 +174,8 @@ export type {
   WorkspacePublishHistoryEntryResponse,
   SaveRuntimeFieldPermissionsRequest,
   SaveWorkflowRequest,
+  RetryWorkflowStepRequest,
+  RetryWorkflowStepStrategyDto,
   TemporaryAccessGrantResponse,
   TenantRegistrationModeResponse,
   ExecuteWorkflowRequest,
@@ -183,6 +188,7 @@ export type {
   WorkflowConditionOperatorDto,
   WorkflowRunAttemptResponse,
   WorkflowRunResponse,
+  WorkflowRunStepTraceResponse,
   WorkspacePublishChecksResponse,
 };
 

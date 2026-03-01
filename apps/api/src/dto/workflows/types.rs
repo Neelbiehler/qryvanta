@@ -75,6 +75,42 @@ pub struct ExecuteWorkflowRequest {
     pub trigger_payload: Value,
 }
 
+/// Incoming payload for dispatching a schedule tick trigger.
+#[derive(Debug, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/dispatch-schedule-trigger-request.ts"
+)]
+pub struct DispatchScheduleTriggerRequest {
+    pub schedule_key: String,
+    #[ts(type = "Record<string, unknown> | null")]
+    pub payload: Option<Value>,
+}
+
+/// Incoming payload for retrying one step of an existing run.
+#[derive(Debug, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/retry-workflow-step-request.ts"
+)]
+pub struct RetryWorkflowStepRequest {
+    pub step_path: String,
+    pub strategy: RetryWorkflowStepStrategyDto,
+    pub backoff_ms: Option<u32>,
+}
+
+/// Retry strategy options for step-level retry actions.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/retry-workflow-step-strategy-dto.ts"
+)]
+pub enum RetryWorkflowStepStrategyDto {
+    Immediate,
+    Backoff,
+}
+
 /// API representation of one workflow definition.
 #[derive(Debug, Serialize, TS)]
 #[ts(
@@ -128,4 +164,23 @@ pub struct WorkflowRunAttemptResponse {
     pub status: String,
     pub error_message: Option<String>,
     pub executed_at: String,
+    pub step_traces: Vec<WorkflowRunStepTraceResponse>,
+}
+
+/// API representation of one workflow step execution trace.
+#[derive(Debug, Serialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/workflow-run-step-trace-response.ts"
+)]
+pub struct WorkflowRunStepTraceResponse {
+    pub step_path: String,
+    pub step_type: String,
+    pub status: String,
+    #[ts(type = "Record<string, unknown>")]
+    pub input_payload: Value,
+    #[ts(type = "Record<string, unknown>")]
+    pub output_payload: Value,
+    pub error_message: Option<String>,
+    pub duration_ms: Option<u64>,
 }

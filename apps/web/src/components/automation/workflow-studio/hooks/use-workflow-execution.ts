@@ -3,6 +3,8 @@ import { type FormEvent, useState } from "react";
 import {
   apiFetch,
   type ExecuteWorkflowRequest,
+  type RetryWorkflowStepRequest,
+  type RetryWorkflowStepStrategyDto,
   type WorkflowRunAttemptResponse,
 } from "@/lib/api";
 import { parseJsonObject } from "@/components/automation/workflow-studio/model";
@@ -30,6 +32,7 @@ export function useWorkflowExecution({
   >({});
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const [isExecuting, setIsExecuting] = useState(false);
+  const [isRetryingStep, setIsRetryingStep] = useState(false);
 
   async function handleExecuteWorkflow(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -88,13 +91,63 @@ export function useWorkflowExecution({
     setExpandedRunId(runId);
   }
 
+  async function retryRunStep(
+    workflowLogicalName: string,
+    runId: string,
+    stepPath: string,
+    strategy: RetryWorkflowStepStrategyDto,
+    backoffMs?: number,
+  ) {
+    onResetMessages();
+    setIsRetryingStep(true);
+
+    try {
+      const payload: RetryWorkflowStepRequest = {
+        step_path: stepPath,
+        strategy,
+        backoff_ms: typeof backoffMs === "number" ? backoffMs : null,
+      };
+      const response = await apiFetch(
+        `/api/workflows/${workflowLogicalName}/runs/${runId}/retry-step`,
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        },
+      );
+
+      if (!response.ok) {
+        const responsePayload = (await response.json()) as { message?: string };
+        onErrorMessage(responsePayload.message ?? "Unable to retry failed step.");
+        return;
+      }
+
+      setExpandedRunId(null);
+      setAttemptsByRun((current) => {
+        const next = { ...current };
+        delete next[runId];
+        return next;
+      });
+      await toggleAttempts(runId);
+      onStatusMessage("Step retry executed.");
+      onRefresh();
+    } catch (error) {
+      onErrorMessage(
+        error instanceof Error ? error.message : "Unable to retry failed step.",
+      );
+    } finally {
+      setIsRetryingStep(false);
+    }
+  }
+
   return {
     executePayload,
     setExecutePayload,
     attemptsByRun,
     expandedRunId,
     isExecuting,
+    isRetryingStep,
     handleExecuteWorkflow,
     toggleAttempts,
+    retryRunStep,
   };
 }

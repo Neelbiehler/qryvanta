@@ -1,4 +1,4 @@
-use qryvanta_application::{WorkflowRun, WorkflowRunAttempt};
+use qryvanta_application::{WorkflowRun, WorkflowRunAttempt, WorkflowRunStepTrace};
 use qryvanta_core::AppError;
 use qryvanta_domain::{
     WorkflowAction, WorkflowConditionOperator, WorkflowDefinition, WorkflowStep, WorkflowTrigger,
@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use super::types::{
     SaveWorkflowRequest, WorkflowConditionOperatorDto, WorkflowResponse,
-    WorkflowRunAttemptResponse, WorkflowRunResponse, WorkflowStepDto,
+    WorkflowRunAttemptResponse, WorkflowRunResponse, WorkflowRunStepTraceResponse, WorkflowStepDto,
 };
 
 impl TryFrom<SaveWorkflowRequest> for qryvanta_application::SaveWorkflowInput {
@@ -22,6 +22,29 @@ impl TryFrom<SaveWorkflowRequest> for qryvanta_application::SaveWorkflowInput {
                     AppError::Validation(
                         "trigger_entity_logical_name is required for runtime_record_created"
                             .to_owned(),
+                    )
+                })?,
+            },
+            "runtime_record_updated" => WorkflowTrigger::RuntimeRecordUpdated {
+                entity_logical_name: value.trigger_entity_logical_name.ok_or_else(|| {
+                    AppError::Validation(
+                        "trigger_entity_logical_name is required for runtime_record_updated"
+                            .to_owned(),
+                    )
+                })?,
+            },
+            "runtime_record_deleted" => WorkflowTrigger::RuntimeRecordDeleted {
+                entity_logical_name: value.trigger_entity_logical_name.ok_or_else(|| {
+                    AppError::Validation(
+                        "trigger_entity_logical_name is required for runtime_record_deleted"
+                            .to_owned(),
+                    )
+                })?,
+            },
+            "schedule_tick" => WorkflowTrigger::ScheduleTick {
+                schedule_key: value.trigger_entity_logical_name.ok_or_else(|| {
+                    AppError::Validation(
+                        "trigger_entity_logical_name is required for schedule_tick".to_owned(),
                     )
                 })?,
             },
@@ -83,6 +106,21 @@ impl From<WorkflowDefinition> for WorkflowResponse {
                 "runtime_record_created".to_owned(),
                 Some(entity_logical_name.clone()),
             ),
+            WorkflowTrigger::RuntimeRecordUpdated {
+                entity_logical_name,
+            } => (
+                "runtime_record_updated".to_owned(),
+                Some(entity_logical_name.clone()),
+            ),
+            WorkflowTrigger::RuntimeRecordDeleted {
+                entity_logical_name,
+            } => (
+                "runtime_record_deleted".to_owned(),
+                Some(entity_logical_name.clone()),
+            ),
+            WorkflowTrigger::ScheduleTick { schedule_key } => {
+                ("schedule_tick".to_owned(), Some(schedule_key.clone()))
+            }
         };
 
         let (action_type, action_entity_logical_name, action_payload) = match value.action() {
@@ -146,6 +184,25 @@ impl From<WorkflowRunAttempt> for WorkflowRunAttemptResponse {
             status: value.status.as_str().to_owned(),
             error_message: value.error_message,
             executed_at: value.executed_at.to_rfc3339(),
+            step_traces: value
+                .step_traces
+                .into_iter()
+                .map(WorkflowRunStepTraceResponse::from)
+                .collect(),
+        }
+    }
+}
+
+impl From<WorkflowRunStepTrace> for WorkflowRunStepTraceResponse {
+    fn from(value: WorkflowRunStepTrace) -> Self {
+        Self {
+            step_path: value.step_path,
+            step_type: value.step_type,
+            status: value.status,
+            input_payload: value.input_payload,
+            output_payload: value.output_payload,
+            error_message: value.error_message,
+            duration_ms: value.duration_ms,
         }
     }
 }

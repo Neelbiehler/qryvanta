@@ -4,8 +4,9 @@ use axum::http::StatusCode;
 use qryvanta_core::UserIdentity;
 
 use crate::dto::{
-    ExecuteWorkflowRequest, SaveWorkflowRequest, WorkflowResponse, WorkflowRunAttemptResponse,
-    WorkflowRunResponse,
+    DispatchScheduleTriggerRequest, ExecuteWorkflowRequest, RetryWorkflowStepRequest,
+    RetryWorkflowStepStrategyDto, SaveWorkflowRequest, WorkflowResponse,
+    WorkflowRunAttemptResponse, WorkflowRunResponse,
 };
 use crate::error::ApiResult;
 use crate::state::AppState;
@@ -63,6 +64,19 @@ pub async fn execute_workflow_handler(
     Ok(Json(WorkflowRunResponse::from(run)))
 }
 
+pub async fn dispatch_schedule_trigger_handler(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserIdentity>,
+    Json(payload): Json<DispatchScheduleTriggerRequest>,
+) -> ApiResult<Json<usize>> {
+    let dispatched = state
+        .workflow_service
+        .dispatch_schedule_tick(&user, payload.schedule_key.as_str(), payload.payload)
+        .await?;
+
+    Ok(Json(dispatched))
+}
+
 pub async fn list_workflow_runs_handler(
     State(state): State<AppState>,
     Extension(user): Extension<UserIdentity>,
@@ -100,4 +114,28 @@ pub async fn list_workflow_run_attempts_handler(
         .collect();
 
     Ok(Json(attempts))
+}
+
+pub async fn retry_workflow_run_step_handler(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserIdentity>,
+    Path((workflow_logical_name, run_id)): Path<(String, String)>,
+    Json(payload): Json<RetryWorkflowStepRequest>,
+) -> ApiResult<Json<WorkflowRunResponse>> {
+    if matches!(payload.strategy, RetryWorkflowStepStrategyDto::Backoff) {
+        let delay_ms = payload.backoff_ms.unwrap_or(800).clamp(200, 10_000);
+        tokio::time::sleep(std::time::Duration::from_millis(u64::from(delay_ms))).await;
+    }
+
+    let run = state
+        .workflow_service
+        .retry_run_step(
+            &user,
+            workflow_logical_name.as_str(),
+            run_id.as_str(),
+            payload.step_path.as_str(),
+        )
+        .await?;
+
+    Ok(Json(WorkflowRunResponse::from(run)))
 }

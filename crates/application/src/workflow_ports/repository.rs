@@ -104,6 +104,9 @@ pub trait WorkflowRepository: Send + Sync {
         query: WorkflowRunListQuery,
     ) -> AppResult<Vec<WorkflowRun>>;
 
+    /// Returns one workflow run by run id.
+    async fn find_run(&self, tenant_id: TenantId, run_id: &str) -> AppResult<Option<WorkflowRun>>;
+
     /// Lists attempts for one run.
     async fn list_run_attempts(
         &self,

@@ -7,16 +7,17 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use qryvanta_application::{
-    AuthorizationService, MetadataService, WorkflowClaimPartition, WorkflowExecutionMode,
-    WorkflowService, WorkflowWorkerLease, WorkflowWorkerLeaseCoordinator,
+    AuthorizationService, EmailService, MetadataService, WorkflowClaimPartition,
+    WorkflowExecutionMode, WorkflowService, WorkflowWorkerLease, WorkflowWorkerLeaseCoordinator,
 };
 use qryvanta_core::{AppError, AppResult, TenantId};
 use qryvanta_domain::{
     WorkflowAction, WorkflowDefinition, WorkflowDefinitionInput, WorkflowStep, WorkflowTrigger,
 };
 use qryvanta_infrastructure::{
-    PostgresAuditRepository, PostgresAuthorizationRepository, PostgresMetadataRepository,
-    PostgresWorkflowRepository, RedisWorkflowWorkerLeaseCoordinator,
+    ConsoleEmailService, HttpWorkflowActionDispatcher, PostgresAuditRepository,
+    PostgresAuthorizationRepository, PostgresMetadataRepository, PostgresWorkflowRepository,
+    RedisWorkflowWorkerLeaseCoordinator, SmtpEmailConfig, SmtpEmailService,
 };
 
 use reqwest::header;
@@ -392,6 +393,13 @@ fn build_workflow_service(pool: PgPool) -> WorkflowService {
         authorization_service.clone(),
         audit_repository.clone(),
     ));
+    let workflow_email_service = build_worker_email_service();
+    let workflow_action_dispatcher = Arc::new(HttpWorkflowActionDispatcher::new(
+        reqwest::Client::new(),
+        workflow_email_service,
+        3,
+        250,
+    ));
 
     WorkflowService::new(
         authorization_service,
@@ -400,6 +408,51 @@ fn build_workflow_service(pool: PgPool) -> WorkflowService {
         audit_repository,
         WorkflowExecutionMode::Queued,
     )
+    .with_action_dispatcher(workflow_action_dispatcher)
+}
+
+fn build_worker_email_service() -> Arc<dyn EmailService> {
+    let provider = env::var("EMAIL_PROVIDER")
+        .unwrap_or_else(|_| "console".to_owned())
+        .to_lowercase();
+
+    if provider == "smtp" {
+        let host = env::var("SMTP_HOST").ok();
+        let port = env::var("SMTP_PORT")
+            .ok()
+            .and_then(|value| value.parse::<u16>().ok());
+        let username = env::var("SMTP_USERNAME").ok();
+        let password = env::var("SMTP_PASSWORD").ok();
+        let from_address = env::var("SMTP_FROM_ADDRESS").ok();
+
+        if let (Some(host), Some(port), Some(username), Some(password), Some(from_address)) =
+            (host, port, username, password, from_address)
+        {
+            let config = SmtpEmailConfig {
+                host,
+                port,
+                username,
+                password,
+                from_address,
+            };
+
+            match SmtpEmailService::new(config) {
+                Ok(service) => return Arc::new(service),
+                Err(error) => {
+                    warn!(
+                        error = %error,
+                        "failed to initialize SMTP email service for worker; falling back to console"
+                    );
+                }
+            }
+        } else {
+            warn!(
+                "EMAIL_PROVIDER=smtp but SMTP_* environment variables are incomplete; falling back to console"
+            );
+        }
+    }
+
+    Arc::new(ConsoleEmailService::new())
 }
 
 async fn claim_jobs(

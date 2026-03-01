@@ -3,7 +3,7 @@ use qryvanta_application::{
     ClaimedWorkflowJob, CompleteWorkflowRunInput, CreateWorkflowRunInput, WorkflowClaimPartition,
     WorkflowQueueStats, WorkflowQueueStatsQuery, WorkflowRepository, WorkflowRun,
     WorkflowRunAttempt, WorkflowRunAttemptStatus, WorkflowRunListQuery, WorkflowRunStatus,
-    WorkflowWorkerHeartbeatInput,
+    WorkflowRunStepTrace, WorkflowWorkerHeartbeatInput,
 };
 use qryvanta_core::{AppError, AppResult, TenantId};
 use qryvanta_domain::{
@@ -62,6 +62,7 @@ struct WorkflowRunAttemptRow {
     status: String,
     error_message: Option<String>,
     executed_at: chrono::DateTime<chrono::Utc>,
+    step_traces: Value,
 }
 
 #[derive(Debug, FromRow)]
@@ -210,6 +211,10 @@ impl WorkflowRepository for PostgresWorkflowRepository {
         self.list_runs_impl(tenant_id, query).await
     }
 
+    async fn find_run(&self, tenant_id: TenantId, run_id: &str) -> AppResult<Option<WorkflowRun>> {
+        self.find_run_impl(tenant_id, run_id).await
+    }
+
     async fn list_run_attempts(
         &self,
         tenant_id: TenantId,
@@ -265,12 +270,35 @@ fn workflow_steps_from_json(value: Option<Value>) -> AppResult<Option<Vec<Workfl
     })
 }
 
+fn workflow_step_traces_to_json(step_traces: &[WorkflowRunStepTrace]) -> AppResult<Value> {
+    serde_json::to_value(step_traces).map_err(|error| {
+        AppError::Validation(format!("failed to serialize workflow step traces: {error}"))
+    })
+}
+
+fn workflow_step_traces_from_json(value: Value) -> AppResult<Vec<WorkflowRunStepTrace>> {
+    serde_json::from_value(value).map_err(|error| {
+        AppError::Validation(format!(
+            "failed to deserialize workflow step traces: {error}"
+        ))
+    })
+}
+
 fn workflow_trigger_parts(trigger: &WorkflowTrigger) -> (&'static str, Option<&str>) {
     match trigger {
         WorkflowTrigger::Manual => ("manual", None),
         WorkflowTrigger::RuntimeRecordCreated {
             entity_logical_name,
         } => ("runtime_record_created", Some(entity_logical_name.as_str())),
+        WorkflowTrigger::RuntimeRecordUpdated {
+            entity_logical_name,
+        } => ("runtime_record_updated", Some(entity_logical_name.as_str())),
+        WorkflowTrigger::RuntimeRecordDeleted {
+            entity_logical_name,
+        } => ("runtime_record_deleted", Some(entity_logical_name.as_str())),
+        WorkflowTrigger::ScheduleTick { schedule_key } => {
+            ("schedule_tick", Some(schedule_key.as_str()))
+        }
     }
 }
 
@@ -306,6 +334,41 @@ fn workflow_trigger_from_parts(
 
             Ok(WorkflowTrigger::RuntimeRecordCreated {
                 entity_logical_name: entity_logical_name.to_owned(),
+            })
+        }
+        "runtime_record_updated" => {
+            let entity_logical_name = trigger_entity_logical_name.ok_or_else(|| {
+                AppError::Validation(
+                    "runtime_record_updated trigger requires trigger_entity_logical_name"
+                        .to_owned(),
+                )
+            })?;
+
+            Ok(WorkflowTrigger::RuntimeRecordUpdated {
+                entity_logical_name: entity_logical_name.to_owned(),
+            })
+        }
+        "runtime_record_deleted" => {
+            let entity_logical_name = trigger_entity_logical_name.ok_or_else(|| {
+                AppError::Validation(
+                    "runtime_record_deleted trigger requires trigger_entity_logical_name"
+                        .to_owned(),
+                )
+            })?;
+
+            Ok(WorkflowTrigger::RuntimeRecordDeleted {
+                entity_logical_name: entity_logical_name.to_owned(),
+            })
+        }
+        "schedule_tick" => {
+            let schedule_key = trigger_entity_logical_name.ok_or_else(|| {
+                AppError::Validation(
+                    "schedule_tick trigger requires trigger_entity_logical_name".to_owned(),
+                )
+            })?;
+
+            Ok(WorkflowTrigger::ScheduleTick {
+                schedule_key: schedule_key.to_owned(),
             })
         }
         _ => Err(AppError::Validation(format!(
@@ -401,5 +464,6 @@ fn workflow_run_attempt_from_row(row: WorkflowRunAttemptRow) -> AppResult<Workfl
         status: WorkflowRunAttemptStatus::parse(row.status.as_str())?,
         error_message: row.error_message,
         executed_at: row.executed_at,
+        step_traces: workflow_step_traces_from_json(row.step_traces)?,
     })
 }

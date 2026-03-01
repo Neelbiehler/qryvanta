@@ -1,4 +1,18 @@
 use super::*;
+use crate::workflow_ports::WorkflowRunStepTrace;
+
+mod actions;
+mod trace;
+mod values;
+
+#[derive(Clone, Copy)]
+struct WorkflowExecutionContext<'a> {
+    trigger_payload: &'a Value,
+    trigger_type: &'a str,
+    trigger_entity_logical_name: Option<&'a str>,
+    run_id: &'a str,
+    attempt_number: i32,
+}
 
 impl WorkflowService {
     pub(super) async fn execute_workflow_definition(
@@ -63,19 +77,33 @@ impl WorkflowService {
         run_id: &str,
         trigger_payload: Value,
     ) -> AppResult<WorkflowRun> {
-        let action_plan = self.resolve_action_plan(workflow, &trigger_payload)?;
         let mut last_error: Option<String> = None;
 
         for attempt_number in 1..=i32::from(workflow.max_attempts()) {
-            let result = self
-                .execute_action_plan(actor, action_plan.as_slice())
+            let context = WorkflowExecutionContext {
+                trigger_payload: &trigger_payload,
+                trigger_type: workflow.trigger().trigger_type(),
+                trigger_entity_logical_name: workflow.trigger().entity_logical_name(),
+                run_id,
+                attempt_number,
+            };
+            let attempt_result = self
+                .execute_workflow_steps_with_trace(actor, workflow, context)
                 .await;
-            let (status, error_message) = match result {
-                Ok(()) => (WorkflowRunAttemptStatus::Succeeded, None),
-                Err(error) => {
-                    let message = error.to_string();
+            let (status, error_message, step_traces) = match attempt_result {
+                Ok(step_traces) => (
+                    WorkflowRunAttemptStatus::Succeeded,
+                    None::<String>,
+                    step_traces,
+                ),
+                Err(error_with_trace) => {
+                    let message = error_with_trace.error.to_string();
                     last_error = Some(message.clone());
-                    (WorkflowRunAttemptStatus::Failed, Some(message))
+                    (
+                        WorkflowRunAttemptStatus::Failed,
+                        Some(message),
+                        error_with_trace.step_traces,
+                    )
                 }
             };
 
@@ -88,6 +116,7 @@ impl WorkflowService {
                         status,
                         error_message: error_message.clone(),
                         executed_at: Utc::now(),
+                        step_traces,
                     },
                 )
                 .await?;
@@ -128,150 +157,77 @@ impl WorkflowService {
         Ok(completed_run)
     }
 
-    async fn execute_action_plan(
+    pub(super) async fn retry_step_for_run(
         &self,
         actor: &UserIdentity,
-        action_plan: &[WorkflowAction],
-    ) -> AppResult<()> {
-        for action in action_plan {
-            self.execute_action(actor, action).await?;
-        }
-
-        Ok(())
-    }
-
-    fn resolve_action_plan(
-        &self,
         workflow: &WorkflowDefinition,
-        trigger_payload: &Value,
-    ) -> AppResult<Vec<WorkflowAction>> {
-        let Some(steps) = workflow.steps() else {
-            return Ok(vec![workflow.action().clone()]);
+        run: &WorkflowRun,
+        step_path: &str,
+    ) -> AppResult<WorkflowRun> {
+        let attempt_number = run.attempts + 1;
+        let mut traces = Vec::new();
+
+        let result = self
+            .execute_single_step_path_with_trace(
+                actor,
+                workflow,
+                WorkflowExecutionContext {
+                    trigger_payload: &run.trigger_payload,
+                    trigger_type: workflow.trigger().trigger_type(),
+                    trigger_entity_logical_name: workflow.trigger().entity_logical_name(),
+                    run_id: run.run_id.as_str(),
+                    attempt_number,
+                },
+                step_path,
+                &mut traces,
+            )
+            .await;
+
+        let (attempt_status, error_message, run_status) = match result {
+            Ok(()) => (
+                WorkflowRunAttemptStatus::Succeeded,
+                None,
+                WorkflowRunStatus::Succeeded,
+            ),
+            Err(error) => {
+                let message = error.to_string();
+                (
+                    WorkflowRunAttemptStatus::Failed,
+                    Some(message),
+                    WorkflowRunStatus::DeadLettered,
+                )
+            }
         };
 
-        let mut action_plan = Vec::new();
-        Self::append_step_actions(steps, trigger_payload, &mut action_plan)?;
-        Ok(action_plan)
-    }
+        self.repository
+            .append_run_attempt(
+                actor.tenant_id(),
+                WorkflowRunAttempt {
+                    run_id: run.run_id.clone(),
+                    attempt_number,
+                    status: attempt_status,
+                    error_message: error_message.clone(),
+                    executed_at: Utc::now(),
+                    step_traces: traces,
+                },
+            )
+            .await?;
 
-    fn append_step_actions(
-        steps: &[WorkflowStep],
-        trigger_payload: &Value,
-        action_plan: &mut Vec<WorkflowAction>,
-    ) -> AppResult<()> {
-        for step in steps {
-            match step {
-                WorkflowStep::LogMessage { message } => {
-                    action_plan.push(WorkflowAction::LogMessage {
-                        message: message.clone(),
-                    });
-                }
-                WorkflowStep::CreateRuntimeRecord {
-                    entity_logical_name,
-                    data,
-                } => {
-                    action_plan.push(WorkflowAction::CreateRuntimeRecord {
-                        entity_logical_name: entity_logical_name.clone(),
-                        data: data.clone(),
-                    });
-                }
-                WorkflowStep::Condition {
-                    field_path,
-                    operator,
-                    value,
-                    then_label: _,
-                    else_label: _,
-                    then_steps,
-                    else_steps,
-                } => {
-                    let passes = Self::evaluate_condition(
-                        trigger_payload,
-                        field_path.as_str(),
-                        *operator,
-                        value.as_ref(),
-                    )?;
+        let completed_run = self
+            .repository
+            .complete_run(
+                actor.tenant_id(),
+                CompleteWorkflowRunInput {
+                    run_id: run.run_id.clone(),
+                    status: run_status,
+                    attempts: attempt_number,
+                    dead_letter_reason: error_message,
+                },
+            )
+            .await?;
 
-                    if passes {
-                        Self::append_step_actions(
-                            then_steps.as_slice(),
-                            trigger_payload,
-                            action_plan,
-                        )?;
-                    } else {
-                        Self::append_step_actions(
-                            else_steps.as_slice(),
-                            trigger_payload,
-                            action_plan,
-                        )?;
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn evaluate_condition(
-        trigger_payload: &Value,
-        field_path: &str,
-        operator: WorkflowConditionOperator,
-        value: Option<&Value>,
-    ) -> AppResult<bool> {
-        let selected_value = Self::payload_value_by_path(trigger_payload, field_path);
-        match operator {
-            WorkflowConditionOperator::Exists => Ok(selected_value.is_some()),
-            WorkflowConditionOperator::Equals => {
-                let expected_value = value.ok_or_else(|| {
-                    AppError::Validation(
-                        "workflow condition equals operator requires a comparison value".to_owned(),
-                    )
-                })?;
-
-                Ok(selected_value == Some(expected_value))
-            }
-            WorkflowConditionOperator::NotEquals => {
-                let expected_value = value.ok_or_else(|| {
-                    AppError::Validation(
-                        "workflow condition not_equals operator requires a comparison value"
-                            .to_owned(),
-                    )
-                })?;
-
-                Ok(selected_value != Some(expected_value))
-            }
-        }
-    }
-
-    fn payload_value_by_path<'a>(payload: &'a Value, field_path: &str) -> Option<&'a Value> {
-        let mut current_value = payload;
-        for segment in field_path.split('.') {
-            if segment.is_empty() {
-                return None;
-            }
-
-            current_value = current_value.as_object()?.get(segment)?;
-        }
-
-        Some(current_value)
-    }
-
-    async fn execute_action(&self, actor: &UserIdentity, action: &WorkflowAction) -> AppResult<()> {
-        match action {
-            WorkflowAction::LogMessage { .. } => Ok(()),
-            WorkflowAction::CreateRuntimeRecord {
-                entity_logical_name,
-                data,
-            } => {
-                self.runtime_record_service
-                    .create_runtime_record_unchecked(
-                        actor,
-                        entity_logical_name.as_str(),
-                        data.clone(),
-                    )
-                    .await?;
-                Ok(())
-            }
-        }
+        self.append_run_audit(actor, &completed_run).await?;
+        Ok(completed_run)
     }
 
     async fn append_run_audit(&self, actor: &UserIdentity, run: &WorkflowRun) -> AppResult<()> {
@@ -291,4 +247,10 @@ impl WorkflowService {
             })
             .await
     }
+}
+
+#[derive(Debug)]
+struct WorkflowExecutionErrorWithTrace {
+    error: AppError,
+    step_traces: Vec<WorkflowRunStepTrace>,
 }

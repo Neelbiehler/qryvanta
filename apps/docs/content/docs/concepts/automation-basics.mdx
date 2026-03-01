@@ -11,7 +11,30 @@ A workflow starts from a trigger and executes action steps.
 - Manual execution
 - Runtime record created
 
-More trigger types are planned and will be documented when released.
+The workflow studio now ships trigger presets so makers can configure real event sources faster:
+
+- Record created (generic entity)
+- Webhook event
+- Inbound email
+- Form submission
+- Hourly schedule tick
+- Daily schedule tick
+- Approval requested
+
+These presets map to native runtime trigger types (`runtime_record_*` and `schedule_tick`) and execute directly through the workflow runtime.
+
+More native trigger types are planned and will be documented when released.
+
+Backend trigger coverage now includes:
+
+- `runtime_record_created`
+- `runtime_record_updated`
+- `runtime_record_deleted`
+- `schedule_tick`
+
+`schedule_tick` can be dispatched through the protected API endpoint:
+
+- `POST /api/workflows/triggers/schedule/dispatch`
 
 ## Execution Modes
 
@@ -28,6 +51,70 @@ Current trigger coverage is manual run and record-created events.
 - Failed terminal runs are stored for later inspection.
 - Run and attempt history stay in tenant scope.
 - Queue stats can be queried for operator dashboards.
+
+## Maker Studio Workflow Building
+
+The Maker automation canvas now includes workflow-authoring guardrails similar to low-code flow designers:
+
+- **Flow Checker** validates trigger and step configuration before save.
+- Validation issues are clickable and focus the trigger or step that needs fixing.
+- Save is blocked while checker errors are present, so invalid flow payloads do not get posted.
+- **Duplicate Step** lets makers clone a selected action or condition subtree for faster authoring.
+- A low-code guidance strip highlights the next recommended action while you build.
+- The quick action picker (`A`) uses plain-language insertion targets to reduce routing confusion.
+- Action picker and library now render grouped, icon-based action cards for faster scanning.
+- Inspector panels include an expression builder with token browser, operators, and preview.
+- Condition nodes expose direct on-canvas `+ Yes` and `+ No` branch insertion buttons.
+- Action picker includes contextual recommended actions for faster step insertion.
+- Step settings validate inline and expose advanced fields behind a toggle.
+- Dynamic tokens selected in settings are shown as visual chips to separate mapped data from static text.
+- Action templates now include real operational patterns (notifications, webhook dispatch, ownership routing, approvals, incident tickets, feed updates, and audit entries).
+- Workflow builder now auto-loads entity metadata so trigger entity selection, action entity inputs, condition field paths, and trigger payload tokens can be selected from discovered entities and published fields.
+- Condition and data-mapping editors include compact field pickers so makers can click field paths and auto-insert tokenized JSON mappings instead of typing paths manually.
+- Create-record cards surface clickable mapped-field badges that jump focus to the mapped key in Data JSON for faster review and edits.
+
+### Real-use Action Templates
+
+The action catalog now includes business-ready templates inspired by enterprise flow builders:
+
+- **Notifications:** send email, send Slack/Teams-style chat notifications.
+- **Integrations:** HTTP request queue records and outbound webhook dispatch records.
+- **Operations:** create audit entries and team feed updates.
+- **Data Ops:** follow-up tasks, ownership assignment, approval requests, incident tickets, contact upsert queue records.
+
+Each template is still represented as executable workflow steps (`log_message`, `create_runtime_record`, and `condition`) so runs remain fully traceable in the current execution engine.
+
+### Runtime Execution Details
+
+- Trigger dispatch now includes record context (`record_id`, `entity_logical_name`, and full record `data`) so action templates can use real event values.
+- Step payloads support runtime token interpolation for `{{trigger.*}}`, `{{trigger.payload.*}}`, `{{run.id}}`, `{{run.attempt}}`, and `{{now.iso}}`.
+- Interpolation runs before action execution, so queued integration-style records (email outbox, webhook dispatch, task routing, approvals) are persisted with resolved values.
+- Log-message actions are captured in per-step run traces for execution visibility.
+- Integration actions support real dispatch adapters with retry and idempotency semantics:
+  - `integration_http_request` -> outbound HTTP dispatch
+  - `webhook_dispatch` -> outbound webhook delivery
+  - `email_outbox` -> outbound email delivery
+- Idempotency keys are derived from run and step path (`<run_id>:<step_path>`) so workflow retries do not duplicate external side effects when downstream providers honor idempotency headers.
+
+## Observability and Reliability
+
+- Step traces include status, input/output payloads, error message, and execution duration.
+- Failed actions are retried up to workflow `max_attempts` and recorded in run attempt history.
+- Dead-lettered runs retain terminal error reason for operator triage.
+- External dispatch actions include workflow run and step headers for cross-system tracing (`Idempotency-Key`, run id, step path).
+
+### Power-Automate Style Canvas
+
+- The designer is a **top-down linear canvas** with Trigger first and actions below.
+- **Floating plus buttons** are shown contextually for first-step, next-step, and branch-step insertion.
+- Step configuration remains in a **side settings panel** to keep the main canvas focused.
+- Logic steps are rendered as **scoped containers** with visible Yes/No branches.
+- Expression editor tokens include trigger/runtime values and outputs from prior steps.
+- When run attempts are loaded, step cards show per-step status (`succeeded` / `failed`) directly on the canvas.
+- Selecting a step shows run-time input/output payloads in Step Settings for in-place debugging.
+- Step traces now include per-step duration (ms) to surface slow steps directly in run history and canvas badges.
+- Failed step cards expose a retry action that retries from the selected step path for the same run context.
+- Retry actions now support mode selection directly on failed cards and in step debug (`Immediate`, `Backoff 0.8s`, `Backoff 2s`, `Backoff 5s`).
 
 ## Operational Checks
 

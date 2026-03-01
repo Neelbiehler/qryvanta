@@ -2,9 +2,13 @@ mod conversions;
 mod types;
 
 pub use types::{
-    ExecuteWorkflowRequest, SaveWorkflowRequest, WorkflowResponse, WorkflowRunAttemptResponse,
-    WorkflowRunResponse,
+    DispatchScheduleTriggerRequest, ExecuteWorkflowRequest, RetryWorkflowStepRequest,
+    RetryWorkflowStepStrategyDto, SaveWorkflowRequest, WorkflowResponse,
+    WorkflowRunAttemptResponse, WorkflowRunResponse,
 };
+
+#[cfg(test)]
+pub use types::WorkflowRunStepTraceResponse;
 
 #[cfg(test)]
 pub use types::{WorkflowConditionOperatorDto, WorkflowStepDto};

@@ -2,17 +2,12 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { CheckCircle, Circle, Clock, XCircle, Loader, AlertCircle, ChevronRight } from "lucide-react";
 
 import {
   Button,
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
   Input,
   Select,
-  StatusBadge,
   buttonVariants,
 } from "@qryvanta/ui";
 
@@ -57,24 +52,18 @@ const DEFAULT_METRICS: WorkflowMetrics = {
 };
 
 function classifyRunCategory(status: string): LastRunCategory {
-  if (status === "succeeded") {
-    return "succeeded";
-  }
-
-  if (status === "dead_lettered" || status === "failed") {
-    return "failed";
-  }
-
-  if (
-    status === "running" ||
-    status === "pending" ||
-    status === "leased" ||
-    status === "queued"
-  ) {
-    return "running";
-  }
-
+  if (status === "succeeded") return "succeeded";
+  if (status === "dead_lettered" || status === "failed") return "failed";
+  if (status === "running" || status === "pending" || status === "leased" || status === "queued") return "running";
   return "other";
+}
+
+function RunStatusIcon({ category }: { category: LastRunCategory }) {
+  if (category === "succeeded") return <CheckCircle className="size-3.5 text-emerald-500" />;
+  if (category === "failed") return <XCircle className="size-3.5 text-red-500" />;
+  if (category === "running") return <Loader className="size-3.5 animate-spin text-blue-500" />;
+  if (category === "none") return <Circle className="size-3.5 text-zinc-300" />;
+  return <AlertCircle className="size-3.5 text-amber-500" />;
 }
 
 export function WorkflowLibraryPanel({ workflows, runs }: WorkflowLibraryPanelProps) {
@@ -98,17 +87,11 @@ export function WorkflowLibraryPanel({ workflows, runs }: WorkflowLibraryPanelPr
       const category = classifyRunCategory(run.status);
 
       current.runCount += 1;
-      if (category === "failed") {
-        current.failedCount += 1;
-      } else if (category === "succeeded") {
-        current.succeededCount += 1;
-      } else if (category === "running") {
-        current.runningCount += 1;
-      }
+      if (category === "failed") current.failedCount += 1;
+      else if (category === "succeeded") current.succeededCount += 1;
+      else if (category === "running") current.runningCount += 1;
 
-      const runTimestamp = Number.isFinite(Date.parse(run.started_at))
-        ? Date.parse(run.started_at)
-        : 0;
+      const runTimestamp = Number.isFinite(Date.parse(run.started_at)) ? Date.parse(run.started_at) : 0;
       if (runTimestamp >= current.latestRunTimestamp) {
         current.latestRun = run;
         current.latestRunTimestamp = runTimestamp;
@@ -124,286 +107,239 @@ export function WorkflowLibraryPanel({ workflows, runs }: WorkflowLibraryPanelPr
   const filteredWorkflows = useMemo(() => {
     const base = workflows.filter((workflow) => {
       if (normalizedQuery.length > 0) {
-        const haystack = `${workflow.display_name} ${workflow.logical_name} ${workflow.description ?? ""}`
-          .toLowerCase();
-        if (!haystack.includes(normalizedQuery)) {
-          return false;
-        }
+        const haystack = `${workflow.display_name} ${workflow.logical_name} ${workflow.description ?? ""}`.toLowerCase();
+        if (!haystack.includes(normalizedQuery)) return false;
       }
 
-      if (enabledFilter === "enabled" && !workflow.is_enabled) {
-        return false;
-      }
-
-      if (enabledFilter === "disabled" && workflow.is_enabled) {
-        return false;
-      }
-
-      if (triggerFilter !== "all" && workflow.trigger_type !== triggerFilter) {
-        return false;
-      }
+      if (enabledFilter === "enabled" && !workflow.is_enabled) return false;
+      if (enabledFilter === "disabled" && workflow.is_enabled) return false;
+      if (triggerFilter !== "all" && workflow.trigger_type !== triggerFilter) return false;
 
       const metrics = metricsByWorkflow.get(workflow.logical_name) ?? DEFAULT_METRICS;
-      if (lastRunFilter !== "all" && metrics.latestRunCategory !== lastRunFilter) {
-        return false;
-      }
+      if (lastRunFilter !== "all" && metrics.latestRunCategory !== lastRunFilter) return false;
 
       return true;
     });
 
     const sorted = [...base];
     sorted.sort((left, right) => {
-      const leftMetrics = metricsByWorkflow.get(left.logical_name) ?? DEFAULT_METRICS;
-      const rightMetrics = metricsByWorkflow.get(right.logical_name) ?? DEFAULT_METRICS;
+      const lm = metricsByWorkflow.get(left.logical_name) ?? DEFAULT_METRICS;
+      const rm = metricsByWorkflow.get(right.logical_name) ?? DEFAULT_METRICS;
 
-      if (sortMode === "last_run_desc") {
-        return rightMetrics.latestRunTimestamp - leftMetrics.latestRunTimestamp;
-      }
-
-      if (sortMode === "name_asc") {
-        return left.display_name.localeCompare(right.display_name);
-      }
-
-      if (sortMode === "name_desc") {
-        return right.display_name.localeCompare(left.display_name);
-      }
-
+      if (sortMode === "last_run_desc") return rm.latestRunTimestamp - lm.latestRunTimestamp;
+      if (sortMode === "name_asc") return left.display_name.localeCompare(right.display_name);
+      if (sortMode === "name_desc") return right.display_name.localeCompare(left.display_name);
       if (sortMode === "failures_desc") {
-        const byFailures = rightMetrics.failedCount - leftMetrics.failedCount;
-        return byFailures !== 0
-          ? byFailures
-          : left.display_name.localeCompare(right.display_name);
+        const d = rm.failedCount - lm.failedCount;
+        return d !== 0 ? d : left.display_name.localeCompare(right.display_name);
       }
-
-      const byRuns = rightMetrics.runCount - leftMetrics.runCount;
-      return byRuns !== 0
-        ? byRuns
-        : left.display_name.localeCompare(right.display_name);
+      const d = rm.runCount - lm.runCount;
+      return d !== 0 ? d : left.display_name.localeCompare(right.display_name);
     });
 
     return sorted;
-  }, [
-    enabledFilter,
-    lastRunFilter,
-    metricsByWorkflow,
-    normalizedQuery,
-    sortMode,
-    triggerFilter,
-    workflows,
-  ]);
-
-  const visibleRunSummary = useMemo(() => {
-    return filteredWorkflows.reduce(
-      (accumulator, workflow) => {
-        const metrics = metricsByWorkflow.get(workflow.logical_name) ?? DEFAULT_METRICS;
-        accumulator.totalRuns += metrics.runCount;
-        accumulator.failedRuns += metrics.failedCount;
-        accumulator.runningRuns += metrics.runningCount;
-        accumulator.succeededRuns += metrics.succeededCount;
-        return accumulator;
-      },
-      {
-        totalRuns: 0,
-        failedRuns: 0,
-        runningRuns: 0,
-        succeededRuns: 0,
-      },
-    );
-  }, [filteredWorkflows, metricsByWorkflow]);
+  }, [enabledFilter, lastRunFilter, metricsByWorkflow, normalizedQuery, sortMode, triggerFilter, workflows]);
 
   const triggerOptions = useMemo(() => {
-    const values = new Set(workflows.map((workflow) => workflow.trigger_type));
+    const values = new Set(workflows.map((w) => w.trigger_type));
     return Array.from(values).sort();
   }, [workflows]);
 
+  const totalFailures = useMemo(() => {
+    return filteredWorkflows.reduce((sum, w) => {
+      return sum + (metricsByWorkflow.get(w.logical_name)?.failedCount ?? 0);
+    }, 0);
+  }, [filteredWorkflows, metricsByWorkflow]);
+
+  function resetFilters() {
+    setQuery("");
+    setEnabledFilter("all");
+    setTriggerFilter("all");
+    setLastRunFilter("all");
+    setSortMode("last_run_desc");
+  }
+
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Workflow Library</CardTitle>
-          <CardDescription>
-            Browse workflows, filter operational health, and open dedicated edit or history workspaces.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-center gap-2">
-          <StatusBadge tone="neutral">
-            Showing {filteredWorkflows.length} / {workflows.length}
-          </StatusBadge>
-          <StatusBadge tone="neutral">Runs {visibleRunSummary.totalRuns}</StatusBadge>
-          <StatusBadge tone="neutral">Succeeded {visibleRunSummary.succeededRuns}</StatusBadge>
-          <StatusBadge tone="neutral">Running {visibleRunSummary.runningRuns}</StatusBadge>
-          <StatusBadge tone="neutral">Failed {visibleRunSummary.failedRuns}</StatusBadge>
-          <Link
-            href="/maker/automation/new/edit"
-            className={cn(buttonVariants({ variant: "default", size: "sm" }), "ml-auto")}
-          >
-            New Workflow
-          </Link>
-        </CardContent>
-      </Card>
+      {/* Header bar */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-semibold text-zinc-900">Automation</h1>
+          <p className="text-sm text-zinc-500">
+            {filteredWorkflows.length} of {workflows.length} flows
+            {totalFailures > 0 && (
+              <span className="ml-2 font-medium text-red-600">{totalFailures} failure{totalFailures !== 1 ? "s" : ""}</span>
+            )}
+          </p>
+        </div>
+        <Link
+          href="/maker/automation/new/edit"
+          className={cn(buttonVariants({ variant: "default", size: "sm" }))}
+        >
+          New Workflow
+        </Link>
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Filters</CardTitle>
-          <CardDescription>
-            Narrow workflows by lifecycle state, trigger type, and recent run outcomes.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-2 md:grid-cols-5">
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search name or logical name"
-          />
-          <Select
-            value={enabledFilter}
-            onChange={(event) => setEnabledFilter(event.target.value as EnabledFilter)}
-          >
-            <option value="all">All states</option>
-            <option value="enabled">Enabled</option>
-            <option value="disabled">Disabled</option>
-          </Select>
-          <Select
-            value={triggerFilter}
-            onChange={(event) => setTriggerFilter(event.target.value)}
-          >
-            <option value="all">All triggers</option>
-            {triggerOptions.map((triggerOption) => (
-              <option key={triggerOption} value={triggerOption}>
-                {triggerOption}
-              </option>
-            ))}
-          </Select>
-          <Select
-            value={lastRunFilter}
-            onChange={(event) => setLastRunFilter(event.target.value as LastRunFilter)}
-          >
-            <option value="all">Any last run</option>
-            <option value="none">No runs</option>
-            <option value="succeeded">Succeeded</option>
-            <option value="running">Running</option>
-            <option value="failed">Failed</option>
-            <option value="other">Other</option>
-          </Select>
-          <div className="flex gap-2">
-            <Select
-              value={sortMode}
-              onChange={(event) => setSortMode(event.target.value as SortMode)}
-            >
-              <option value="last_run_desc">Sort: Last run</option>
-              <option value="name_asc">Sort: Name A-Z</option>
-              <option value="name_desc">Sort: Name Z-A</option>
-              <option value="failures_desc">Sort: Failures</option>
-              <option value="runs_desc">Sort: Run volume</option>
-            </Select>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setQuery("");
-                setEnabledFilter("all");
-                setTriggerFilter("all");
-                setLastRunFilter("all");
-                setSortMode("last_run_desc");
-              }}
-            >
-              Reset
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Filter bar */}
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-zinc-200 bg-white p-3">
+        <Input
+          className="h-8 w-48 text-xs"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search flows..."
+        />
+        <Select
+          value={enabledFilter}
+          onChange={(e) => setEnabledFilter(e.target.value as EnabledFilter)}
+        >
+          <option value="all">All states</option>
+          <option value="enabled">Enabled</option>
+          <option value="disabled">Disabled</option>
+        </Select>
+        <Select
+          value={triggerFilter}
+          onChange={(e) => setTriggerFilter(e.target.value)}
+        >
+          <option value="all">All triggers</option>
+          {triggerOptions.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </Select>
+        <Select
+          value={lastRunFilter}
+          onChange={(e) => setLastRunFilter(e.target.value as LastRunFilter)}
+        >
+          <option value="all">Any last run</option>
+          <option value="none">No runs</option>
+          <option value="succeeded">Succeeded</option>
+          <option value="running">Running</option>
+          <option value="failed">Failed</option>
+          <option value="other">Other</option>
+        </Select>
+        <Select
+          value={sortMode}
+          onChange={(e) => setSortMode(e.target.value as SortMode)}
+        >
+          <option value="last_run_desc">Last run</option>
+          <option value="name_asc">Name A-Z</option>
+          <option value="name_desc">Name Z-A</option>
+          <option value="failures_desc">Most failures</option>
+          <option value="runs_desc">Most runs</option>
+        </Select>
+        <Button type="button" variant="outline" size="sm" onClick={resetFilters}>
+          Reset
+        </Button>
+      </div>
 
+      {/* Workflows list */}
       {filteredWorkflows.length > 0 ? (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {filteredWorkflows.map((workflow) => {
+        <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+          {/* Column headers */}
+          <div className="grid grid-cols-[1fr_auto_auto_auto_auto] items-center gap-x-4 border-b border-zinc-100 bg-zinc-50 px-4 py-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Flow</p>
+            <p className="w-24 text-right text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Last Run</p>
+            <p className="w-20 text-right text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Runs</p>
+            <p className="w-20 text-right text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Failures</p>
+            <p className="w-28 text-right text-[11px] font-semibold uppercase tracking-wide text-zinc-500">Actions</p>
+          </div>
+
+          {filteredWorkflows.map((workflow, index) => {
             const metrics = metricsByWorkflow.get(workflow.logical_name) ?? DEFAULT_METRICS;
             const workflowHrefSafe = encodeURIComponent(workflow.logical_name);
+            const isLast = index === filteredWorkflows.length - 1;
 
             return (
-              <Card key={workflow.logical_name}>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <span>{workflow.display_name}</span>
-                    <StatusBadge tone="neutral">
-                      {workflow.is_enabled ? "Enabled" : "Disabled"}
-                    </StatusBadge>
-                  </CardTitle>
-                  <CardDescription>
-                    <span className="font-mono text-xs">{workflow.logical_name}</span>
-                    {workflow.description ? ` - ${workflow.description}` : ""}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex flex-wrap gap-2 text-xs text-zinc-600">
-                    <StatusBadge tone="neutral">
-                      Trigger {workflow.trigger_type}
-                    </StatusBadge>
-                    <StatusBadge tone="neutral">Runs {metrics.runCount}</StatusBadge>
-                    <StatusBadge tone="neutral">
-                      Failures {metrics.failedCount}
-                    </StatusBadge>
-                    <StatusBadge tone="neutral">
-                      Max attempts {workflow.max_attempts}
-                    </StatusBadge>
+              <div
+                key={workflow.logical_name}
+                className={cn(
+                  "grid grid-cols-[1fr_auto_auto_auto_auto] items-center gap-x-4 px-4 py-3 transition hover:bg-zinc-50",
+                  !isLast && "border-b border-zinc-100",
+                )}
+              >
+                {/* Flow info */}
+                <div className="flex min-w-0 items-center gap-3">
+                  <RunStatusIcon category={metrics.latestRunCategory} />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="truncate text-sm font-medium text-zinc-900">{workflow.display_name}</p>
+                      <span className={cn(
+                        "shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
+                        workflow.is_enabled
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-zinc-100 text-zinc-500",
+                      )}>
+                        {workflow.is_enabled ? "On" : "Off"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[11px] text-zinc-400">{workflow.logical_name}</span>
+                      <span className="text-[11px] text-zinc-400">·</span>
+                      <span className="text-[11px] text-zinc-400">{workflow.trigger_type}</span>
+                    </div>
                   </div>
+                </div>
 
+                {/* Last run time */}
+                <div className="w-24 text-right">
                   {metrics.latestRun ? (
-                    <p className="text-xs text-zinc-600">
-                      Last run: <span className="font-mono">{metrics.latestRun.run_id}</span> (
-                      {metrics.latestRun.status}) at{" "}
-                      {formatUtcDateTime(metrics.latestRun.started_at)}
-                    </p>
+                    <span className="text-xs text-zinc-500">
+                      {formatUtcDateTime(metrics.latestRun.started_at).slice(0, 16)}
+                    </span>
                   ) : (
-                    <p className="text-xs text-zinc-500">No runs yet for this workflow.</p>
+                    <span className="flex items-center justify-end gap-1 text-xs text-zinc-300">
+                      <Clock className="size-3" />
+                      Never
+                    </span>
                   )}
+                </div>
 
-                  <div className="flex gap-2">
-                    <Link
-                      href={`/maker/automation/${workflowHrefSafe}/edit`}
-                      className={cn(buttonVariants({ size: "sm" }))}
-                    >
-                      Edit Workflow
-                    </Link>
-                    <Link
-                      href={`/maker/automation/${workflowHrefSafe}/history`}
-                      className={cn(buttonVariants({ size: "sm", variant: "outline" }))}
-                    >
-                      View History
-                    </Link>
-                  </div>
-                </CardContent>
-              </Card>
+                {/* Run count */}
+                <div className="w-20 text-right">
+                  <span className="text-xs tabular-nums text-zinc-600">{metrics.runCount}</span>
+                </div>
+
+                {/* Failure count */}
+                <div className="w-20 text-right">
+                  <span className={cn(
+                    "text-xs tabular-nums",
+                    metrics.failedCount > 0 ? "font-semibold text-red-600" : "text-zinc-400",
+                  )}>
+                    {metrics.failedCount}
+                  </span>
+                </div>
+
+                {/* Actions */}
+                <div className="flex w-28 items-center justify-end gap-1">
+                  <Link
+                    href={`/maker/automation/${workflowHrefSafe}/edit`}
+                    className={cn(buttonVariants({ size: "sm", variant: "outline" }), "h-7 px-2 text-xs")}
+                  >
+                    Edit
+                  </Link>
+                  <Link
+                    href={`/maker/automation/${workflowHrefSafe}/history`}
+                    className={cn(buttonVariants({ size: "sm", variant: "outline" }), "h-7 px-2 text-xs")}
+                  >
+                    <ChevronRight className="size-3.5" />
+                  </Link>
+                </div>
+              </div>
             );
           })}
         </div>
       ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>No workflows match these filters</CardTitle>
-            <CardDescription>
-              Reset filters or create a new workflow definition.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setQuery("");
-                setEnabledFilter("all");
-                setTriggerFilter("all");
-                setLastRunFilter("all");
-                setSortMode("last_run_desc");
-              }}
-            >
+        <div className="rounded-lg border border-zinc-200 bg-white px-6 py-10 text-center">
+          <p className="text-sm font-medium text-zinc-600">No flows match these filters</p>
+          <p className="mt-1 text-xs text-zinc-400">Reset filters or create a new workflow.</p>
+          <div className="mt-4 flex justify-center gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={resetFilters}>
               Reset Filters
             </Button>
-            <Link href="/maker/automation/new/edit" className={cn(buttonVariants())}>
+            <Link href="/maker/automation/new/edit" className={cn(buttonVariants({ size: "sm" }))}>
               Create Workflow
             </Link>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
     </div>
   );

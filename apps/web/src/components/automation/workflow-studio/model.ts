@@ -1,9 +1,28 @@
 import {
   type WorkflowConditionOperatorDto,
+  type WorkflowRunStepTraceResponse,
   type WorkflowStepDto,
 } from "@/lib/api";
 
-export type TriggerType = "manual" | "runtime_record_created";
+export {
+  createDraftStep,
+  createTemplateStep,
+  FLOW_TEMPLATES,
+  resolveTemplateList,
+  STEP_LIBRARY,
+  triggerTemplateConfig,
+} from "@/components/automation/workflow-studio/model/flow-templates";
+export type {
+  FlowTemplateCategory,
+  FlowTemplateId,
+} from "@/components/automation/workflow-studio/model/flow-templates";
+
+export type TriggerType =
+  | "manual"
+  | "runtime_record_created"
+  | "runtime_record_updated"
+  | "runtime_record_deleted"
+  | "schedule_tick";
 export type ActionType = "log_message" | "create_runtime_record";
 export type InspectorNode = "trigger" | "step";
 
@@ -37,45 +56,30 @@ export type DraftWorkflowStep =
   | DraftCreateStep
   | DraftConditionStep;
 
-export type CanvasNodeDescriptor = {
-  id: string;
-  title: string;
-  subtitle: string;
-  kind: "trigger" | "step";
-  tone: "trigger" | "action" | "condition";
-};
-
-export type CanvasEdgeDescriptor = {
-  id: string;
-  from: string;
-  to: string;
-  label?: string;
-};
-
-export type CanvasPosition = {
-  x: number;
-  y: number;
-};
-
-export type RerouteTarget =
-  | { kind: "trigger_start" }
-  | { kind: "before" | "after"; targetId: string }
-  | { kind: "then" | "else"; targetId: string };
-
 export type CanvasHistorySnapshot = {
   triggerType: TriggerType;
   triggerEntityLogicalName: string;
   steps: DraftWorkflowStep[];
-  nodePositions: Record<string, CanvasPosition>;
   selectedStepId: string | null;
   inspectorNode: InspectorNode;
 };
 
-export type SelectionBoxState = {
-  startX: number;
-  startY: number;
-  currentX: number;
-  currentY: number;
+export type WorkflowValidationIssue = {
+  id: string;
+  stepId: string | null;
+  level: "error" | "warning";
+  message: string;
+};
+
+export type StepPathIndex = {
+  byStepId: Record<string, string>;
+  byPath: Record<string, DraftWorkflowStep>;
+};
+
+export type DynamicTokenOption = {
+  token: string;
+  label: string;
+  source: "trigger" | "step" | "runtime";
 };
 
 export type CatalogInsertMode =
@@ -96,197 +100,35 @@ export const TRIGGER_OPTIONS: Array<{
 }> = [
   { value: "manual", label: "Manual trigger" },
   { value: "runtime_record_created", label: "Record created" },
+  { value: "runtime_record_updated", label: "Record updated" },
+  { value: "runtime_record_deleted", label: "Record deleted" },
+  { value: "schedule_tick", label: "Schedule tick" },
 ];
 
-export const STEP_LIBRARY: Array<{
-  type: DraftWorkflowStep["type"];
+export const RUNTIME_TRIGGER_ENTITY_PRESETS: Array<{
+  value: string;
   label: string;
-  description: string;
 }> = [
-  {
-    type: "log_message",
-    label: "Log message",
-    description: "Add a diagnostics log step.",
-  },
-  {
-    type: "create_runtime_record",
-    label: "Create record",
-    description: "Create a new runtime record.",
-  },
-  {
-    type: "condition",
-    label: "Condition",
-    description: "Branch into Yes/No step paths.",
-  },
+  { value: "contact", label: "Contact created" },
+  { value: "webhook_event", label: "Webhook received" },
+  { value: "form_submission", label: "Form submitted" },
+  { value: "inbound_email", label: "Inbound email" },
+  { value: "approval_request", label: "Approval requested" },
+  { value: "schedule_hourly", label: "Hourly schedule tick" },
+  { value: "schedule_daily", label: "Daily schedule tick" },
 ];
 
-export type FlowTemplateId =
-  | "manual_trigger"
-  | "webhook_trigger"
-  | "log_info"
-  | "log_warning"
-  | "create_task"
-  | "create_note"
-  | "http_request"
-  | "transform_payload"
-  | "delay_step"
-  | "condition_equals"
-  | "condition_exists";
-
-export type FlowTemplateCategory =
-  | "trigger"
-  | "logic"
-  | "integration"
-  | "data"
-  | "operations";
-
-export const FLOW_TEMPLATES: Array<{
-  id: FlowTemplateId;
+export const SCHEDULE_TRIGGER_KEY_PRESETS: Array<{
+  value: string;
   label: string;
-  description: string;
-  category: FlowTemplateCategory;
-  keywords: string[];
-  target: "step" | "trigger";
 }> = [
-  {
-    id: "manual_trigger",
-    label: "Manual Trigger",
-    description: "Starts this flow from manual run in the canvas toolbar.",
-    category: "trigger",
-    keywords: ["trigger", "manual", "start"],
-    target: "trigger",
-  },
-  {
-    id: "webhook_trigger",
-    label: "Webhook Event Trigger",
-    description: "Starts when a webhook_event runtime record is created.",
-    category: "trigger",
-    keywords: ["trigger", "webhook", "event", "start"],
-    target: "trigger",
-  },
-  {
-    id: "condition_equals",
-    label: "If Equals",
-    description: "Branch execution when a payload field equals a value.",
-    category: "logic",
-    keywords: ["if", "branch", "equals", "condition"],
-    target: "step",
-  },
-  {
-    id: "condition_exists",
-    label: "If Exists",
-    description: "Branch execution when a payload field exists.",
-    category: "logic",
-    keywords: ["if", "exists", "condition", "branch"],
-    target: "step",
-  },
-  {
-    id: "http_request",
-    label: "HTTP Request",
-    description: "Send an outbound HTTP call (modeled as integration log step).",
-    category: "integration",
-    keywords: ["http", "request", "api", "integration"],
-    target: "step",
-  },
-  {
-    id: "transform_payload",
-    label: "Transform Payload",
-    description: "Map input values into a structured integration payload record.",
-    category: "integration",
-    keywords: ["transform", "map", "payload", "integration"],
-    target: "step",
-  },
-  {
-    id: "delay_step",
-    label: "Delay",
-    description: "Insert a wait/delay semantic step for downstream processing.",
-    category: "integration",
-    keywords: ["delay", "wait", "timer"],
-    target: "step",
-  },
-  {
-    id: "create_task",
-    label: "Create Task Record",
-    description: "Create a task runtime record with follow-up defaults.",
-    category: "data",
-    keywords: ["create", "record", "task", "data"],
-    target: "step",
-  },
-  {
-    id: "create_note",
-    label: "Create Note Record",
-    description: "Create a note runtime record for activity capture.",
-    category: "data",
-    keywords: ["create", "record", "note", "data"],
-    target: "step",
-  },
-  {
-    id: "log_info",
-    label: "Log Info",
-    description: "Write an informational trace message.",
-    category: "operations",
-    keywords: ["log", "message", "trace", "ops"],
-    target: "step",
-  },
-  {
-    id: "log_warning",
-    label: "Log Warning",
-    description: "Write a warning trace message.",
-    category: "operations",
-    keywords: ["log", "warning", "message", "ops"],
-    target: "step",
-  },
+  { value: "hourly", label: "Hourly" },
+  { value: "daily", label: "Daily" },
+  { value: "daily_utc_0900", label: "Daily 09:00 UTC" },
+  { value: "weekday_utc_0900", label: "Weekday 09:00 UTC" },
 ];
 
-export const TRIGGER_NODE_ID = "flow_trigger_node";
-export const CANVAS_NODE_WIDTH = 230;
-export const CANVAS_NODE_HEIGHT = 88;
-export const CANVAS_PADDING = 12;
-export const GRID_SIZE = 16;
-export const LANE_WIDTH = 250;
 
-export function rerouteTargetsEqual(
-  left: RerouteTarget,
-  right: RerouteTarget,
-): boolean {
-  if (left.kind !== right.kind) {
-    return false;
-  }
-
-  if (left.kind === "trigger_start" && right.kind === "trigger_start") {
-    return true;
-  }
-
-  if (left.kind === "trigger_start" || right.kind === "trigger_start") {
-    return false;
-  }
-
-  return left.targetId === right.targetId;
-}
-
-export function rerouteTargetFromDataset(
-  kind: string | undefined,
-  targetId: string | undefined,
-): RerouteTarget | null {
-  if (kind === "trigger_start") {
-    return { kind: "trigger_start" };
-  }
-
-  if (!targetId) {
-    return null;
-  }
-
-  if (
-    kind === "before" ||
-    kind === "after" ||
-    kind === "then" ||
-    kind === "else"
-  ) {
-    return { kind, targetId };
-  }
-
-  return null;
-}
 
 export function parseJsonObject(
   value: string,
@@ -327,12 +169,6 @@ export function cloneWorkflowSteps(
   return JSON.parse(JSON.stringify(steps)) as DraftWorkflowStep[];
 }
 
-export function cloneCanvasPositions(
-  positions: Record<string, CanvasPosition>,
-): Record<string, CanvasPosition> {
-  return JSON.parse(JSON.stringify(positions)) as Record<string, CanvasPosition>;
-}
-
 export function summarizeStep(step: DraftWorkflowStep): string {
   switch (step.type) {
     case "log_message":
@@ -350,145 +186,6 @@ export function summarizeStep(step: DraftWorkflowStep): string {
   }
 }
 
-function stepTitle(step: DraftWorkflowStep): string {
-  if (step.type === "log_message") {
-    return "Log message";
-  }
-
-  if (step.type === "create_runtime_record") {
-    return "Create record";
-  }
-
-  return "Condition";
-}
-
-function stepTone(step: DraftWorkflowStep): CanvasNodeDescriptor["tone"] {
-  if (step.type === "condition") {
-    return "condition";
-  }
-
-  return "action";
-}
-
-function appendCanvasBranch(
-  steps: DraftWorkflowStep[],
-  parentId: string,
-  nodes: CanvasNodeDescriptor[],
-  edges: CanvasEdgeDescriptor[],
-  branchLabel?: string,
-) {
-  let previousId: string | null = null;
-
-  for (const step of steps) {
-    nodes.push({
-      id: step.id,
-      title: stepTitle(step),
-      subtitle: summarizeStep(step),
-      kind: "step",
-      tone: stepTone(step),
-    });
-
-    const from = previousId ?? parentId;
-    edges.push({
-      id: `${from}_${step.id}_${branchLabel ?? ""}`,
-      from,
-      to: step.id,
-      label: previousId ? undefined : branchLabel,
-    });
-
-    if (step.type === "condition") {
-      appendCanvasBranch(step.thenSteps, step.id, nodes, edges, step.thenLabel || "yes");
-      appendCanvasBranch(step.elseSteps, step.id, nodes, edges, step.elseLabel || "no");
-    }
-
-    previousId = step.id;
-  }
-}
-
-export function buildCanvasGraph(
-  triggerSummary: string,
-  steps: DraftWorkflowStep[],
-): { nodes: CanvasNodeDescriptor[]; edges: CanvasEdgeDescriptor[] } {
-  const nodes: CanvasNodeDescriptor[] = [
-    {
-      id: TRIGGER_NODE_ID,
-      title: "Trigger",
-      subtitle: triggerSummary,
-      kind: "trigger",
-      tone: "trigger",
-    },
-  ];
-  const edges: CanvasEdgeDescriptor[] = [];
-
-  appendCanvasBranch(steps, TRIGGER_NODE_ID, nodes, edges);
-  return { nodes, edges };
-}
-
-export function buildDefaultCanvasPositions(
-  steps: DraftWorkflowStep[],
-): Record<string, CanvasPosition> {
-  const positions: Record<string, CanvasPosition> = {
-    [TRIGGER_NODE_ID]: { x: CANVAS_PADDING + 24, y: 280 },
-  };
-
-  let laneRow = 0;
-
-  function allocateRow(preferredY?: number): number {
-    const candidateRow =
-      typeof preferredY === "number" ? Math.floor(Math.max(48, preferredY) / 112) : laneRow;
-    laneRow = Math.max(laneRow + 1, candidateRow + 1);
-    return candidateRow;
-  }
-
-  function rowToY(row: number): number {
-    return 64 + row * 112;
-  }
-
-  function placeBranch(
-    branchSteps: DraftWorkflowStep[],
-    depth: number,
-    preferredY?: number,
-  ) {
-    let localY = preferredY;
-
-    for (const step of branchSteps) {
-      const row = allocateRow(localY);
-      const y = rowToY(row);
-      positions[step.id] = {
-        x: 280 + depth * LANE_WIDTH,
-        y,
-      };
-
-      if (step.type === "condition") {
-        placeBranch(step.thenSteps, depth + 1, y - 72);
-        placeBranch(step.elseSteps, depth + 1, y + 72);
-      }
-
-      localY = y + 112;
-    }
-  }
-
-  placeBranch(steps, 0);
-  return positions;
-}
-
-export function maxCanvasDepth(steps: DraftWorkflowStep[]): number {
-  let maxDepth = 0;
-
-  function visit(branch: DraftWorkflowStep[], depth: number) {
-    maxDepth = Math.max(maxDepth, depth);
-
-    for (const step of branch) {
-      if (step.type === "condition") {
-        visit(step.thenSteps, depth + 1);
-        visit(step.elseSteps, depth + 1);
-      }
-    }
-  }
-
-  visit(steps, 1);
-  return maxDepth;
-}
 
 export function findStepById(
   steps: DraftWorkflowStep[],
@@ -705,6 +402,311 @@ export function appendStepToBranch(
   });
 }
 
+export function buildStepPathIndex(steps: DraftWorkflowStep[]): StepPathIndex {
+  const byStepId: Record<string, string> = {};
+  const byPath: Record<string, DraftWorkflowStep> = {};
+
+  function visit(branchSteps: DraftWorkflowStep[], prefix: string) {
+    branchSteps.forEach((step, index) => {
+      const stepPath = prefix.length === 0 ? `${index}` : `${prefix}.${index}`;
+      byStepId[step.id] = stepPath;
+      byPath[stepPath] = step;
+
+      if (step.type === "condition") {
+        visit(step.thenSteps, `${stepPath}.then`);
+        visit(step.elseSteps, `${stepPath}.else`);
+      }
+    });
+  }
+
+  visit(steps, "");
+  return { byStepId, byPath };
+}
+
+export function stepTraceMapByPath(
+  stepTraces: WorkflowRunStepTraceResponse[] | undefined,
+): Record<string, WorkflowRunStepTraceResponse> {
+  if (!stepTraces || stepTraces.length === 0) {
+    return {};
+  }
+
+  return stepTraces.reduce(
+    (map, trace) => {
+      map[trace.step_path] = trace;
+      return map;
+    },
+    {} as Record<string, WorkflowRunStepTraceResponse>,
+  );
+}
+
+function orderedSteps(steps: DraftWorkflowStep[]): DraftWorkflowStep[] {
+  const flattened: DraftWorkflowStep[] = [];
+
+  function visit(branchSteps: DraftWorkflowStep[]) {
+    for (const step of branchSteps) {
+      flattened.push(step);
+      if (step.type === "condition") {
+        visit(step.thenSteps);
+        visit(step.elseSteps);
+      }
+    }
+  }
+
+  visit(steps);
+  return flattened;
+}
+
+function stepTokenLabel(step: DraftWorkflowStep): string {
+  if (step.type === "log_message") {
+    return `Log step (${step.id})`;
+  }
+
+  if (step.type === "create_runtime_record") {
+    return `Create record (${step.entityLogicalName || step.id})`;
+  }
+
+  return `Condition (${step.id})`;
+}
+
+export function dynamicTokensForStep(
+  steps: DraftWorkflowStep[],
+  selectedStepId: string | null,
+  triggerPayloadFieldPaths: string[] = [],
+): DynamicTokenOption[] {
+  const baseTokens: DynamicTokenOption[] = [
+    { token: "{{trigger.type}}", label: "Trigger type", source: "trigger" },
+    { token: "{{trigger.entity}}", label: "Trigger entity", source: "trigger" },
+    { token: "{{trigger.payload.id}}", label: "Trigger payload id", source: "trigger" },
+    {
+      token: "{{trigger.payload.status}}",
+      label: "Trigger payload status",
+      source: "trigger",
+    },
+    { token: "{{run.id}}", label: "Run id", source: "runtime" },
+    { token: "{{run.attempt}}", label: "Run attempt", source: "runtime" },
+    { token: "{{now.iso}}", label: "Current time (ISO)", source: "runtime" },
+    ...triggerPayloadFieldPaths.map((fieldPath) => ({
+      token: `{{trigger.payload.${fieldPath}}}`,
+      label: `Trigger payload ${fieldPath}`,
+      source: "trigger" as const,
+    })),
+  ];
+
+  const dedupedBaseTokens = Array.from(
+    new Map(baseTokens.map((token) => [token.token, token])).values(),
+  );
+
+  if (!selectedStepId) {
+    return dedupedBaseTokens;
+  }
+
+  const flattened = orderedSteps(steps);
+  const selectedIndex = flattened.findIndex((step) => step.id === selectedStepId);
+  if (selectedIndex <= 0) {
+    return dedupedBaseTokens;
+  }
+
+  const previousSteps = flattened.slice(0, selectedIndex);
+  const previousStepTokens = previousSteps.map((step) => ({
+    token: `{{steps.${step.id}.output}}`,
+    label: `${stepTokenLabel(step)} output`,
+    source: "step" as const,
+  }));
+
+  return [...dedupedBaseTokens, ...previousStepTokens];
+}
+
+export function duplicateStepWithNewIds(
+  step: DraftWorkflowStep,
+  createId: () => string,
+): DraftWorkflowStep {
+  if (step.type === "log_message") {
+    return {
+      ...step,
+      id: createId(),
+    };
+  }
+
+  if (step.type === "create_runtime_record") {
+    return {
+      ...step,
+      id: createId(),
+    };
+  }
+
+  return {
+    ...step,
+    id: createId(),
+    thenSteps: step.thenSteps.map((nestedStep) =>
+      duplicateStepWithNewIds(nestedStep, createId),
+    ),
+    elseSteps: step.elseSteps.map((nestedStep) =>
+      duplicateStepWithNewIds(nestedStep, createId),
+    ),
+  };
+}
+
+export function duplicateStepById(
+  steps: DraftWorkflowStep[],
+  stepId: string,
+  createId: () => string,
+): { steps: DraftWorkflowStep[]; duplicatedStepId: string | null } {
+  let duplicatedStepId: string | null = null;
+
+  const nextSteps: DraftWorkflowStep[] = [];
+  for (const step of steps) {
+    if (step.id === stepId && duplicatedStepId === null) {
+      const duplicate = duplicateStepWithNewIds(step, createId);
+      duplicatedStepId = duplicate.id;
+      nextSteps.push(step, duplicate);
+      continue;
+    }
+
+    if (step.type !== "condition") {
+      nextSteps.push(step);
+      continue;
+    }
+
+    const thenResult = duplicateStepById(step.thenSteps, stepId, createId);
+    const elseResult =
+      thenResult.duplicatedStepId === null
+        ? duplicateStepById(step.elseSteps, stepId, createId)
+        : { steps: step.elseSteps, duplicatedStepId: null };
+
+    if (thenResult.duplicatedStepId) {
+      duplicatedStepId = thenResult.duplicatedStepId;
+    }
+
+    if (elseResult.duplicatedStepId) {
+      duplicatedStepId = elseResult.duplicatedStepId;
+    }
+
+    nextSteps.push({
+      ...step,
+      thenSteps: thenResult.steps,
+      elseSteps: elseResult.steps,
+    });
+  }
+
+  return { steps: nextSteps, duplicatedStepId };
+}
+
+export function collectWorkflowValidationIssues(
+  triggerType: TriggerType,
+  triggerEntityLogicalName: string,
+  steps: DraftWorkflowStep[],
+): WorkflowValidationIssue[] {
+  const issues: WorkflowValidationIssue[] = [];
+  let counter = 0;
+
+  function addIssue(
+    issue: Omit<WorkflowValidationIssue, "id">,
+  ) {
+    counter += 1;
+    issues.push({ ...issue, id: `workflow_issue_${counter}` });
+  }
+
+  function validateBranch(branchSteps: DraftWorkflowStep[]) {
+    for (const step of branchSteps) {
+      if (step.type === "log_message") {
+        if (step.message.trim().length === 0) {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "Log message step is empty.",
+          });
+        }
+        continue;
+      }
+
+      if (step.type === "create_runtime_record") {
+        if (step.entityLogicalName.trim().length === 0) {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "Create record step is missing an entity logical name.",
+          });
+        }
+
+        try {
+          const parsed = JSON.parse(step.dataJson) as unknown;
+          const isObject = parsed && typeof parsed === "object" && !Array.isArray(parsed);
+          if (!isObject) {
+            addIssue({
+              stepId: step.id,
+              level: "error",
+              message: "Create record step data must be a JSON object.",
+            });
+          }
+        } catch {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "Create record step data contains invalid JSON.",
+          });
+        }
+        continue;
+      }
+
+      if (step.fieldPath.trim().length === 0) {
+        addIssue({
+          stepId: step.id,
+          level: "error",
+          message: "Condition step requires a payload field path.",
+        });
+      }
+
+      if (step.operator !== "exists") {
+        try {
+          JSON.parse(step.valueJson);
+        } catch {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "Condition value must be valid JSON for non-exists operators.",
+          });
+        }
+      }
+
+      if (step.thenSteps.length === 0 && step.elseSteps.length === 0) {
+        addIssue({
+          stepId: step.id,
+          level: "error",
+          message: "Condition step must include at least one action in a branch.",
+        });
+      }
+
+      validateBranch(step.thenSteps);
+      validateBranch(step.elseSteps);
+    }
+  }
+
+  if (steps.length === 0) {
+    addIssue({
+      stepId: null,
+      level: "error",
+      message: "Flow canvas requires at least one step.",
+    });
+  }
+
+  if (
+    triggerType !== "manual" &&
+    triggerEntityLogicalName.trim().length === 0
+  ) {
+    addIssue({
+      stepId: null,
+      level: "error",
+      message:
+        triggerType === "schedule_tick"
+          ? "Schedule tick trigger requires a schedule key."
+          : "Runtime record trigger requires an entity logical name.",
+    });
+  }
+
+  validateBranch(steps);
+  return issues;
+}
+
 export function firstActionFromSteps(
   steps: WorkflowStepDto[],
 ): {
@@ -775,228 +777,4 @@ export function createDraftFromTransport(
     thenSteps: step.then_steps.map((nestedStep) => createDraftFromTransport(nestedStep, createId)),
     elseSteps: step.else_steps.map((nestedStep) => createDraftFromTransport(nestedStep, createId)),
   };
-}
-
-export function describeTrigger(
-  triggerType: TriggerType,
-  triggerEntityLogicalName: string,
-): string {
-  if (triggerType === "manual") {
-    return "Manual trigger from the automation console.";
-  }
-
-  if (triggerEntityLogicalName.trim().length === 0) {
-    return "Runtime record created in [entity required].";
-  }
-
-  return `Runtime record created in '${triggerEntityLogicalName}'.`;
-}
-
-export function createDraftStep(
-  stepType: DraftWorkflowStep["type"],
-  createId: () => string,
-): DraftWorkflowStep {
-  if (stepType === "log_message") {
-    return {
-      id: createId(),
-      type: "log_message",
-      message: "workflow fired",
-    };
-  }
-
-  if (stepType === "create_runtime_record") {
-    return {
-      id: createId(),
-      type: "create_runtime_record",
-      entityLogicalName: "task",
-      dataJson: JSON.stringify({ title: "Follow-up" }, null, 2),
-    };
-  }
-
-  return {
-    id: createId(),
-    type: "condition",
-    fieldPath: "status",
-    operator: "equals",
-    valueJson: JSON.stringify("open"),
-    thenLabel: "Yes",
-    elseLabel: "No",
-    thenSteps: [
-      {
-        id: createId(),
-        type: "log_message",
-        message: "matched condition",
-      },
-    ],
-    elseSteps: [
-      {
-        id: createId(),
-        type: "log_message",
-        message: "did not match condition",
-      },
-    ],
-  };
-}
-
-export function createTemplateStep(
-  templateId: FlowTemplateId,
-  createId: () => string,
-): DraftWorkflowStep {
-  switch (templateId) {
-    case "manual_trigger":
-    case "webhook_trigger":
-      return {
-        id: createId(),
-        type: "log_message",
-        message: "trigger template applied",
-      };
-    case "log_info":
-      return {
-        id: createId(),
-        type: "log_message",
-        message: "[INFO] flow step executed",
-      };
-    case "log_warning":
-      return {
-        id: createId(),
-        type: "log_message",
-        message: "[WARN] requires attention",
-      };
-    case "create_task":
-      return {
-        id: createId(),
-        type: "create_runtime_record",
-        entityLogicalName: "task",
-        dataJson: JSON.stringify({ title: "Follow-up", priority: "normal" }, null, 2),
-      };
-    case "create_note":
-      return {
-        id: createId(),
-        type: "create_runtime_record",
-        entityLogicalName: "note",
-        dataJson: JSON.stringify({ title: "Activity Note", body: "auto generated" }, null, 2),
-      };
-    case "http_request":
-      return {
-        id: createId(),
-        type: "log_message",
-        message: "[HTTP] GET https://api.example.com/resource",
-      };
-    case "transform_payload":
-      return {
-        id: createId(),
-        type: "create_runtime_record",
-        entityLogicalName: "integration_payload",
-        dataJson: JSON.stringify(
-          {
-            source: "trigger",
-            transformed: true,
-            mapping_version: "v1",
-          },
-          null,
-          2,
-        ),
-      };
-    case "delay_step":
-      return {
-        id: createId(),
-        type: "log_message",
-        message: "[DELAY] wait 5m",
-      };
-    case "condition_exists":
-      return {
-        id: createId(),
-        type: "condition",
-        fieldPath: "contact.email",
-        operator: "exists",
-        valueJson: "null",
-        thenLabel: "Found",
-        elseLabel: "Missing",
-        thenSteps: [
-          {
-            id: createId(),
-            type: "log_message",
-            message: "email found",
-          },
-        ],
-        elseSteps: [
-          {
-            id: createId(),
-            type: "create_runtime_record",
-            entityLogicalName: "task",
-            dataJson: JSON.stringify({ title: "Collect missing email" }, null, 2),
-          },
-        ],
-      };
-    case "condition_equals":
-    default:
-      return {
-        id: createId(),
-        type: "condition",
-        fieldPath: "status",
-        operator: "equals",
-        valueJson: JSON.stringify("open"),
-        thenLabel: "Open",
-        elseLabel: "Closed",
-        thenSteps: [
-          {
-            id: createId(),
-            type: "log_message",
-            message: "status is open",
-          },
-        ],
-        elseSteps: [
-          {
-            id: createId(),
-            type: "log_message",
-            message: "status is not open",
-          },
-        ],
-      };
-  }
-}
-
-export function resolveTemplateList(
-  query: string,
-  category: "all" | FlowTemplateCategory,
-) {
-  const withScore = FLOW_TEMPLATES.map((template) => {
-    if (category !== "all" && template.category !== category) {
-      return null;
-    }
-
-    const haystacks = [template.label, template.description, ...template.keywords].map(
-      (value) => value.toLowerCase(),
-    );
-
-    if (!query) {
-      return { template, score: 0 };
-    }
-
-    let score = 0;
-    for (const haystack of haystacks) {
-      if (haystack === query) {
-        score += 120;
-      } else if (haystack.startsWith(query)) {
-        score += 90;
-      } else if (haystack.includes(query)) {
-        score += 45;
-      } else {
-        const charsMatched = query.split("").every((char) => haystack.includes(char));
-        if (charsMatched) {
-          score += 15;
-        }
-      }
-    }
-
-    if (score === 0) {
-      return null;
-    }
-
-    return { template, score };
-  })
-    .filter((entry): entry is { template: (typeof FLOW_TEMPLATES)[number]; score: number } => Boolean(entry))
-    .sort((left, right) => right.score - left.score || left.template.label.localeCompare(right.template.label));
-
-  return withScore.map((entry) => entry.template);
 }

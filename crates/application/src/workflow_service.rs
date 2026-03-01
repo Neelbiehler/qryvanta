@@ -12,9 +12,9 @@ use serde_json::Value;
 use crate::metadata_service::MetadataService;
 use crate::workflow_ports::{
     ClaimedWorkflowJob, CompleteWorkflowRunInput, CreateWorkflowRunInput, SaveWorkflowInput,
-    WorkflowClaimPartition, WorkflowExecutionMode, WorkflowQueueStats, WorkflowQueueStatsCache,
-    WorkflowQueueStatsQuery, WorkflowRepository, WorkflowRun, WorkflowRunAttempt,
-    WorkflowRunAttemptStatus, WorkflowRunListQuery, WorkflowRunStatus,
+    WorkflowActionDispatcher, WorkflowClaimPartition, WorkflowExecutionMode, WorkflowQueueStats,
+    WorkflowQueueStatsCache, WorkflowQueueStatsQuery, WorkflowRepository, WorkflowRun,
+    WorkflowRunAttempt, WorkflowRunAttemptStatus, WorkflowRunListQuery, WorkflowRunStatus,
     WorkflowRuntimeRecordService, WorkflowWorkerHeartbeatInput,
 };
 use crate::{AuditEvent, AuditRepository, AuthorizationService};
@@ -43,6 +43,7 @@ pub struct WorkflowService {
     authorization_service: AuthorizationService,
     repository: Arc<dyn WorkflowRepository>,
     runtime_record_service: Arc<dyn WorkflowRuntimeRecordService>,
+    action_dispatcher: Option<Arc<dyn WorkflowActionDispatcher>>,
     audit_repository: Arc<dyn AuditRepository>,
     execution_mode: WorkflowExecutionMode,
     queue_stats_cache: Option<Arc<dyn WorkflowQueueStatsCache>>,
@@ -63,6 +64,7 @@ impl WorkflowService {
             authorization_service,
             repository,
             runtime_record_service,
+            action_dispatcher: None,
             audit_repository,
             execution_mode,
             queue_stats_cache: None,
@@ -79,6 +81,16 @@ impl WorkflowService {
     ) -> Self {
         self.queue_stats_cache = Some(queue_stats_cache);
         self.queue_stats_cache_ttl_seconds = ttl_seconds;
+        self
+    }
+
+    /// Adds optional external action dispatcher for integration actions.
+    #[must_use]
+    pub fn with_action_dispatcher(
+        mut self,
+        action_dispatcher: Arc<dyn WorkflowActionDispatcher>,
+    ) -> Self {
+        self.action_dispatcher = Some(action_dispatcher);
         self
     }
 }

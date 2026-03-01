@@ -1,0 +1,108 @@
+---
+title: Workflow Integration Runbook
+description: Production setup and troubleshooting guide for workflow triggers and outbound integration actions.
+---
+
+Use this runbook when enabling workflow automations that trigger from runtime events and call external systems.
+
+## Trigger Coverage
+
+Backend runtime supports these trigger types:
+
+- `manual`
+- `runtime_record_created`
+- `runtime_record_updated`
+- `runtime_record_deleted`
+- `schedule_tick`
+
+`runtime_record_*` triggers dispatch automatically during runtime API and workspace record mutations.
+
+## Schedule Trigger Operations
+
+Schedule triggers can be dispatched by calling:
+
+- `POST /api/workflows/triggers/schedule/dispatch`
+
+Request body:
+
+```json
+{
+  "schedule_key": "hourly",
+  "payload": {
+    "tick_at": "2026-03-01T00:00:00Z"
+  }
+}
+```
+
+Notes:
+
+- Endpoint requires authenticated protected API access.
+- Use stable schedule keys like `hourly`, `daily`, or tenant-specific keys such as `tenant_a_daily_0900_utc`.
+
+## Outbound Integration Actions
+
+Workflow runtime dispatches these integration entities through external adapters:
+
+- `integration_http_request`
+- `webhook_dispatch`
+- `email_outbox`
+
+### HTTP and Webhook Dispatch Behavior
+
+- Runtime sends outbound requests using the configured HTTP client.
+- Retries transient failures (5xx and `429`) with bounded backoff.
+- Treats non-retryable 4xx responses as terminal validation failures.
+- Sets headers for idempotency and traceability:
+  - `Idempotency-Key`
+  - `X-Qryvanta-Workflow-Run`
+  - `X-Qryvanta-Workflow-Step`
+
+### Email Dispatch Behavior
+
+- `email_outbox` actions use the platform email provider.
+- `EMAIL_PROVIDER=smtp` requires valid `SMTP_*` environment values.
+- Worker process falls back to console email if SMTP config is invalid; treat this as a misconfiguration in production and alert immediately.
+
+## Idempotency and Retries
+
+Each external step derives a stable key:
+
+- `<run_id>:<step_path>`
+
+This key remains stable for run retries and step retries, so downstream services can deduplicate side effects.
+
+For production endpoints:
+
+1. Persist idempotency keys for a bounded retention window.
+2. Return previously computed results for duplicate keys.
+3. Keep handlers safe for at-least-once delivery.
+
+## Token Usage in Action Payloads
+
+Use workflow tokens to build outbound payloads:
+
+- `{{trigger.payload.*}}`
+- `{{trigger.*}}`
+- `{{run.id}}`
+- `{{run.attempt}}`
+- `{{now.iso}}`
+
+Prefer including `{{run.id}}` and business record ids in external payloads for supportability.
+
+## Production Readiness Checklist
+
+1. Run API and worker in queued mode for non-trivial automation throughput.
+2. Verify SMTP credentials and sender domain alignment before enabling `email_outbox` actions.
+3. Ensure outbound firewall rules allow required webhook/API targets.
+4. Confirm downstream systems enforce idempotency keys.
+5. Monitor workflow run retries, dead letters, and worker heartbeat freshness.
+
+## Incident Triage
+
+When automation incidents are reported:
+
+1. Check workflow run history and step traces for failed step path and error details.
+2. Validate downstream endpoint status and response patterns (`429`, `5xx`, auth errors).
+3. Confirm worker heartbeat and queue depth are healthy.
+4. Re-run failed steps only after downstream or configuration issues are fixed.
+5. Capture run id and idempotency key in incident records for cross-system correlation.

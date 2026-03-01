@@ -69,9 +69,10 @@ impl PostgresWorkflowRepository {
                 attempt_number,
                 status,
                 error_message,
-                executed_at
+                executed_at,
+                step_traces
             )
-            VALUES ($1, $2, $3, $4, $5, $6)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             "#,
         )
         .bind(run_id)
@@ -80,6 +81,9 @@ impl PostgresWorkflowRepository {
         .bind(attempt.status.as_str())
         .bind(attempt.error_message)
         .bind(attempt.executed_at)
+        .bind(workflow_step_traces_to_json(
+            attempt.step_traces.as_slice(),
+        )?)
         .execute(&self.pool)
         .await
         .map_err(|error| {
@@ -188,6 +192,46 @@ impl PostgresWorkflowRepository {
         rows.into_iter().map(workflow_run_from_row).collect()
     }
 
+    pub(super) async fn find_run_impl(
+        &self,
+        tenant_id: TenantId,
+        run_id: &str,
+    ) -> AppResult<Option<WorkflowRun>> {
+        let run_uuid = uuid::Uuid::parse_str(run_id).map_err(|error| {
+            AppError::Validation(format!("invalid workflow run id '{}': {error}", run_id))
+        })?;
+
+        let row = sqlx::query_as::<_, WorkflowRunRow>(
+            r#"
+            SELECT
+                id,
+                workflow_logical_name,
+                trigger_type,
+                trigger_entity_logical_name,
+                trigger_payload,
+                status,
+                attempts,
+                dead_letter_reason,
+                started_at,
+                finished_at
+            FROM workflow_execution_runs
+            WHERE tenant_id = $1 AND id = $2
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(run_uuid)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to find workflow run '{}' for tenant '{}': {error}",
+                run_id, tenant_id
+            ))
+        })?;
+
+        row.map(workflow_run_from_row).transpose()
+    }
+
     pub(super) async fn list_run_attempts_impl(
         &self,
         tenant_id: TenantId,
@@ -199,7 +243,7 @@ impl PostgresWorkflowRepository {
 
         let rows = sqlx::query_as::<_, WorkflowRunAttemptRow>(
             r#"
-            SELECT run_id, attempt_number, status, error_message, executed_at
+            SELECT run_id, attempt_number, status, error_message, executed_at, step_traces
             FROM workflow_execution_attempts
             WHERE tenant_id = $1 AND run_id = $2
             ORDER BY attempt_number

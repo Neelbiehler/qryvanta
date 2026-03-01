@@ -14,6 +14,7 @@ use qryvanta_domain::{
 
 use crate::workflow_ports::{
     ClaimedWorkflowJob, CompleteWorkflowRunInput, CreateWorkflowRunInput, SaveWorkflowInput,
+    WorkflowActionDispatchRequest, WorkflowActionDispatchType, WorkflowActionDispatcher,
     WorkflowClaimPartition, WorkflowExecutionMode, WorkflowQueueStats, WorkflowQueueStatsQuery,
     WorkflowRepository, WorkflowRun, WorkflowRunAttempt, WorkflowRunListQuery, WorkflowRunStatus,
     WorkflowRuntimeRecordService, WorkflowWorkerHeartbeatInput,
@@ -352,6 +353,16 @@ impl WorkflowRepository for FakeWorkflowRepository {
         Ok(self.runs.lock().await.clone())
     }
 
+    async fn find_run(&self, _tenant_id: TenantId, run_id: &str) -> AppResult<Option<WorkflowRun>> {
+        Ok(self
+            .runs
+            .lock()
+            .await
+            .iter()
+            .find(|run| run.run_id == run_id)
+            .cloned())
+    }
+
     async fn list_run_attempts(
         &self,
         _tenant_id: TenantId,
@@ -371,6 +382,7 @@ impl WorkflowRepository for FakeWorkflowRepository {
 #[derive(Default)]
 struct FakeRuntimeRecordService {
     failures_remaining: Mutex<i32>,
+    created_records: Mutex<Vec<(String, serde_json::Value)>>,
 }
 
 #[async_trait]
@@ -378,8 +390,8 @@ impl WorkflowRuntimeRecordService for FakeRuntimeRecordService {
     async fn create_runtime_record_unchecked(
         &self,
         _actor: &UserIdentity,
-        _entity_logical_name: &str,
-        _data: serde_json::Value,
+        entity_logical_name: &str,
+        data: serde_json::Value,
     ) -> AppResult<qryvanta_domain::RuntimeRecord> {
         let mut failures_remaining = self.failures_remaining.lock().await;
         if *failures_remaining > 0 {
@@ -389,7 +401,25 @@ impl WorkflowRuntimeRecordService for FakeRuntimeRecordService {
             ));
         }
 
+        self.created_records
+            .lock()
+            .await
+            .push((entity_logical_name.to_owned(), data));
+
         qryvanta_domain::RuntimeRecord::new("record-1", "contact", json!({"name": "Alice"}))
+    }
+}
+
+#[derive(Default)]
+struct FakeActionDispatcher {
+    dispatched_requests: Mutex<Vec<WorkflowActionDispatchRequest>>,
+}
+
+#[async_trait]
+impl WorkflowActionDispatcher for FakeActionDispatcher {
+    async fn dispatch_action(&self, request: WorkflowActionDispatchRequest) -> AppResult<()> {
+        self.dispatched_requests.lock().await.push(request);
+        Ok(())
     }
 }
 
@@ -398,6 +428,7 @@ fn build_service(
     repository: Arc<FakeWorkflowRepository>,
     runtime_service: Arc<FakeRuntimeRecordService>,
     execution_mode: WorkflowExecutionMode,
+    action_dispatcher: Option<Arc<FakeActionDispatcher>>,
 ) -> WorkflowService {
     let audit_repository = Arc::new(FakeAuditRepository);
     let authorization_service = AuthorizationService::new(
@@ -405,13 +436,19 @@ fn build_service(
         audit_repository.clone(),
     );
 
-    WorkflowService::new(
+    let service = WorkflowService::new(
         authorization_service,
         repository,
         runtime_service,
         audit_repository,
         execution_mode,
-    )
+    );
+
+    if let Some(dispatcher) = action_dispatcher {
+        return service.with_action_dispatcher(dispatcher);
+    }
+
+    service
 }
 
 #[tokio::test]
@@ -433,6 +470,7 @@ async fn execute_workflow_dead_letters_after_max_attempts() {
         repository.clone(),
         runtime_service,
         WorkflowExecutionMode::Inline,
+        None,
     );
 
     let saved = service
@@ -471,6 +509,77 @@ async fn execute_workflow_dead_letters_after_max_attempts() {
 }
 
 #[tokio::test]
+async fn retry_run_step_retries_failed_action_without_new_run() {
+    let tenant_id = TenantId::new();
+    let actor = UserIdentity::new("maker", "maker", None, tenant_id);
+    let repository = Arc::new(FakeWorkflowRepository::default());
+    let runtime_service = Arc::new(FakeRuntimeRecordService::default());
+    *runtime_service.failures_remaining.lock().await = 1;
+
+    let service = build_service(
+        HashMap::from([(
+            (tenant_id, "maker".to_owned()),
+            vec![
+                Permission::MetadataFieldWrite,
+                Permission::MetadataFieldRead,
+            ],
+        )]),
+        repository.clone(),
+        runtime_service,
+        WorkflowExecutionMode::Inline,
+        None,
+    );
+
+    let saved = service
+        .save_workflow(
+            &actor,
+            SaveWorkflowInput {
+                logical_name: "retry_failed_step".to_owned(),
+                display_name: "Retry Failed Step".to_owned(),
+                description: None,
+                trigger: WorkflowTrigger::Manual,
+                action: WorkflowAction::CreateRuntimeRecord {
+                    entity_logical_name: "contact".to_owned(),
+                    data: json!({"name": "Alice"}),
+                },
+                steps: Some(vec![WorkflowStep::CreateRuntimeRecord {
+                    entity_logical_name: "contact".to_owned(),
+                    data: json!({"name": "Alice"}),
+                }]),
+                max_attempts: 1,
+                is_enabled: true,
+            },
+        )
+        .await;
+    assert!(saved.is_ok());
+
+    let run = service
+        .execute_workflow(&actor, "retry_failed_step", json!({"manual": true}))
+        .await;
+    assert!(run.is_ok());
+    let run = run.unwrap_or_else(|_| unreachable!());
+    assert_eq!(run.status, WorkflowRunStatus::DeadLettered);
+    assert_eq!(run.attempts, 1);
+
+    let retried = service
+        .retry_run_step(&actor, "retry_failed_step", run.run_id.as_str(), "0")
+        .await;
+    assert!(retried.is_ok());
+    let retried = retried.unwrap_or_else(|_| unreachable!());
+    assert_eq!(retried.status, WorkflowRunStatus::Succeeded);
+    assert_eq!(retried.attempts, 2);
+
+    let attempts = repository
+        .list_run_attempts(tenant_id, run.run_id.as_str())
+        .await;
+    assert!(attempts.is_ok());
+    let attempts = attempts.unwrap_or_default();
+    assert_eq!(attempts.len(), 2);
+    assert_eq!(attempts[1].step_traces.len(), 1);
+    assert_eq!(attempts[1].step_traces[0].status, "succeeded");
+}
+
+#[tokio::test]
 async fn dispatch_runtime_record_created_executes_matching_workflows() {
     let tenant_id = TenantId::new();
     let actor = UserIdentity::new("maker", "maker", None, tenant_id);
@@ -487,6 +596,7 @@ async fn dispatch_runtime_record_created_executes_matching_workflows() {
         repository,
         runtime_service,
         WorkflowExecutionMode::Inline,
+        None,
     );
 
     let save_result = service
@@ -511,11 +621,182 @@ async fn dispatch_runtime_record_created_executes_matching_workflows() {
     assert!(save_result.is_ok());
 
     let dispatched = service
-        .dispatch_runtime_record_created(&actor, "contact", "record-1")
+        .dispatch_runtime_record_created(&actor, "contact", "record-1", &json!({"name": "Alice"}))
         .await;
 
     assert!(dispatched.is_ok());
     assert_eq!(dispatched.unwrap_or_default(), 1);
+}
+
+#[tokio::test]
+async fn dispatch_runtime_record_updated_executes_matching_workflows() {
+    let tenant_id = TenantId::new();
+    let actor = UserIdentity::new("maker", "maker", None, tenant_id);
+    let repository = Arc::new(FakeWorkflowRepository::default());
+    let runtime_service = Arc::new(FakeRuntimeRecordService::default());
+    let service = build_service(
+        HashMap::from([(
+            (tenant_id, "maker".to_owned()),
+            vec![
+                Permission::MetadataFieldWrite,
+                Permission::MetadataFieldRead,
+            ],
+        )]),
+        repository,
+        runtime_service,
+        WorkflowExecutionMode::Inline,
+        None,
+    );
+
+    let save_result = service
+        .save_workflow(
+            &actor,
+            SaveWorkflowInput {
+                logical_name: "on_contact_updated".to_owned(),
+                display_name: "On Contact Updated".to_owned(),
+                description: None,
+                trigger: WorkflowTrigger::RuntimeRecordUpdated {
+                    entity_logical_name: "contact".to_owned(),
+                },
+                action: WorkflowAction::LogMessage {
+                    message: "updated".to_owned(),
+                },
+                steps: None,
+                max_attempts: 2,
+                is_enabled: true,
+            },
+        )
+        .await;
+    assert!(save_result.is_ok());
+
+    let dispatched = service
+        .dispatch_runtime_record_updated(
+            &actor,
+            "contact",
+            "record-1",
+            Some(&json!({"status": "open"})),
+            &json!({"status": "closed"}),
+        )
+        .await;
+
+    assert!(dispatched.is_ok());
+    assert_eq!(dispatched.unwrap_or_default(), 1);
+}
+
+#[tokio::test]
+async fn dispatch_schedule_tick_executes_matching_workflows() {
+    let tenant_id = TenantId::new();
+    let actor = UserIdentity::new("maker", "maker", None, tenant_id);
+    let repository = Arc::new(FakeWorkflowRepository::default());
+    let runtime_service = Arc::new(FakeRuntimeRecordService::default());
+    let service = build_service(
+        HashMap::from([(
+            (tenant_id, "maker".to_owned()),
+            vec![
+                Permission::MetadataFieldWrite,
+                Permission::MetadataFieldRead,
+            ],
+        )]),
+        repository,
+        runtime_service,
+        WorkflowExecutionMode::Inline,
+        None,
+    );
+
+    let save_result = service
+        .save_workflow(
+            &actor,
+            SaveWorkflowInput {
+                logical_name: "hourly_digest".to_owned(),
+                display_name: "Hourly Digest".to_owned(),
+                description: None,
+                trigger: WorkflowTrigger::ScheduleTick {
+                    schedule_key: "hourly".to_owned(),
+                },
+                action: WorkflowAction::LogMessage {
+                    message: "schedule".to_owned(),
+                },
+                steps: None,
+                max_attempts: 2,
+                is_enabled: true,
+            },
+        )
+        .await;
+    assert!(save_result.is_ok());
+
+    let dispatched = service
+        .dispatch_schedule_tick(
+            &actor,
+            "hourly",
+            Some(json!({"tick": "2026-03-01T00:00:00Z"})),
+        )
+        .await;
+
+    assert!(dispatched.is_ok());
+    assert_eq!(dispatched.unwrap_or_default(), 1);
+}
+
+#[tokio::test]
+async fn execute_workflow_dispatches_external_integration_actions_with_idempotency_key() {
+    let tenant_id = TenantId::new();
+    let actor = UserIdentity::new("maker", "maker", None, tenant_id);
+    let repository = Arc::new(FakeWorkflowRepository::default());
+    let runtime_service = Arc::new(FakeRuntimeRecordService::default());
+    let action_dispatcher = Arc::new(FakeActionDispatcher::default());
+    let service = build_service(
+        HashMap::from([(
+            (tenant_id, "maker".to_owned()),
+            vec![
+                Permission::MetadataFieldWrite,
+                Permission::MetadataFieldRead,
+            ],
+        )]),
+        repository,
+        runtime_service,
+        WorkflowExecutionMode::Inline,
+        Some(action_dispatcher.clone()),
+    );
+
+    let save_result = service
+        .save_workflow(
+            &actor,
+            SaveWorkflowInput {
+                logical_name: "dispatch_http".to_owned(),
+                display_name: "Dispatch HTTP".to_owned(),
+                description: None,
+                trigger: WorkflowTrigger::Manual,
+                action: WorkflowAction::LogMessage {
+                    message: "legacy".to_owned(),
+                },
+                steps: Some(vec![WorkflowStep::CreateRuntimeRecord {
+                    entity_logical_name: "integration_http_request".to_owned(),
+                    data: json!({
+                        "method": "POST",
+                        "url": "https://example.org/hook",
+                        "body": {"record_id": "{{trigger.payload.record_id}}"}
+                    }),
+                }]),
+                max_attempts: 2,
+                is_enabled: true,
+            },
+        )
+        .await;
+    assert!(save_result.is_ok());
+
+    let run = service
+        .execute_workflow(&actor, "dispatch_http", json!({"record_id": "rec-17"}))
+        .await;
+    assert!(run.is_ok());
+    let run = run.unwrap_or_else(|_| unreachable!());
+
+    let dispatched = action_dispatcher.dispatched_requests.lock().await.clone();
+    assert_eq!(dispatched.len(), 1);
+    assert_eq!(
+        dispatched[0].dispatch_type,
+        WorkflowActionDispatchType::HttpRequest
+    );
+    assert_eq!(dispatched[0].idempotency_key, format!("{}:0", run.run_id));
+    assert_eq!(dispatched[0].payload["body"]["record_id"], json!("rec-17"));
 }
 
 #[tokio::test]
@@ -535,6 +816,7 @@ async fn execute_workflow_condition_branch_uses_trigger_payload() {
         repository,
         runtime_service,
         WorkflowExecutionMode::Inline,
+        None,
     );
 
     let save_result = service
@@ -579,6 +861,78 @@ async fn execute_workflow_condition_branch_uses_trigger_payload() {
 }
 
 #[tokio::test]
+async fn execute_workflow_interpolates_trigger_and_run_tokens_in_actions() {
+    let tenant_id = TenantId::new();
+    let actor = UserIdentity::new("maker", "maker", None, tenant_id);
+    let repository = Arc::new(FakeWorkflowRepository::default());
+    let runtime_service = Arc::new(FakeRuntimeRecordService::default());
+    let service = build_service(
+        HashMap::from([(
+            (tenant_id, "maker".to_owned()),
+            vec![
+                Permission::MetadataFieldWrite,
+                Permission::MetadataFieldRead,
+            ],
+        )]),
+        repository,
+        runtime_service.clone(),
+        WorkflowExecutionMode::Inline,
+        None,
+    );
+
+    let save_result = service
+        .save_workflow(
+            &actor,
+            SaveWorkflowInput {
+                logical_name: "interpolate_runtime_tokens".to_owned(),
+                display_name: "Interpolate Runtime Tokens".to_owned(),
+                description: None,
+                trigger: WorkflowTrigger::Manual,
+                action: WorkflowAction::CreateRuntimeRecord {
+                    entity_logical_name: "outbox".to_owned(),
+                    data: json!({"title": "fallback"}),
+                },
+                steps: Some(vec![WorkflowStep::CreateRuntimeRecord {
+                    entity_logical_name: "{{trigger.payload.target_entity}}".to_owned(),
+                    data: json!({
+                        "title": "Record {{trigger.payload.record_id}}",
+                        "record_id": "{{trigger.payload.record_id}}",
+                        "run_id": "{{run.id}}",
+                        "attempt": "{{run.attempt}}",
+                        "owner": "{{trigger.payload.owner}}",
+                    }),
+                }]),
+                max_attempts: 2,
+                is_enabled: true,
+            },
+        )
+        .await;
+    assert!(save_result.is_ok());
+
+    let run = service
+        .execute_workflow(
+            &actor,
+            "interpolate_runtime_tokens",
+            json!({
+                "target_entity": "contact",
+                "record_id": "rec-42",
+                "owner": "ops@qryvanta.test"
+            }),
+        )
+        .await;
+    assert!(run.is_ok());
+
+    let created_records = runtime_service.created_records.lock().await.clone();
+    assert_eq!(created_records.len(), 1);
+    assert_eq!(created_records[0].0, "contact");
+    assert_eq!(created_records[0].1["title"], json!("Record rec-42"));
+    assert_eq!(created_records[0].1["record_id"], json!("rec-42"));
+    assert_eq!(created_records[0].1["attempt"], json!(1));
+    assert_eq!(created_records[0].1["owner"], json!("ops@qryvanta.test"));
+    assert!(created_records[0].1["run_id"].as_str().is_some());
+}
+
+#[tokio::test]
 async fn queued_mode_enqueues_and_worker_executes_claimed_job() {
     let tenant_id = TenantId::new();
     let actor = UserIdentity::new("maker", "maker", None, tenant_id);
@@ -595,6 +949,7 @@ async fn queued_mode_enqueues_and_worker_executes_claimed_job() {
         repository,
         runtime_service,
         WorkflowExecutionMode::Queued,
+        None,
     );
 
     let save_result = service
@@ -655,6 +1010,7 @@ async fn queued_mode_rejects_claimed_job_with_empty_lease_token() {
         repository,
         runtime_service,
         WorkflowExecutionMode::Queued,
+        None,
     );
 
     let save_result = service
@@ -725,6 +1081,7 @@ async fn queued_mode_supports_worker_heartbeat_and_queue_stats() {
         repository,
         runtime_service,
         WorkflowExecutionMode::Queued,
+        None,
     );
 
     let heartbeat = service

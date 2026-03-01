@@ -113,7 +113,7 @@ export function useWorkflowEditor({
         description: description.trim().length > 0 ? description : null,
         trigger_type: triggerType,
         trigger_entity_logical_name:
-          triggerType === "runtime_record_created" &&
+          triggerType !== "manual" &&
           triggerEntityLogicalName.trim().length > 0
             ? triggerEntityLogicalName
             : null,
