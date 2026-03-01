@@ -100,7 +100,7 @@ export function WorkerAppLibraryPanel({ apps }: WorkerAppLibraryPanelProps) {
             .toLowerCase()
             .includes(normalizedQuery);
         })
-        .toSorted((a, b) =>
+        .sort((a, b) =>
           sortMode === "display_asc"
             ? a.display_name.localeCompare(b.display_name)
             : b.display_name.localeCompare(a.display_name),

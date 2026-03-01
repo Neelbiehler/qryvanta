@@ -4,6 +4,7 @@ mod common;
 mod entities;
 mod publish;
 pub(crate) mod runtime;
+mod search;
 mod security;
 mod workflows;
 
@@ -39,6 +40,13 @@ pub use runtime::{
     RuntimeRecordQueryGroupRequest, RuntimeRecordQueryLinkEntityRequest, RuntimeRecordResponse,
     UpdateRuntimeRecordRequest,
 };
+pub use search::{
+    QrywellSearchAnalyticsResponse, QrywellSearchClickEventRequest, QrywellSearchHitResponse,
+    QrywellSearchLowRelevanceClickResponse, QrywellSearchRankMetricResponse, QrywellSearchRequest,
+    QrywellSearchResponse, QrywellSearchTopQueryResponse, QrywellSearchZeroClickQueryResponse,
+    QrywellSyncAllResponse, QrywellSyncFailedJobResponse, QrywellSyncHealthResponse,
+    QrywellSyncRequest, QrywellSyncResponse,
+};
 pub use security::{
     AssignRoleRequest, AuditLogEntryResponse, AuditPurgeResultResponse,
     AuditRetentionPolicyResponse, CreateRoleRequest, CreateTemporaryAccessGrantRequest,
@@ -73,17 +81,21 @@ mod tests {
         HealthResponse, InviteRequest, OptionSetResponse, PublishCheckCategoryDto,
         PublishCheckIssueResponse, PublishCheckScopeDto, PublishCheckSeverityDto,
         PublishChecksResponse, PublishSurfaceDeltaItemResponse, PublishedSchemaResponse,
-        QueryRuntimeRecordsRequest, RemoveRoleAssignmentRequest, RevokeTemporaryAccessGrantRequest,
-        RoleAssignmentResponse, RoleResponse, RunWorkspacePublishRequest,
-        RunWorkspacePublishResponse, RuntimeFieldPermissionResponse, RuntimeRecordResponse,
-        SaveAppRoleEntityPermissionRequest, SaveAppSitemapRequest,
-        SaveRuntimeFieldPermissionsRequest, SaveWorkflowRequest, TemporaryAccessGrantResponse,
-        TenantRegistrationModeResponse, UpdateAuditRetentionPolicyRequest, UpdateEntityRequest,
-        UpdateFieldRequest, UpdateRuntimeRecordRequest, UpdateTenantRegistrationModeRequest,
-        UserIdentityResponse, ViewResponse, WorkflowResponse, WorkflowRunAttemptResponse,
-        WorkflowRunResponse, WorkspaceDashboardResponse, WorkspacePublishChecksResponse,
-        WorkspacePublishDiffRequest, WorkspacePublishDiffResponse,
-        WorkspacePublishHistoryEntryResponse,
+        QrywellSearchAnalyticsResponse, QrywellSearchClickEventRequest,
+        QrywellSearchLowRelevanceClickResponse, QrywellSearchRankMetricResponse,
+        QrywellSearchRequest, QrywellSearchResponse, QrywellSearchTopQueryResponse,
+        QrywellSearchZeroClickQueryResponse, QrywellSyncAllResponse, QrywellSyncHealthResponse,
+        QrywellSyncRequest, QrywellSyncResponse, QueryRuntimeRecordsRequest,
+        RemoveRoleAssignmentRequest, RevokeTemporaryAccessGrantRequest, RoleAssignmentResponse,
+        RoleResponse, RunWorkspacePublishRequest, RunWorkspacePublishResponse,
+        RuntimeFieldPermissionResponse, RuntimeRecordResponse, SaveAppRoleEntityPermissionRequest,
+        SaveAppSitemapRequest, SaveRuntimeFieldPermissionsRequest, SaveWorkflowRequest,
+        TemporaryAccessGrantResponse, TenantRegistrationModeResponse,
+        UpdateAuditRetentionPolicyRequest, UpdateEntityRequest, UpdateFieldRequest,
+        UpdateRuntimeRecordRequest, UpdateTenantRegistrationModeRequest, UserIdentityResponse,
+        ViewResponse, WorkflowResponse, WorkflowRunAttemptResponse, WorkflowRunResponse,
+        WorkspaceDashboardResponse, WorkspacePublishChecksResponse, WorkspacePublishDiffRequest,
+        WorkspacePublishDiffResponse, WorkspacePublishHistoryEntryResponse,
     };
 
     use crate::error::ErrorResponse;
@@ -129,6 +141,9 @@ mod tests {
         super::runtime::RuntimeRecordQueryLinkEntityRequest::export(&config)?;
         super::runtime::RuntimeRecordQuerySortRequest::export(&config)?;
         QueryRuntimeRecordsRequest::export(&config)?;
+        QrywellSearchRequest::export(&config)?;
+        QrywellSearchClickEventRequest::export(&config)?;
+        QrywellSyncRequest::export(&config)?;
         EntityResponse::export(&config)?;
         AppResponse::export(&config)?;
         AppEntityBindingResponse::export(&config)?;
@@ -165,6 +180,17 @@ mod tests {
         PublishedSchemaResponse::export(&config)?;
         ViewResponse::export(&config)?;
         RuntimeRecordResponse::export(&config)?;
+        super::search::QrywellSearchHitResponse::export(&config)?;
+        super::search::QrywellSyncFailedJobResponse::export(&config)?;
+        QrywellSearchResponse::export(&config)?;
+        QrywellSearchTopQueryResponse::export(&config)?;
+        QrywellSearchRankMetricResponse::export(&config)?;
+        QrywellSearchZeroClickQueryResponse::export(&config)?;
+        QrywellSearchLowRelevanceClickResponse::export(&config)?;
+        QrywellSearchAnalyticsResponse::export(&config)?;
+        QrywellSyncAllResponse::export(&config)?;
+        QrywellSyncHealthResponse::export(&config)?;
+        QrywellSyncResponse::export(&config)?;
         WorkflowResponse::export(&config)?;
         WorkflowRunResponse::export(&config)?;
         WorkflowRunAttemptResponse::export(&config)?;

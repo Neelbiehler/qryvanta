@@ -37,4 +37,10 @@ pub struct AppState {
     pub postgres_pool: PgPool,
     pub redis_client: Option<redis::Client>,
     pub redis_required: bool,
+    pub qrywell_api_base_url: Option<String>,
+    pub qrywell_api_key: Option<String>,
+    pub qrywell_sync_poll_interval_ms: u64,
+    pub qrywell_sync_batch_size: usize,
+    pub qrywell_sync_max_attempts: i32,
+    pub http_client: reqwest::Client,
 }

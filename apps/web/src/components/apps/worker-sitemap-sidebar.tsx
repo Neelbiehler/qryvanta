@@ -31,7 +31,7 @@ export function WorkerSitemapSidebar({
   activeEntityLogicalName,
   activeDashboardLogicalName,
 }: WorkerSitemapSidebarProps) {
-  const areas = sitemap.areas.toSorted((left, right) => left.position - right.position);
+  const areas = [...sitemap.areas].sort((left, right) => left.position - right.position);
   const collapseStorageKey = `worker_sitemap_groups_${appLogicalName}`;
   const favoritesStorageKey = `worker_sitemap_favorites_${appLogicalName}`;
 
@@ -90,9 +90,11 @@ export function WorkerSitemapSidebar({
     const items: SidebarMenuItem[] = [];
 
     for (const area of areas) {
-      const groups = area.groups.toSorted((left, right) => left.position - right.position);
+      const groups = [...area.groups].sort((left, right) => left.position - right.position);
       for (const group of groups) {
-        const subAreas = group.sub_areas.toSorted((left, right) => left.position - right.position);
+        const subAreas = [...group.sub_areas].sort(
+          (left, right) => left.position - right.position,
+        );
         for (const subArea of subAreas) {
           if (subArea.target.type === "entity") {
             const logicalName = subArea.target.entity_logical_name;
@@ -284,10 +286,12 @@ export function WorkerSitemapSidebar({
             </p>
 
             {area.groups
-              .toSorted((left, right) => left.position - right.position)
+              .slice()
+              .sort((left, right) => left.position - right.position)
               .map((group) => {
                 const visibleSubAreas = group.sub_areas
-                  .toSorted((left, right) => left.position - right.position)
+                  .slice()
+                  .sort((left, right) => left.position - right.position)
                   .filter((subArea) => {
                     if (quickFindValue.length === 0) return true;
                     if (subArea.target.type === "entity") {

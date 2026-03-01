@@ -93,8 +93,8 @@ export function FieldControl({
             required={isRequired}
           >
             <option value="">-- Select --</option>
-            {optionSet.options
-              .toSorted((left, right) => left.position - right.position)
+            {[...optionSet.options]
+              .sort((left, right) => left.position - right.position)
               .map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}

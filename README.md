@@ -109,6 +109,20 @@ For high-frequency ops polling, set `WORKFLOW_QUEUE_STATS_CACHE_TTL_SECONDS` to 
 - Set `WORKFLOW_QUEUE_STATS_CACHE_BACKEND=redis` to share queue stats cache across API replicas.
 - Set `SESSION_STORE=redis` to move session storage out of Postgres.
 
+## Qrywell Search Integration (Optional)
+
+- Set `QRYWELL_API_BASE_URL` to enable Qrywell-backed search proxy from Qryvanta API.
+- Optional `QRYWELL_API_KEY` is forwarded to Qrywell as `x-qrywell-api-key`.
+- Call `POST /api/search/qrywell` from authenticated product surfaces to retrieve tenant-scoped search hits.
+- Runtime record create/update/delete now queue durable Qrywell sync jobs with retry/backoff processing.
+- Use `POST /api/search/qrywell/sync/{entity_logical_name}` for manual backfill of existing records.
+- Use `POST /api/search/qrywell/sync-all` for full-tenant backfill across all entities.
+- Use `GET /api/search/qrywell/queue-health` to monitor pending/processing/failed sync jobs.
+- Use `POST /api/search/qrywell/events/click` to collect result interaction analytics for relevance tuning.
+- Use `GET /api/search/qrywell/analytics` for query quality signals (top queries, rank click share, zero-click, low-relevance clicks).
+- Query forwarding uses tenant metadata to derive schema-aware facet filters (entity + option-set values) without hardcoded business field names.
+- Tune sync worker behavior using `QRYWELL_SYNC_POLL_INTERVAL_MS`, `QRYWELL_SYNC_BATCH_SIZE`, and `QRYWELL_SYNC_MAX_ATTEMPTS`.
+
 ## Transactional Email
 
 - Local default: `EMAIL_PROVIDER=console` (email content goes to API logs).

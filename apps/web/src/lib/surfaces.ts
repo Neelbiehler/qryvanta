@@ -37,6 +37,7 @@ export const SURFACES: Record<SurfaceId, SurfaceDefinition> = {
       { label: "Overview", href: "/admin" },
       { label: "Roles", href: "/admin/roles" },
       { label: "Audit Log", href: "/admin/audit" },
+      { label: "Search Sync", href: "/admin/search-sync" },
       { label: "Security Settings", href: "/admin/account" },
     ],
   },

@@ -11,6 +11,7 @@ mod dto;
 mod error;
 mod handlers;
 mod middleware;
+mod qrywell_sync;
 mod redis_session_store;
 mod state;
 
@@ -39,6 +40,7 @@ async fn main() -> Result<(), AppError> {
     }
 
     let app_state = api_services::build_app_state(pool.clone(), &config)?;
+    qrywell_sync::spawn_qrywell_sync_worker(app_state.clone());
     let app = match config.session_store_backend {
         SessionStoreBackend::Postgres => {
             let session_layer =

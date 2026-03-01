@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
-import { ArrowRight, LayoutGrid } from "lucide-react";
+import { ArrowRight, LayoutGrid, Search } from "lucide-react";
 
 import { EmptyState, StatusBadge, buttonVariants } from "@qryvanta/ui";
 
@@ -67,7 +67,7 @@ export default async function WorkerHomePage() {
           {user.email ? (
             <p className="mt-0.5 text-sm text-zinc-500">{user.email}</p>
           ) : null}
-          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <div className="mt-4 flex flex-wrap items-center gap-3">
             {apps.length > 0 ? (
               <StatusBadge tone="success" dot>
                 {apps.length} app{apps.length !== 1 ? "s" : ""} assigned
@@ -75,10 +75,17 @@ export default async function WorkerHomePage() {
             ) : (
               <StatusBadge tone="warning">No apps assigned</StatusBadge>
             )}
-            <Link href="/worker/apps" className={buttonVariants({ size: "sm" })}>
-              My Apps
-            </Link>
-          </div>
+              <Link href="/worker/apps" className={buttonVariants({ size: "sm" })}>
+                My Apps
+              </Link>
+              <Link
+                href="/worker/search"
+                className={buttonVariants({ variant: "outline", size: "sm" })}
+              >
+                <Search className="h-3.5 w-3.5" />
+                Search
+              </Link>
+            </div>
         </div>
       </div>
 
