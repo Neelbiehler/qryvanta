@@ -1,0 +1,38 @@
+---
+title: Workspace
+description: How Admin Center, Maker Center, and Worker Apps work together in daily product use.
+---
+
+Qryvanta separates product usage into role-based surfaces.
+Each surface has its own navigation and permission checks.
+
+## Surfaces
+
+- Admin Center (`/admin`): roles, assignments, invite flow, audit controls.
+- Maker Center (`/maker`): entities, fields, forms, views, and publish actions.
+- Worker Apps (`/worker`): runtime record creation, updates, and daily operations.
+- Docs (`/docs`): user and operator reference.
+
+The same tenant can have users in one surface or in multiple surfaces.
+
+## Recommended Team Flow
+
+1. Admin configures access and invites users.
+2. Maker defines data model and app navigation.
+3. Maker publishes metadata.
+4. Worker users run day-to-day processes in generated app pages.
+5. Admin reviews audit and access events.
+
+## Practical Rules
+
+- Control-plane tasks stay in admin and maker surfaces.
+- Runtime tasks stay in worker surfaces.
+- Permissions and publish checks gate what appears to each role.
+- When a role lacks access, fix role assignments before changing metadata.
+
+## Page Guide
+
+- Read `Admin Center` when setting roles, invites, and audit policy.
+- Read `Maker Center` when changing entities, forms, views, or navigation.
+- Read `Worker Apps` when validating daily runtime behavior.
+- Read `Publish and Access` before release windows.

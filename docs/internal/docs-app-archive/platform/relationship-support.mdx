@@ -1,0 +1,35 @@
+---
+title: Relationship Support
+description: Lookup field modeling, related-record sub-grids, and publish-time relationship validation.
+---
+
+Phase status: in progress.
+
+Qryvanta supports metadata-defined entity relationships through lookup fields.
+
+## What Works Today
+
+- Relation target selection when creating `relation` fields.
+- Relationship templates in maker workflows:
+  - single lookup (`1:N`)
+  - junction pair for bridge entities (`N:N` modeling pattern)
+- Relation fields rendered as lookup selectors in worker forms.
+- Related-record sub-grids in form sections.
+
+## Runtime Behavior
+
+- Lookup options resolve from target entity records in tenant and app scope.
+- Sub-grids query child records where relation field equals current record id.
+- Permission checks apply to parent and child entities.
+
+## Publish Checks
+
+- Relationship targets must exist and be publishable.
+- Selective publish can treat included relation targets as in-flight dependencies.
+- Dependency edges are returned in issues with `dependency_path`.
+
+## Done Criteria
+
+- Makers can configure lookup relationships in UI.
+- Worker pages render lookup and sub-grid behavior from metadata.
+- Publish checks report relationship failures with explicit dependency paths.

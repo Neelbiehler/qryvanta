@@ -1,0 +1,44 @@
+---
+title: Business Rules
+description: Metadata-defined condition and action rules executed in worker UI and API runtime paths.
+---
+
+Phase status: in progress.
+
+Business rules are defined per entity and can be scoped to entity or form contexts.
+
+## Rule Model
+
+- `scope`: `entity` or `form`
+- `conditions[]`: field, operator, value tuples
+- `actions[]`: typed runtime actions
+- `is_active`: rule on or off
+
+## Current Endpoints
+
+- `GET /api/entities/:entity_logical_name/business-rules`
+- `POST /api/entities/:entity_logical_name/business-rules`
+- `GET /api/entities/:entity_logical_name/business-rules/:business_rule_logical_name`
+- `PUT /api/entities/:entity_logical_name/business-rules/:business_rule_logical_name`
+- `DELETE /api/entities/:entity_logical_name/business-rules/:business_rule_logical_name`
+- `GET /api/runtime/:entity_logical_name/business-rules`
+
+## Runtime Behavior
+
+- Worker clients use active rules for create and edit flows.
+- API runtime enforces active entity-scoped `show_error` rules.
+- API runtime applies value and requiredness actions during create and update normalization.
+
+Supported API-side actions include `set_default_value`, `set_field_value`, `set_required`, `set_optional`, and lock behavior on update.
+
+## Maker Routes
+
+- `/maker/entities/:entity_logical_name/business-rules`
+- `/maker/entities/:entity_logical_name/business-rules/new`
+- `/maker/entities/:entity_logical_name/business-rules/:business_rule_logical_name`
+
+## Done Criteria
+
+- Makers can author and maintain rules in visual workflows.
+- Worker and API runtime paths evaluate active rules consistently.
+- Rule references are validated against published schema fields.

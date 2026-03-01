@@ -1,0 +1,38 @@
+---
+title: App Designer v2
+description: Unified maker workspace for sitemap editing and page-level form or view defaults.
+---
+
+Phase status: in progress.
+
+App Designer v2 is the current maker workspace for app composition.
+Legacy maker editing routes now redirect into studio routes.
+
+## Current Scope
+
+- Sitemap editing for areas, groups, and page targets.
+- Per-page defaults for form and view selection.
+- Inline entity, field, form, and view creation from the solution explorer.
+- Embedded security and publish panels inside studio.
+- Worker preview actions for flow checks.
+
+## Runtime Contract
+
+- Navigation source: `GET /api/workspace/apps/:app_logical_name/navigation`
+- Per-entity forms: `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/forms`
+- Per-entity views: `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/views`
+- App publish checks: `GET /api/apps/:app_logical_name/publish-checks`
+
+Sitemap saves validate entity targets and optional `default_form` or `default_view` references.
+
+## Known Behavior
+
+- Ordering stays deterministic after save and reload.
+- Undo and redo are supported in studio editing flows.
+- Worker shell uses sitemap-first navigation and suppresses generic global nav chrome.
+
+## Definition of Done for v2
+
+- Makers can define sitemap hierarchy without raw JSON edits.
+- Per-page defaults persist and apply in worker routes.
+- Publish checks block invalid form or view references.

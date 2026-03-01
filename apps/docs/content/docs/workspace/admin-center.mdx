@@ -1,0 +1,46 @@
+---
+title: Admin Center
+description: Tenant access administration, invite policy, and audit visibility.
+---
+
+Admin Center is for tenant and security administration.
+
+Use Admin Center before broad user rollout and after every permission change.
+
+## Primary Tasks
+
+- Create and manage custom roles.
+- Assign roles to tenant members.
+- Configure registration mode (`invite_only` or `open`).
+- Review audit log entries and exports.
+- Manage temporary privileged access grants.
+
+## First Admin Checklist
+
+1. Verify owner role access after bootstrap.
+2. Create role templates for makers and workers.
+3. Assign members to roles.
+4. Confirm audit visibility for metadata and security actions.
+5. Set registration mode to `invite_only` unless open registration is required.
+
+## Ongoing Operations
+
+- Keep role names tied to job functions.
+- Use temporary privileged access for short-term elevated work.
+- Review audit filters by action and subject during incident triage.
+- Remove stale access grants and disabled-user assignments.
+
+## Minimum Role Model
+
+Use at least these role groups in most tenants:
+
+1. `tenant_owner` for full administration.
+2. maker role for metadata and publish workflows.
+3. worker role for runtime records only.
+4. read-only role for auditors and support users.
+
+## When Access Looks Wrong
+
+1. Check role assignment for the user subject.
+2. Check app-level permissions for that role.
+3. Ask the user to re-authenticate to refresh surface access state.

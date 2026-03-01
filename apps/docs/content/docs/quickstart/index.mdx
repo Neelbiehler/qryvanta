@@ -1,11 +1,11 @@
 ---
 title: Quickstart
-description: First-run steps for installing dependencies and running Qryvanta locally.
+description: First-run setup for a local Qryvanta instance.
 ---
 
 Qryvanta is in active development and is not ready for production use yet.
 
-Use this page as the canonical local setup path.
+Use this page to start a local instance and verify that the product is usable.
 
 ## Prerequisites
 
@@ -16,57 +16,59 @@ Use this page as the canonical local setup path.
 
 ## First Run
 
-1. Install workspace dependencies:
+1. Install workspace dependencies.
 
 ```bash
 pnpm install
 ```
 
-2. Start local infrastructure:
+2. Start Postgres and Redis.
 
 ```bash
 pnpm infra:up
 ```
 
-3. Create local environment file:
+3. Create your local `.env` file.
 
 ```bash
 cp .env.example .env
 ```
 
-4. Run baseline Rust checks:
-
-```bash
-cargo xcheck
-```
-
-5. Start development apps:
+4. Start API, web, and docs.
 
 ```bash
 pnpm dev
 ```
 
-Default local services:
+Local URLs:
 
 - API: `http://localhost:3001`
 - Web: `http://localhost:3000`
-- Landing: `http://localhost:3003`
 - Docs: `http://127.0.0.1:3002`
+- Postgres: `127.0.0.1:5432`
 
-## Verify Baseline
+## Verify Runtime Health
 
 ```bash
 curl http://127.0.0.1:3001/health
 ```
 
-Expected:
+Expected response:
 
 ```json
 {"status":"ok","ready":true,"postgres":{"status":"ok","detail":null},"redis":{"status":"ok","detail":null}}
 ```
 
+If `ready` is `false`, check container health in `Docker Setup`.
+
+## Verify Web Access
+
+1. Open `http://localhost:3000`.
+2. Complete bootstrap or registration.
+3. Confirm that at least one surface route opens.
+4. Continue in `Local Development` for the first publish flow.
+
 ## Next Pages
 
-- `Docker Setup`: infrastructure details and env bootstrap guidance.
-- `Local Development`: day-to-day commands and quality gates.
-- `Landing App`: run and adjust the public site in `apps/landing`.
+- `Docker Setup` for container checks and local troubleshooting.
+- `Local Development` for first login and first app flow.

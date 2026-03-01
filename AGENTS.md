@@ -78,10 +78,11 @@ Automation:
 
 Documentation is a required deliverable for every feature.
 
-1. Every new feature, behavior change, API contract change, config key, migration, or operational change must be documented in `apps/docs/content/docs`.
-2. Documentation must be structured under the correct section (`quickstart`, `architecture`, `platform`, `operations`, `development`) and included in navigation via `meta.json` when adding a new page.
-3. Pull requests that change behavior without documentation updates are incomplete unless the change is purely internal refactoring with no external impact.
-4. Agent implementations must update docs in the same change set, not as a later follow-up.
+1. Every new feature, behavior change, API contract change, config key, migration, or operational change must be documented in `apps/docs/content/docs` when it affects users or self-hosting operators.
+2. Maintainer-only guidance (coding-agent workflows, contribution process, refactor patterns) must live in repository docs under `docs/`.
+3. Product docs must be structured under the correct section (`quickstart`, `workspace`, `concepts`, `operations`) and included in navigation via `meta.json` when adding a new page.
+4. Pull requests that change behavior without documentation updates are incomplete unless the change is purely internal refactoring with no external impact.
+5. Agent implementations must update docs in the same change set, not as a later follow-up.
 
 ## Monorepo Map
 

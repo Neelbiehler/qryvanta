@@ -1,0 +1,35 @@
+---
+title: Rust Layers
+description: How crates are separated and how dependencies should flow.
+---
+
+Qryvanta keeps Rust dependencies directional.
+This keeps domain logic testable and keeps HTTP concerns out of business rules.
+
+## Workspace Layout
+
+- `crates/core`: primitives (`AppError`, `AppResult`, value object helpers)
+- `crates/domain`: business entities and invariants
+- `crates/application`: use-cases and ports
+- `crates/infrastructure`: concrete adapters
+- `apps/api`: HTTP composition root
+
+## Dependency Direction
+
+Allowed:
+
+- `domain` -> `core`
+- `application` -> `domain`, `core`
+- `infrastructure` -> `application`, `domain`, `core`
+- `apps/api` -> all crates needed for composition
+
+Not allowed:
+
+- `domain` -> `infrastructure`
+- `application` -> `axum` or transport frameworks
+- `apps/api` implementing domain business rules
+
+## Why This Matters
+
+The platform includes dynamic schemas, workflow execution, and tenant isolation.
+Without strict layering, handlers and repositories drift into mixed responsibilities.

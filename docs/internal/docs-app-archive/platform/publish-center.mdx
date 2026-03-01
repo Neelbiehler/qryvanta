@@ -1,0 +1,55 @@
+---
+title: Publish Center
+description: Workspace-level validation, selective publish, and publish history.
+---
+
+Phase status: in progress.
+
+Publish Center validates entities and apps before publish.
+It also stores run history for later review.
+
+## Endpoints
+
+- `GET /api/publish/checks`
+- `POST /api/publish/checks`
+- `POST /api/publish/diff`
+- `GET /api/publish/history?limit=12`
+
+## Validation Modes
+
+- `dry_run: true` validates selected entities and apps.
+- `dry_run: false` validates and publishes selection when no blocking issues exist.
+
+## Issue Model
+
+Responses include:
+
+- `is_publishable`
+- `checked_entities`
+- `checked_apps`
+- `issues[]` with scope, category, severity, message, optional `fix_path`, and optional `dependency_path`
+
+`dependency_path` helps trace blocked relationships and app dependencies.
+
+## Current Checks
+
+- Entity schema integrity
+- Form and view reference integrity
+- Sitemap target integrity
+- App binding consistency
+- Dependency-aware relation validation for selective publish
+
+## History
+
+Publish runs are stored in server-side audit storage.
+Each entry includes requested and published scopes plus issue counts.
+
+## Typical Categories
+
+- `schema`
+- `relationship`
+- `form`
+- `view`
+- `sitemap`
+- `binding`
+- `unknown`

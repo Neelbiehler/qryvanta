@@ -1,0 +1,57 @@
+---
+title: Security and Tenancy
+description: Authentication, authorization, audit logging, and tenant isolation controls.
+---
+
+Phase status: implemented baseline with ongoing hardening.
+
+## Security Baseline
+
+- Email and password auth with Argon2id hashing
+- TOTP MFA and recovery codes
+- Forgot-password and email-verification flows
+- Invite-based onboarding
+- Optional WebAuthn passkey login
+- Server-side sessions with rotation and inactivity or absolute timeouts
+- Public auth endpoint rate limiting
+
+## Tenant Isolation
+
+- Tenant scope is required in repository query paths.
+- Metadata and runtime record operations execute with explicit `TenantId` inputs.
+- Tenant-boundary tests run against in-memory and Postgres repository adapters.
+
+## Authorization Pipeline
+
+1. Route authentication.
+2. Application-level permission checks.
+3. Tenant-scoped repository execution.
+
+## RBAC Baseline
+
+- Effective grants resolve from role assignments and role grants tables.
+- Tenant bootstrap assigns `tenant_owner` with baseline grants.
+- Role and assignment APIs support tenant administration.
+- Runtime own-scope permissions are supported for record access.
+- Runtime field-level permissions are supported per subject and entity.
+- Temporary privileged access grants include reason and expiry windows.
+
+## Audit Baseline
+
+- Metadata writes emit append-only audit events.
+- Security administration actions emit audit events.
+- Auth lifecycle events are stored in `auth_events`.
+- Audit reads and exports support filtering and pagination.
+
+## Security Administration APIs
+
+- `GET|POST /api/security/roles`
+- `GET|POST /api/security/role-assignments`
+- `POST /api/security/role-unassignments`
+- `GET|PUT /api/security/runtime-field-permissions`
+- `GET|POST /api/security/temporary-access-grants`
+- `POST /api/security/temporary-access-grants/:grant_id/revoke`
+- `GET /api/security/audit-log`
+- `GET /api/security/audit-log/export`
+- `POST /api/security/audit-log/purge`
+- `GET|PUT /api/security/audit-retention-policy`

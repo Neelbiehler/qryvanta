@@ -1,33 +1,48 @@
 ---
 title: Qryvanta Documentation
-description: Open-source docs for local setup, architecture boundaries, platform behavior, and self-hosting operations.
+description: End-user and self-hosting guides for Qryvanta.
 ---
 
-Qryvanta is an open-source, self-hostable, metadata-driven business platform.
+Qryvanta is an open-source, self-hostable business platform.
+You model business data in metadata, publish changes, and use generated runtime pages.
 
 Qryvanta is in active development and is not ready for production use yet.
 
-Use this documentation to run the project locally, understand current implementation boundaries, and contribute safely.
+This site is for admins, makers, worker users, and self-hosting operators.
+It explains day-to-day product usage and runtime operations.
 
-Primary project domain: `qryvanta.org`. The `qryvanta.com` domain is reserved for a future cloud offering.
+`qryvanta.org` is the open-source product surface.
+`qryvanta.com` is the managed cloud surface.
 
-## Start Here
+## Product Snapshot
 
-1. Follow `Quickstart` to run API, web, landing, and docs locally.
-2. Read `Architecture` before changing runtime behavior or persistence.
-3. Use `Platform` to understand metadata runtime, app builder scope, automation, and API contracts.
-4. Use `Operations` for environment configuration and deployment guidance.
-5. Use `Development` for standards, contribution workflow, and roadmap status.
+- Open source first: run on your own infrastructure.
+- Rust-first backend: API, security, and worker runtime are implemented in Rust.
+- Metadata-driven runtime: entities, forms, views, and navigation are published from metadata.
+- Cloud optionality: teams that want managed hosting can use `qryvanta.com`.
 
-## Documentation Areas
+## What You Can Do Today
 
-- `Quickstart`: first-run sequence and local development loop.
-- `Architecture`: monorepo boundaries, auth/session model, database model, worker trust boundaries.
-- `Platform`: metadata runtime model, app builder scope, UX surfaces, automation engine, API route conventions.
-- `Operations`: self-hosting baseline, configuration variables, email delivery, observability targets.
-- `Development`: engineering standards, docs policy, API contract workflow, roadmap.
+- Define entities and fields in Maker Center.
+- Publish metadata and use generated runtime pages in Worker Apps.
+- Control access with roles, app permissions, and tenant registration mode.
+- Run automation workflows in inline mode or queued worker mode.
+
+## Read Order
+
+1. `Quickstart` for first run.
+2. `Workspace` for role-based product flows.
+3. `Concepts` for publish lifecycle and runtime behavior.
+4. `Operations` for self-hosting checks and incident readiness.
+
+## Terminology
+
+- Surface: a route area such as `/admin`, `/maker`, or `/worker`.
+- Workspace: the docs section that explains surface-based product usage.
+- Runtime: record APIs and pages used by worker users.
+- Self-hosting: running Qryvanta in your own infrastructure.
 
 ## Product Boundary
 
-- `qryvanta.org` docs cover the OSS platform.
-- Cloud-control-plane behavior belongs to `qryvanta.com` and is documented separately.
+- This docs app covers open-source product usage and self-hosting.
+- Internal maintainer and coding-agent docs are in repository `docs/`.

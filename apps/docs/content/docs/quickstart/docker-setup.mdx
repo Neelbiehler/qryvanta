@@ -1,13 +1,16 @@
 ---
 title: Docker Setup
-description: Start local infrastructure required for API and web development.
+description: Start and validate local infrastructure services.
 ---
+
+Qryvanta local development uses Postgres and Redis from Docker Compose.
 
 ## Prerequisites
 
 - Docker Desktop (or Docker Engine) with Compose support
 - Port `5432` available
 - Port `6379` available (for local Redis)
+- Enough local memory for containers and web runtime
 
 ## Start Infrastructure
 
@@ -15,7 +18,7 @@ description: Start local infrastructure required for API and web development.
 pnpm infra:up
 ```
 
-This starts:
+This command starts:
 
 - PostgreSQL 16 on `127.0.0.1:5432`
 - Redis 7 on `127.0.0.1:6379`
@@ -33,6 +36,8 @@ Before using auth flows, set these values in `.env`:
 - `WEBAUTHN_RP_ID`
 - `WEBAUTHN_RP_ORIGIN`
 
+Use long, random values for `SESSION_SECRET` and `AUTH_BOOTSTRAP_TOKEN`.
+
 ## Verify Health
 
 ```bash
@@ -40,6 +45,17 @@ docker compose ps
 ```
 
 `qryvanta-postgres` and `qryvanta-redis` should show healthy status before running API/web apps.
+
+If containers are unhealthy, inspect logs before starting the API:
+
+```bash
+docker compose logs postgres redis
+```
+
+If port `5432` or `6379` is already in use, stop the process using that port before retrying `pnpm infra:up`.
+
+Local data is persisted in Docker volumes created by Compose.
+Use `docker compose down -v` only when you want to delete local Postgres and Redis data.
 
 ## Stop Infrastructure
 

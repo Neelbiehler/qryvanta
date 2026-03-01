@@ -3,11 +3,140 @@
 @import 'fumadocs-ui/css/preset.css';
 
 :root {
-  --fd-primary: oklch(0.57 0.16 236);
+  --fd-primary: #2f8f63;
+  --fd-primary-foreground: #f7fffb;
+  --fd-background: #eef8f2;
+  --fd-foreground: #152026;
+  --fd-muted: #e6f2ea;
+  --fd-muted-foreground: #3e5850;
+  --fd-border: #cfe3d7;
+  --fd-card: #ffffff;
+
+  --docs-grid: rgba(21, 32, 38, 0.045);
+  --docs-aurora-1: rgba(47, 143, 99, 0.12);
+  --docs-aurora-2: rgba(16, 132, 106, 0.08);
 }
 
 body {
+  color: var(--fd-foreground);
+  font-family: 'Source Sans 3', 'Avenir Next', 'Segoe UI', sans-serif;
   background:
-    radial-gradient(circle at 20% -10%, color-mix(in oklab, var(--fd-primary) 12%, transparent), transparent 40%),
-    radial-gradient(circle at 100% 0%, color-mix(in oklab, var(--fd-primary) 9%, transparent), transparent 35%);
+    linear-gradient(130deg, rgba(239, 250, 243, 0.94), rgba(246, 252, 248, 0.94)),
+    linear-gradient(var(--docs-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--docs-grid) 1px, transparent 1px),
+    radial-gradient(circle at 88% 5%, var(--docs-aurora-1), transparent 35%),
+    radial-gradient(circle at 5% 100%, var(--docs-aurora-2), transparent 42%),
+    var(--fd-background);
+  background-size:
+    auto,
+    40px 40px,
+    40px 40px,
+    auto,
+    auto,
+    auto;
+}
+
+.docs-home-card {
+  border: 1px solid color-mix(in oklab, var(--fd-border) 84%, white 16%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.93), rgba(247, 253, 249, 0.92));
+  box-shadow:
+    0 18px 34px -26px rgba(34, 69, 50, 0.5),
+    0 6px 18px -18px rgba(34, 69, 50, 0.45);
+}
+
+.docs-home-card:hover {
+  border-color: color-mix(in oklab, var(--fd-primary) 42%, var(--fd-border));
+}
+
+.docs-chip {
+  border: 1px solid color-mix(in oklab, var(--fd-primary) 20%, var(--fd-border));
+  background: color-mix(in oklab, var(--fd-primary) 14%, white);
+  color: color-mix(in oklab, var(--fd-primary) 72%, #0f2e1f);
+}
+
+.docs-shell {
+  padding-inline: 0;
+}
+
+@media (min-width: 768px) {
+  #nd-docs-layout {
+    grid-template:
+      "sidebar sidebar header toc toc"
+      "sidebar sidebar toc-popover toc toc"
+      "sidebar sidebar main toc toc" 1fr
+      / 0px var(--fd-sidebar-col) minmax(0, calc(var(--fd-layout-width, 97rem) - var(--fd-sidebar-width) - var(--fd-toc-width))) var(--fd-toc-width) minmax(0, 1fr) !important;
+  }
+
+  #nd-docs-layout [data-sidebar-placeholder] {
+    inset-inline-start: 0 !important;
+  }
+
+  #nd-docs-layout #nd-sidebar {
+    inset-inline-start: 0 !important;
+    border-start-start-radius: 0 !important;
+    border-end-start-radius: 0 !important;
+  }
+}
+
+.docs-page-shell {
+  margin-top: 0.75rem;
+  border: 1px solid color-mix(in oklab, var(--fd-border) 85%, white 15%);
+  border-radius: 1rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(248, 253, 250, 0.9));
+  box-shadow:
+    0 16px 34px -30px rgba(27, 67, 45, 0.5),
+    0 4px 10px -10px rgba(27, 67, 45, 0.2);
+  padding: clamp(1rem, 1.3vw, 1.6rem);
+}
+
+.docs-page-title {
+  letter-spacing: -0.015em;
+}
+
+.docs-page-description {
+  max-width: 75ch;
+  color: var(--fd-muted-foreground);
+}
+
+.docs-page-actions {
+  border-top: 1px solid color-mix(in oklab, var(--fd-border) 80%, white);
+  border-bottom: 1px solid color-mix(in oklab, var(--fd-border) 80%, white);
+  padding-block: 0.75rem;
+}
+
+.docs-page-body {
+  margin-top: 0.8rem;
+}
+
+.docs-page-body h2,
+.docs-page-body h3 {
+  scroll-margin-top: 5rem;
+}
+
+.docs-page-body table {
+  border-radius: 0.65rem;
+  overflow: hidden;
+}
+
+.docs-page-body thead tr {
+  background: color-mix(in oklab, var(--fd-primary) 10%, white);
+}
+
+.docs-page-body blockquote {
+  border-inline-start-color: color-mix(in oklab, var(--fd-primary) 56%, var(--fd-border));
+  background: color-mix(in oklab, var(--fd-muted) 55%, white);
+  border-radius: 0.5rem;
+  padding-top: 0.7rem;
+  padding-bottom: 0.7rem;
+}
+
+.docs-page-body pre {
+  border: 1px solid color-mix(in oklab, var(--fd-border) 75%, white);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28);
+}
+
+@media (min-width: 1024px) {
+  .docs-page-shell {
+    margin-top: 1rem;
+  }
 }
