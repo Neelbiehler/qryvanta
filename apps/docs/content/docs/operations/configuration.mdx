@@ -1,15 +1,30 @@
 ---
 title: Configuration
-description: Configuration strategy for local, staging, and production environments.
+description: Configuration reference for local and self-hosting environments.
 ---
+
+Qryvanta runtime behavior is controlled through environment variables.
+This page lists current variables and validation rules.
+
+## Minimal Local Set
+
+For local first run, set at least:
+
+- `DATABASE_URL`
+- `SESSION_SECRET`
+- `AUTH_BOOTSTRAP_TOKEN`
+- `NEXT_PUBLIC_API_BASE_URL`
+
+Add `WEBAUTHN_RP_ID` and `WEBAUTHN_RP_ORIGIN` when testing passkeys.
 
 ## Principles
 
 - Configuration is externalized via environment variables.
 - Defaults are developer-friendly but never assumed for production.
 - Sensitive values must be sourced from secret managers or encrypted stores.
+- Invalid required values should block startup.
 
-## Suggested Domains
+## Configuration Areas
 
 - API server settings (host, port, CORS)
 - Database connection and pool sizing
@@ -22,8 +37,11 @@ description: Configuration strategy for local, staging, and production environme
 - Prefer additive config evolution.
 - Document required and optional values per release.
 - Validate startup configuration and fail fast on invalid values.
+- Apply config updates in staging before production-like environments.
 
-## Phase 1 Environment Variables
+Never commit secrets or production credentials to git.
+
+## Current Environment Variables
 
 | Variable | Required | Description |
 | --- | --- | --- |
@@ -38,7 +56,7 @@ description: Configuration strategy for local, staging, and production environme
 | `WEBAUTHN_RP_ID` | No | WebAuthn relying party id (`localhost` default) |
 | `WEBAUTHN_RP_ORIGIN` | No | WebAuthn relying party origin (`FRONTEND_URL` default) |
 | `SESSION_COOKIE_SECURE` | No | Enforce secure session cookies (`false` default for local dev) |
-| `TOTP_ENCRYPTION_KEY` | Yes (prod) | 64-char hex key used to encrypt stored TOTP secrets (`[0;32]` fallback only for local dev) |
+| `TOTP_ENCRYPTION_KEY` | Yes (prod) | 64-char hex value used to encrypt stored TOTP secrets (`[0;32]` fallback only for local dev) |
 | `EMAIL_PROVIDER` | No | Email adapter (`console` default, `smtp` for production delivery) |
 | `SMTP_HOST` | Required if `EMAIL_PROVIDER=smtp` | SMTP server host (must be non-empty; startup fails fast if missing) |
 | `SMTP_PORT` | Required if `EMAIL_PROVIDER=smtp` | SMTP server port (`u16`; startup fails on invalid values) |

@@ -1,0 +1,37 @@
+---
+title: Metadata and Publishing
+description: How draft metadata becomes active runtime behavior.
+---
+
+Makers edit metadata in draft mode.
+Runtime behavior changes only after publish.
+
+This contract keeps runtime behavior predictable for worker users.
+
+## Draft to Runtime
+
+1. Define or update entities and fields.
+2. Update forms, views, and app navigation.
+3. Run publish checks.
+4. Publish selected scopes.
+5. Validate the result in Worker Apps.
+
+## What Publish Checks Catch
+
+- Relation dependencies
+- Missing field references in forms and views
+- Invalid sitemap or app bindings
+- App permission and binding issues that block runtime access
+
+## Common Rule
+
+If users report missing fields or old layouts, verify the latest published version first.
+
+Draft changes do not affect runtime pages until publish completes.
+
+## Safe Change Pattern
+
+1. Create or edit metadata in a draft.
+2. Run checks and fix blocking issues.
+3. Publish during a defined change window.
+4. Verify with a pilot worker user before broad rollout.

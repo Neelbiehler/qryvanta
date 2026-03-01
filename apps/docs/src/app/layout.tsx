@@ -4,15 +4,25 @@ import './global.css';
 
 export const metadata: Metadata = {
   title: 'Qryvanta Docs',
-  description: 'Documentation for Qryvanta, an open-source self-hostable business platform.',
-  metadataBase: new URL(process.env.NEXT_PUBLIC_DOCS_URL ?? 'http://localhost:3000'),
+  description: 'End-user and self-hosting documentation for the Qryvanta open-source platform.',
+  metadataBase: new URL(process.env.NEXT_PUBLIC_DOCS_URL ?? 'http://127.0.0.1:3002'),
 };
 
 export default function Layout({ children }: LayoutProps<'/'>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="flex flex-col min-h-screen">
-        <RootProvider>{children}</RootProvider>
+      <body className="flex min-h-screen flex-col antialiased">
+        <RootProvider
+          theme={{
+            enabled: true,
+            forcedTheme: 'light',
+            defaultTheme: 'light',
+            enableSystem: false,
+            disableTransitionOnChange: true,
+          }}
+        >
+          {children}
+        </RootProvider>
       </body>
     </html>
   );

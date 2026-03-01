@@ -1,0 +1,30 @@
+---
+title: Records and Views
+description: How forms, list views, and runtime permissions shape record workflows.
+---
+
+Worker users handle records through forms and list views.
+Both are defined in metadata and applied in app scope.
+
+## Record Flow
+
+1. Open app and entity route.
+2. List records with the active view.
+3. Open or create record with the active form.
+4. Submit changes.
+5. API validates values and permissions.
+6. Updated data appears in list views based on current filter rules.
+
+## What Controls the Experience
+
+- Published form layout
+- Published list view columns, sort, and filters
+- App-scoped form and view defaults
+- Role and runtime permissions
+- Business rules that set values or block invalid writes
+
+## Troubleshooting Tip
+
+When users see different actions, compare their assigned roles and app permissions.
+
+If users see old columns or old labels, check the latest published metadata version.

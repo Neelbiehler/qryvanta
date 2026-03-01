@@ -1,0 +1,10 @@
+{
+  "title": "Workspace",
+  "pages": [
+    "index",
+    "admin-center",
+    "maker-center",
+    "worker-apps",
+    "publish-and-access"
+  ]
+}

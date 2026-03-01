@@ -1,0 +1,36 @@
+---
+title: View Builder
+description: Visual list view authoring for columns, sorting, and filter logic.
+---
+
+Phase status: in progress.
+
+View Builder controls how worker list pages query and render records.
+
+## What Works Today
+
+- Column selection and ordering.
+- Width hints and label overrides.
+- Default sort field and direction.
+- Filter rule groups with `and` or `or` logic.
+- Multiple views per entity, including one default view.
+
+## Runtime Contract
+
+- `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/views`
+- `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/views/:view_logical_name`
+- `POST /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/records/query`
+
+Worker query payload uses saved view filters and sort rules.
+
+## Validation Rules
+
+- Column positions must be non-negative and contiguous.
+- Duplicate columns are rejected.
+- Invalid sort field references are rejected.
+
+## Done Criteria
+
+- Makers can create and update list views visually.
+- Worker list pages render columns and sort from published view metadata.
+- Runtime query behavior matches saved filter rules.

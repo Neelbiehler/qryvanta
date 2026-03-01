@@ -1,0 +1,46 @@
+---
+title: Publish and Access
+description: Coordinate metadata publish with role and app access changes.
+---
+
+Publish and access management should happen together.
+This avoids runtime pages that users can reach but cannot use.
+
+This page is useful for release windows and change approvals.
+
+## Recommended Order
+
+1. Update metadata in Maker Center.
+2. Run publish checks.
+3. Update app permissions in Admin or Maker workflows.
+4. Publish selected scopes.
+5. Validate in Worker Apps with a non-owner user.
+6. Record the change in your team change log.
+
+## Validation Focus
+
+- Entity and relation dependencies.
+- Form and view reference integrity.
+- App role permission coverage for required actions.
+- Registration mode and invite policy after role changes.
+
+## Pre-Release Check
+
+1. Use a non-owner maker user for final publish checks.
+2. Use a non-owner worker user for runtime validation.
+3. Confirm audit events are recorded for publish and role changes.
+4. Confirm rollback owner and rollback window are documented.
+
+## Rollout Tip
+
+Use role-scoped pilot users before broad tenant rollout.
+This catches runtime permission gaps early.
+
+## Rollback Guidance
+
+If a rollout fails:
+
+1. Remove access to impacted app routes for non-admin roles.
+2. Revert metadata to last known good shape in Maker Center.
+3. Publish the corrected scope.
+4. Validate with pilot users before reopening access.

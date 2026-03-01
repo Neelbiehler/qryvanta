@@ -1,0 +1,40 @@
+---
+title: Runtime Components
+description: Planned runtime pieces for metadata, workflows, and operations.
+---
+
+This page maps runtime services and how they interact in queued and inline modes.
+
+## Core Runtime Services
+
+1. `Metadata Service`: schema definitions, lifecycle, publish/version control.
+2. `Record Runtime`: dynamic CRUD/query against published metadata.
+3. `Automation Engine`: trigger dispatcher + action workers.
+4. `Identity and Access`: authn, authz, role mapping, tenant scoping.
+5. `Audit and Observability`: immutable logs, metrics, and traces.
+
+## Data and Execution Flow
+
+1. Admin publishes metadata.
+2. Runtime exposes entity record behavior from published schema.
+3. Record events trigger workflow execution.
+4. Every write operation is audited with actor + tenant context.
+
+## Deployment Topology
+
+- API service
+- Web app
+- Docs app
+- Database
+- Background worker runtime (`qryvanta-worker`) for queued workflow execution
+- Optional cache/queue for scale
+- Optional queue-stats cache adapter for high-frequency worker observability polling
+
+## Worker Queue Topology
+
+1. API creates workflow execution runs in `running` state.
+2. In queued mode, API enqueues run IDs into `workflow_execution_jobs`.
+3. Worker processes claim leased jobs through authenticated internal API requests, with optional tenant-hash partition selectors for deterministic scale slices.
+4. Optional Redis worker coordination leases guard one active worker loop per logical scope key.
+5. Workers execute run attempts and write run/attempt outcomes in tenant scope.
+6. Completed jobs are marked terminal (`completed` or `failed`) for operator triage.

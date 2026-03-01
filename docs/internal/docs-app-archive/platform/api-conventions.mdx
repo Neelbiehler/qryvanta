@@ -1,0 +1,100 @@
+---
+title: API Conventions
+description: Route and error conventions for stable integrations.
+---
+
+This page is the route contract reference for documented API behavior.
+
+## Global Route
+
+- `GET /health` returns liveness and readiness with dependency status.
+
+## Handler Rules
+
+Handlers should stay transport-focused:
+
+1. Parse request.
+2. Call application service.
+3. Map response.
+4. Map errors to HTTP.
+
+## Error Mapping
+
+- `AppError::Validation` -> `400 Bad Request`
+- `AppError::NotFound` -> `404 Not Found`
+- `AppError::Conflict` -> `409 Conflict`
+- `AppError::Forbidden` -> `403 Forbidden`
+- `AppError::Internal` -> `500 Internal Server Error`
+
+## Metadata and Runtime
+
+- `GET /api/entities`
+- `POST /api/entities`
+- `PUT /api/entities/:entity_logical_name`
+- `GET /api/entities/:entity_logical_name/fields`
+- `POST /api/entities/:entity_logical_name/fields`
+- `GET /api/entities/:entity_logical_name/business-rules`
+- `POST /api/entities/:entity_logical_name/business-rules`
+- `GET /api/entities/:entity_logical_name/business-rules/:business_rule_logical_name`
+- `PUT /api/entities/:entity_logical_name/business-rules/:business_rule_logical_name`
+- `DELETE /api/entities/:entity_logical_name/business-rules/:business_rule_logical_name`
+- `POST /api/entities/:entity_logical_name/publish`
+- `GET /api/entities/:entity_logical_name/publish-checks`
+- `GET /api/entities/:entity_logical_name/published`
+- `GET /api/publish/checks`
+- `POST /api/publish/checks`
+- `POST /api/publish/diff`
+- `GET /api/publish/history?limit=12`
+- `GET /api/runtime/:entity_logical_name/records?limit=50&offset=0`
+- `GET /api/runtime/:entity_logical_name/business-rules`
+- `POST /api/runtime/:entity_logical_name/records/query`
+- `POST /api/runtime/:entity_logical_name/records`
+- `GET /api/runtime/:entity_logical_name/records/:record_id`
+- `PUT /api/runtime/:entity_logical_name/records/:record_id`
+- `DELETE /api/runtime/:entity_logical_name/records/:record_id`
+
+## App Builder and Workspace
+
+- `GET /api/apps`
+- `POST /api/apps`
+- `GET /api/apps/:app_logical_name/entities`
+- `POST /api/apps/:app_logical_name/entities`
+- `GET /api/apps/:app_logical_name/sitemap`
+- `PUT /api/apps/:app_logical_name/sitemap`
+- `GET /api/apps/:app_logical_name/publish-checks`
+- `GET /api/apps/:app_logical_name/permissions`
+- `PUT /api/apps/:app_logical_name/permissions`
+- `GET /api/workspace/apps`
+- `GET /api/workspace/apps/:app_logical_name/navigation`
+- `GET /api/workspace/apps/:app_logical_name/dashboards/:dashboard_logical_name`
+- `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/capabilities`
+- `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/schema`
+- `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/forms`
+- `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/forms/:form_logical_name`
+- `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/views`
+- `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/views/:view_logical_name`
+- `GET|POST /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/records`
+- `POST /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/records/query`
+- `GET|PUT|DELETE /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/records/:record_id`
+
+## Automation and Worker Internal
+
+- `GET /api/workflows`
+- `POST /api/workflows`
+- `POST /api/workflows/:workflow_logical_name/execute`
+- `GET /api/workflows/runs?workflow_logical_name=&limit=50&offset=0`
+- `GET /api/workflows/runs/:run_id/attempts`
+- `POST /api/internal/worker/jobs/claim`
+- `POST /api/internal/worker/heartbeat`
+- `GET /api/internal/worker/jobs/stats`
+
+## Security Administration
+
+- `GET /api/security/roles`
+- `POST /api/security/roles`
+- `GET /api/security/role-assignments`
+- `POST /api/security/role-assignments`
+- `POST /api/security/role-unassignments`
+- `GET /api/security/registration-mode`
+- `PUT /api/security/registration-mode`
+- `GET /api/security/audit-log?limit=50&offset=0&action=...&subject=...`

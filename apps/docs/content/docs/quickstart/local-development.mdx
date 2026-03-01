@@ -1,9 +1,12 @@
 ---
 title: Local Development
-description: Day-to-day loop for running API, web, docs, and Postgres.
+description: Local first-use flow for admins and makers.
 ---
 
-## Daily Startup
+Use this page after Quickstart.
+It focuses on first login, first publish, and first runtime record.
+
+## Start the Stack
 
 ```bash
 pnpm infra:up
@@ -11,37 +14,43 @@ cp .env.example .env
 pnpm dev
 ```
 
-## Workspace Commands
+## Verify API Health
 
 ```bash
-pnpm build      # build all JS workspaces
-pnpm check      # static checks
-pnpm lint       # lint checks
-pnpm format:web # format frontend files
-pnpm test       # workspace tests
+curl http://127.0.0.1:3001/health
 ```
 
-## Rust Quality Gate
+Expected response includes `"status":"ok"` and `"ready":true`.
 
-```bash
-cargo fmt --all
-cargo xcheck
-cargo xclippy
-cargo xtest
-```
+Default local ports:
 
-## App-Specific Loops
+- API: `http://localhost:3001`
+- Web: `http://localhost:3000`
+- Docs: `http://127.0.0.1:3002`
+- Postgres: `127.0.0.1:5432`
+- Redis: `127.0.0.1:6379`
 
-```bash
-pnpm --filter @qryvanta/api dev
-pnpm --filter @qryvanta/web dev
-pnpm --filter @qryvanta/landing dev
-pnpm --filter @qryvanta/docs dev
-```
+## First Login
 
-## Development CRM/ERP Seed
+1. Open `http://localhost:3000`.
+2. Use bootstrap or registration flow based on your `.env` settings.
+3. Confirm you can access at least one surface: `/admin`, `/maker`, or `/worker`.
 
-Populate a realistic tenant with CRM + ERP metadata and sample records:
+If no surface is visible, check role assignments in Admin Center.
+
+If login fails, verify `AUTH_BOOTSTRAP_TOKEN`, `SESSION_SECRET`, and `NEXT_PUBLIC_API_BASE_URL` in `.env`.
+
+## First Maker Flow
+
+1. Open Maker Center at `/maker`.
+2. Create one entity such as `account`.
+3. Add fields such as `name`, `status`, `owner`, and `segment`.
+4. Publish metadata.
+5. Open Worker Apps and create one record.
+6. Return to Maker Center and edit one field label.
+7. Publish again and verify the change in Worker Apps.
+
+## Optional Demo Seed
 
 ```bash
 pnpm dev:seed
@@ -58,14 +67,9 @@ Seeded local users:
 - Admin: `admin@qryvanta.local` / `admin` (full tenant rights)
 - Standard user: `user@qryvanta.local` / `admin` (worker-focused app access via `standard_user` role)
 
-Default local ports:
+If these users already exist, the seed updates records instead of duplicating them.
 
-- API: `http://localhost:3001`
-- Web: `http://localhost:3000`
-- Landing: `http://localhost:3003`
-- Docs: `http://127.0.0.1:3002`
-
-## Local Passkey Test
+## Local Passkey Test (Optional)
 
 Use one hostname (`localhost`) for the web app and API while testing auth.
 
@@ -77,12 +81,7 @@ Use one hostname (`localhost`) for the web app and API while testing auth.
 6. Click **Enroll Passkey** and complete the browser/device prompt.
 7. Click **Sign in with Passkey**.
 
-## Guardrails
-
-- Keep domain and application crates framework-agnostic.
-- Keep HTTP behavior in `apps/api`.
-- Keep WebAuthn/session behavior in API (BFF) and use cookie auth from web.
-- Update docs whenever architecture or behavior changes.
+Passkey login requires the same host for web and API origin checks.
 
 ## Daily Shutdown
 

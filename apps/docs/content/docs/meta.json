@@ -4,9 +4,8 @@
   "pages": [
     "index",
     "quickstart",
-    "architecture",
-    "platform",
-    "operations",
-    "development"
+    "workspace",
+    "concepts",
+    "operations"
   ]
 }

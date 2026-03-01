@@ -3,15 +3,26 @@ title: Email Delivery
 description: Secure transactional email delivery standards for auth and tenant invites.
 ---
 
+Qryvanta email is for account and access flows.
+It is not a campaign system.
+
 ## Scope
 
-Qryvanta email delivery is transactional-only in Phase 1 auth flows:
+Qryvanta email delivery is transactional-only in current auth flows:
 
 - Account verification
 - Password reset
 - Tenant invites
+- Verification resend requests
 
 Qryvanta does not include marketing open tracking, click tracking redirects, or behavioral profiling.
+
+If you need campaign messaging, run that outside the product runtime.
+
+## User Impact
+
+If email delivery fails, users cannot verify accounts, reset passwords, or accept invites.
+Treat SMTP outages as access incidents.
 
 ## Security Baseline
 

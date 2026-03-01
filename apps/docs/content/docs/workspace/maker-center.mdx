@@ -1,0 +1,54 @@
+---
+title: Maker Center
+description: Build metadata-driven apps with entities, forms, views, rules, and publish checks.
+---
+
+Maker Center is for building and publishing tenant apps.
+
+Draft edits stay inactive until publish.
+Worker Apps only use published metadata.
+
+## Primary Tasks
+
+- Create entities and fields.
+- Configure forms and list views.
+- Model relationships.
+- Set app navigation.
+- Run publish checks and publish selected scopes.
+- Define business rules for write-time validation and value defaults.
+
+## Typical Build Cycle
+
+1. Define entity and field model.
+2. Configure form layout and list view columns.
+3. Bind entities into an app sitemap.
+4. Run publish checks.
+5. Publish.
+6. Validate behavior in Worker Apps.
+7. Fix issues and publish again if needed.
+
+## Example Change
+
+For a sales flow update:
+
+1. Add `deal.stage` choice field.
+2. Add `deal.stage` to the main deal form.
+3. Add `deal.stage` to the default deal view.
+4. Publish and verify that worker users can filter by stage.
+
+## Common Failure Points
+
+- Missing relation targets.
+- Form or view references to removed fields.
+- Sitemap references to unbound entities.
+- Missing app permission for a role that needs runtime write access.
+
+Use publish checks to catch these before runtime users are affected.
+
+## Maker Quality Checklist
+
+1. Entity names and field names are stable and readable.
+2. Forms include required fields and relation inputs.
+3. Views include columns needed for daily worker tasks.
+4. App navigation groups related entities under clear labels.
+5. Publish checks return zero blocking issues.

@@ -1,0 +1,37 @@
+---
+title: UX Surfaces
+description: Route-scoped surfaces for admin, maker, and worker personas.
+---
+
+Phase status: in progress.
+
+Qryvanta splits UI routes by persona.
+This keeps control-plane pages separate from daily runtime pages.
+
+## Surfaces
+
+| Surface | URL prefix | Typical users |
+| --- | --- | --- |
+| Admin Center | `/admin` | tenant admins and security operators |
+| Maker Center | `/maker` | builders and solution engineers |
+| Worker Apps | `/worker` | operators and end users |
+
+Each surface has its own layout, navigation, and access checks.
+
+## Access Resolution
+
+- Surface access is resolved server-side in `GET /auth/me` as `accessible_surfaces`.
+- Layouts deny surface routes when the user lacks access.
+- API authorization remains enforced at endpoint level.
+
+## Baseline Permission Mapping
+
+- Admin Center: `security.role.manage`, `security.audit.read`, `security.invite.send`
+- Maker Center: `metadata.entity.read`, `metadata.entity.create`, `metadata.field.read`, `metadata.field.write`
+- Worker Apps: `runtime.record.read`, `runtime.record.read.own`, `runtime.record.write`, `runtime.record.write.own`
+
+## Operational Notes
+
+- Keep new pages inside the correct surface route group.
+- Update `apps/web/src/lib/surfaces.ts` when adding navigation items.
+- Update `Surface::required_permissions()` in `crates/domain/src/security.rs` when permission mapping changes.

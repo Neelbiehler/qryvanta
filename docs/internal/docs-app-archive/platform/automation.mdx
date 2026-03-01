@@ -1,0 +1,47 @@
+---
+title: Automation
+description: Workflow model, execution modes, and queue worker integration.
+---
+
+Phase status: in progress.
+
+Qryvanta automation executes metadata-defined workflows in inline or queued mode.
+
+## Workflow Model
+
+- Triggers: `manual` and `runtime_record_created`
+- Step types: `log_message`, `create_runtime_record`, `condition`
+- Condition operators: `equals`, `not_equals`, `exists`
+- Retry policy: `max_attempts` per workflow (`1` to `10`)
+
+## Execution Modes
+
+- `inline`: workflow runs inside API request flow
+- `queued`: API enqueues jobs and `qryvanta-worker` processes claims and executes jobs
+
+Use queued mode when you need isolated worker scaling.
+
+## Lifecycle
+
+1. Save workflow in tenant scope (`/api/workflows`).
+2. Trigger run manually or from runtime events.
+3. Execute steps and retries.
+4. Persist run and attempt history.
+5. Mark terminal failure as `dead_lettered` with reason.
+
+## Endpoints
+
+- `GET /api/workflows`
+- `POST /api/workflows`
+- `POST /api/workflows/:workflow_logical_name/execute`
+- `GET /api/workflows/runs?workflow_logical_name=&limit=50&offset=0`
+- `GET /api/workflows/runs/:run_id/attempts`
+- `POST /api/internal/worker/jobs/claim`
+- `POST /api/internal/worker/heartbeat`
+- `GET /api/internal/worker/jobs/stats`
+
+## Reliability Baseline
+
+- Bounded retries
+- Dead-letter persistence
+- Tenant-scoped run history for audit and triage

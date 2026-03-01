@@ -1,0 +1,37 @@
+---
+title: Automation Basics
+description: Workflow trigger and action behavior for runtime operations.
+---
+
+Qryvanta workflows run from metadata definitions.
+A workflow starts from a trigger and executes action steps.
+
+## Trigger Types
+
+- Manual execution
+- Runtime record created
+
+More trigger types are planned and will be documented when released.
+
+## Execution Modes
+
+- Inline mode executes in API request flow.
+- Queued mode executes in `qryvanta-worker` processes.
+
+Queued mode is recommended for isolated worker scaling.
+
+Current trigger coverage is manual run and record-created events.
+
+## Failure Handling
+
+- Each workflow has bounded retry attempts.
+- Failed terminal runs are stored for later inspection.
+- Run and attempt history stay in tenant scope.
+- Queue stats can be queried for operator dashboards.
+
+## Operational Checks
+
+- Monitor run and attempt history.
+- Watch queue depth and worker heartbeats in queued mode.
+- Review failed runs and dead-lettered items.
+- Confirm worker shared secret rotation policy is active in production-like environments.

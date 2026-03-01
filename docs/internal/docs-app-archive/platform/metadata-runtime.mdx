@@ -1,0 +1,108 @@
+---
+title: Metadata Runtime
+description: Entity and field metadata, publish lifecycle, and runtime record contracts.
+---
+
+Phase status: implemented baseline with ongoing expansion.
+
+Metadata Runtime is the core of Qryvanta.
+You define entities and fields in metadata.
+You publish a schema version.
+Runtime APIs then execute against the published schema.
+
+## Baseline Capabilities
+
+- Entity metadata management in `/api/entities`.
+- Draft field management per entity.
+- Immutable published schema snapshots.
+- Runtime CRUD and query APIs from published metadata.
+- Form and view definitions scoped by entity.
+- Option set support for `choice` and `multichoice` fields.
+
+## Field Types
+
+- `text`
+- `number`
+- `boolean`
+- `date`
+- `datetime`
+- `json`
+- `choice`
+- `multichoice`
+- `relation`
+
+## Field Constraints
+
+- `is_required`
+- `is_unique` (not for `json`)
+- `default_value`
+- `relation_target_entity` for relation fields
+- `option_set_logical_name` for choice fields
+- `calculation_expression` for calculated text or number fields
+- `description`
+- `max_length` for text
+- `min_value` and `max_value` for number
+
+## Mutation Rules
+
+- Published `logical_name` and `field_type` are immutable.
+- Draft fields can be deleted only when no published version references them.
+- Invalid constraint combinations are rejected.
+- Calculated fields cannot accept direct runtime writes.
+
+## Calculated Fields (v1)
+
+Supported functions:
+
+- `add(arg1, arg2, ...)`
+- `concat(arg1, arg2, ...)`
+
+Arguments can be field references, numeric literals, or quoted strings.
+
+## Forms and Views
+
+Forms:
+
+- `GET/POST /api/entities/:entity_logical_name/forms`
+- `GET/PUT/DELETE /api/entities/:entity_logical_name/forms/:form_logical_name`
+
+Views:
+
+- `GET/POST /api/entities/:entity_logical_name/views`
+- `GET/PUT/DELETE /api/entities/:entity_logical_name/views/:view_logical_name`
+
+Validation checks field references against the latest published schema.
+
+## Publish Lifecycle
+
+1. Edit draft metadata.
+2. Publish immutable schema snapshot.
+3. Auto-generate default form or view when needed.
+4. Runtime APIs read latest published schema.
+5. Draft changes remain inactive until next publish.
+
+## Runtime Validation
+
+- Payload must be a JSON object.
+- Unknown fields are rejected.
+- Required fields are enforced.
+- Field types and value ranges are enforced.
+- Unique constraints are enforced by unique value hash index.
+- Relation values must reference existing target records.
+- Delete is blocked when incoming relations still reference the record.
+
+Validation failures map to `AppError::Validation` and return `400 Bad Request`.
+
+## Runtime Query
+
+- `GET /api/runtime/:entity_logical_name/records` for offset pagination.
+- `POST /api/runtime/:entity_logical_name/records/query` for typed filter and sort queries.
+
+Query supports:
+
+- recursive `where` groups
+- alias-aware `link_entities`
+- scoped sort rules
+- compatibility with legacy `conditions` and `filters`
+
+All fields referenced in query clauses must exist in published schema for the selected scope.

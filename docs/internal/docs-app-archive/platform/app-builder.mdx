@@ -1,0 +1,59 @@
+---
+title: App Builder
+description: How Qryvanta maps published metadata to worker-ready app navigation and pages.
+---
+
+Phase status: in progress.
+
+App Builder links metadata, app navigation, and runtime permissions.
+Makers configure apps in admin and maker routes.
+Workers use those apps through `/worker/*` routes.
+
+## What Works Today
+
+- Multi-app per tenant through `app_definitions`.
+- App navigation through sitemap trees (`areas`, `groups`, `sub_areas`).
+- App-level entity permission matrix (`read`, `create`, `update`, `delete`).
+- App-scoped form and view defaults.
+- Worker runtime pages that resolve schema, form, and view in app scope.
+- Runtime query execution with view-level filter and sort metadata.
+
+## Runtime Resolution
+
+Worker pages resolve presentation in this order:
+
+1. Route query override (`?form=...&view=...`).
+2. Sitemap page defaults (`default_form`, `default_view`).
+3. Metadata defaults from published forms and views.
+
+## Current Endpoints
+
+- `GET /api/apps`
+- `POST /api/apps`
+- `GET /api/apps/:app_logical_name/entities`
+- `POST /api/apps/:app_logical_name/entities`
+- `GET /api/apps/:app_logical_name/sitemap`
+- `PUT /api/apps/:app_logical_name/sitemap`
+- `GET /api/apps/:app_logical_name/permissions`
+- `PUT /api/apps/:app_logical_name/permissions`
+- `GET /api/workspace/apps`
+- `GET /api/workspace/apps/:app_logical_name/navigation`
+- `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/schema`
+- `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/forms`
+- `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/views`
+- `GET|POST /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/records`
+- `POST /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/records/query`
+
+## In Progress
+
+- Broader maker editing for layout and app composition.
+- Better dashboard targets in sitemap pages.
+- More publish diagnostics when form, view, and sitemap references drift.
+
+## Related Pages
+
+- [Form Designer](/docs/platform/form-designer)
+- [View Builder](/docs/platform/view-builder)
+- [Relationship Support](/docs/platform/relationship-support)
+- [App Designer v2](/docs/platform/app-designer-v2)
+- [Publish Center](/docs/platform/publish-center)

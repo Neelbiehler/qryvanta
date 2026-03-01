@@ -1,11 +1,14 @@
 ---
-title: Self Hosting
+title: Self-Hosting
 description: Deployment expectations for running Qryvanta on your own infrastructure.
 ---
 
 Qryvanta is in active development and is not ready for production use yet.
 
-Use this guidance for local, staging, and controlled internal environments.
+Use this guidance for local, staging, and internal production-like environments.
+
+Qryvanta is open source first.
+You can run every documented product capability in your own environment.
 
 ## Runtime Stack
 
@@ -22,6 +25,8 @@ Use this guidance for local, staging, and controlled internal environments.
 2. Environment-variable configuration for all services.
 3. Database migrations executed during API startup.
 4. Explicit backup and restore runbooks before broad rollout.
+5. Clear rollback procedure for API and schema changes.
+6. Document owner team and on-call path for incidents.
 
 ## Baseline Checklist
 
@@ -32,6 +37,9 @@ Use this guidance for local, staging, and controlled internal environments.
 - Log and metric collection enabled
 - Worker runtime enabled when `WORKFLOW_EXECUTION_MODE=queued`
 - Redis enabled when using `SESSION_STORE=redis`, `RATE_LIMIT_STORE=redis`, or `WORKFLOW_QUEUE_STATS_CACHE_BACKEND=redis`
+- Rotation schedule for bootstrap tokens and worker shared secrets
+
+Treat this checklist as required before external users rely on the instance.
 
 ## Worker Runtime Startup
 
@@ -41,6 +49,15 @@ When `WORKFLOW_EXECUTION_MODE=queued`, run at least one worker process:
 cargo run -p qryvanta-worker
 ```
 
-Scale horizontally by increasing worker replicas; each worker claims leased jobs with `x-qryvanta-worker-id` identity. For deterministic tenant slices, assign `WORKER_PARTITION_COUNT` + `WORKER_PARTITION_INDEX` per worker group, tune per-process throughput with `WORKER_MAX_CONCURRENCY`, and optionally enforce distributed lease ownership with `WORKER_COORDINATION_BACKEND=redis`.
+Scale horizontally by increasing worker replicas.
+Each worker claims leased jobs with `x-qryvanta-worker-id` identity.
+For deterministic tenant slices, assign `WORKER_PARTITION_COUNT` and `WORKER_PARTITION_INDEX` per worker group.
+Tune per-process throughput with `WORKER_MAX_CONCURRENCY`.
+Use `WORKER_COORDINATION_BACKEND=redis` when you need distributed lease ownership.
 
 For environment variables and health guidance, see `Configuration`, `Email Delivery`, and `Observability` in this section.
+
+## Cloud Optionality
+
+If your team later prefers managed operations, move to `qryvanta.com`.
+Keep app behavior docs in this site as the product reference.

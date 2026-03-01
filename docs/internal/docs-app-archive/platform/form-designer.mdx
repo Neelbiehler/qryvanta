@@ -1,0 +1,35 @@
+---
+title: Form Designer
+description: Visual form authoring for tabs, sections, fields, and related-record sub-grids.
+---
+
+Phase status: in progress.
+
+Form Designer lets makers edit form metadata without hand-editing JSON.
+
+## What Works Today
+
+- Field palette for published fields.
+- Tab and section layout with one, two, or three columns.
+- Per-section related-record sub-grids.
+- Multiple forms per entity (`main`, `quick_create`, `quick_view`).
+- Save and preview loop against form endpoints.
+
+## Validation Rules
+
+- Non-negative and contiguous positions for tabs, sections, and fields.
+- No duplicate layout positions in the same scope.
+- Canonical ordering on save to keep payload shape stable.
+
+## Runtime Contract
+
+- `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/forms`
+- `GET /api/workspace/apps/:app_logical_name/entities/:entity_logical_name/forms/:form_logical_name`
+
+Worker record pages render published form metadata from these routes.
+
+## Done Criteria
+
+- Makers can create and update forms visually.
+- Worker routes render published form layout as configured.
+- Validation errors are scoped to invalid tabs, sections, or fields.

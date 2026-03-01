@@ -3,16 +3,23 @@ title: Observability
 description: Logging, metrics, and trace expectations for platform reliability.
 ---
 
+Use this page to define baseline alerts and incident triage checks.
+
+For self-hosting environments, this page is part of the production readiness checklist.
+
 ## Logging
 
 - Use structured logs with request and tenant context.
 - Log errors with actionable messages and identifiers.
 - Avoid logging secrets or sensitive payloads.
+- Include request ids and trace ids in error logs.
 
 ## Health and Readiness
 
 - `GET /health` returns dependency-level health for Postgres and Redis.
 - The endpoint returns `503 Service Unavailable` when required dependencies are not ready.
+
+Probe this endpoint from your load balancer and uptime monitor.
 
 ## Metrics
 
@@ -24,6 +31,8 @@ Track at minimum:
 - Worker heartbeat freshness and active worker count
 - DB query latency and connection pool health
 - Redis command latency and connection health when Redis backends are enabled
+
+Keep metric names stable across releases so dashboard and alert queries remain valid.
 
 ## Tracing
 
@@ -47,3 +56,11 @@ Use trace ids in logs for correlation.
 - If lease renewal fails with ownership-loss logs, investigate Redis latency/outages or overlapping worker scope keys.
 - On lease ownership loss, workers now cancel in-flight execution tasks; monitor cancellation spikes as a signal of coordination instability.
 - With `WORKER_LEASE_LOSS_STRATEGY=graceful_drain`, expect only mutating in-flight tasks to be cancelled while non-mutating tasks complete.
+
+## Incident Checklist
+
+1. Confirm `GET /health` status.
+2. Check API error-rate and latency trends.
+3. Check worker heartbeat and queue depth.
+4. Inspect recent deploy and config changes.
+5. Apply rollback or capacity change.
