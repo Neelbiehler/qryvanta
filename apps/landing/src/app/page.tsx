@@ -14,7 +14,13 @@ import { PlatformKeyframeShowcase } from "@/components/platform-keyframe-showcas
 export const metadata: Metadata = {
   title: "Qryvanta.org",
   description:
-    "Open-source project hub for Qryvanta architecture, documentation, and contribution paths.",
+    "The open-source project hub for Qryvanta. Read architecture notes and track delivery progress. Find open issues on GitHub to contribute.",
+  alternates: {
+    canonical: "https://qryvanta.org",
+  },
+  openGraph: {
+    url: "https://qryvanta.org",
+  },
 };
 
 export default function LandingPage() {
@@ -42,7 +48,7 @@ export default function LandingPage() {
 
         <ContributeSection docsUrl={docsUrl} githubUrl={githubUrl} />
 
-        <FooterStrip />
+        <FooterStrip docsUrl={docsUrl} githubUrl={githubUrl} />
       </div>
     </LandingMotionMain>
   );

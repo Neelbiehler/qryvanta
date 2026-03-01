@@ -25,18 +25,17 @@ export function HeroProjectGrid({ docsUrl, githubUrl }: HeroProjectGridProps) {
             Build metadata-driven business systems in the open.
           </h1>
           <p className="mt-5 max-w-xl text-pretty text-base text-slate-600 md:text-lg">
-            Qryvanta.org is the project home for architecture notes,
-            implementation progress, and a live preview of the platform
-            surfaces we are building as open source.
+            Qryvanta.org is the project home for architecture notes and
+            implementation progress. Browse a live preview of the platform
+            surfaces built in the open.
           </p>
 
           <div className="mt-5 rounded-xl border border-sky-100 bg-sky-50/70 p-3 text-sm text-slate-700">
             <p className="flex items-start gap-2">
               <Cloud className="mt-0.5 h-4 w-4 shrink-0 text-sky-700" />
               <span>
-                This site is for the open-source project roadmap,
-                documentation, and contribution path. The managed cloud
-                offering lives on
+                This site covers the project roadmap and documentation. The
+                managed cloud offering lives on
                 <span className="ml-1 font-semibold">qryvanta.com</span>.
               </span>
             </p>
@@ -64,8 +63,8 @@ export function HeroProjectGrid({ docsUrl, githubUrl }: HeroProjectGridProps) {
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-slate-600">
-              Use Qryvanta.org to understand the architecture, follow delivery
-              phases, and find high-impact contribution paths.
+              Read the architecture and follow delivery phases. Then pick up an
+              open issue on GitHub.
             </p>
 
             <article className="rounded-lg border border-emerald-100/90 bg-emerald-50/70 p-3">
@@ -105,8 +104,8 @@ export function HeroProjectGrid({ docsUrl, githubUrl }: HeroProjectGridProps) {
                 Project structure
               </p>
               <p className="mt-1 text-sm text-slate-700">
-                Explore layered architecture and surface tracks before diving into
-                implementation details.
+                Read the layered architecture and surface tracks before starting
+                on implementation.
               </p>
               <Link
                 href="#architecture"

@@ -37,13 +37,13 @@ export const surfaceTracks: SurfaceTrack[] = [
     title: "Admin Center",
     route: "/admin",
     tone: "critical",
-    body: "Role governance, audit controls, and tenant security settings.",
+    body: "Tenant role assignment and audit log access. Security policy configuration per surface.",
   },
   {
     title: "Maker Center",
     route: "/maker",
     tone: "warning",
-    body: "Entity modeling, app studio workflows, and automation authoring.",
+    body: "Build entity schemas and configure app sitemaps. Author automation workflows from the same interface.",
   },
   {
     title: "Worker Apps",

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { Home } from "lucide-react";
+import { Search } from "lucide-react";
 
 import {
   Card,
@@ -94,149 +94,197 @@ export function PlatformKeyframeShowcase() {
                       style={frameStyle(index, frame.accent, frame.glow)}
                     >
                       <div className="platform-scene-window platform-scene-camera">
+                        {/* ── Top bar: breadcrumbs + search + avatar ── */}
                         <header className="platform-scene-window-top">
                           <div className="platform-window-lights" aria-hidden>
                             <span />
                             <span />
                             <span />
                           </div>
-                          <p className="platform-scene-route">{frame.route}</p>
-                          <span className="platform-scene-capture">
-                            {frame.capture}
-                          </span>
-                          <StatusBadge tone={frame.tone}>
-                            {frame.badge}
-                          </StatusBadge>
+
+                          <div className="platform-scene-breadcrumbs">
+                            {frame.breadcrumbs.map((crumb, i) => (
+                              <span
+                                key={crumb}
+                                className="platform-scene-breadcrumb-item"
+                              >
+                                {i > 0 && (
+                                  <span
+                                    className="platform-scene-breadcrumb-sep"
+                                    aria-hidden
+                                  >
+                                    /
+                                  </span>
+                                )}
+                                {crumb}
+                              </span>
+                            ))}
+                          </div>
+
+                          <div className="platform-scene-cmd-search">
+                            <Search className="platform-scene-cmd-icon" aria-hidden />
+                            Jump to…
+                            <kbd>/</kbd>
+                          </div>
+
+                          <div className="platform-scene-avatar" aria-hidden>
+                            JD
+                          </div>
                         </header>
 
                         <div className="platform-scene-shell-grid">
+                          {/* ── Sidebar: header + grouped nav ── */}
                           <aside className="platform-scene-sidebar">
-                            <div className="platform-scene-brand">
-                              <span className="platform-scene-brand-mark">
-                                Q
-                              </span>
-                              <span>Qryvanta</span>
-                            </div>
-                            <p className="platform-scene-surface">
-                              {frame.surface}
-                            </p>
-                            <ul className="platform-scene-nav">
-                              {frame.navItems.map((item) => (
-                                <li
-                                  key={item}
-                                  className={cx(
-                                    "platform-scene-nav-item",
-                                    item === frame.activeNav &&
-                                      "platform-scene-nav-item-active",
-                                  )}
-                                >
-                                  {item === frame.activeNav ? (
-                                    <span className="platform-scene-nav-dot" />
-                                  ) : null}
-                                  <span className="truncate">{item}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          </aside>
-
-                          <section className="platform-scene-content">
-                            <div className="platform-scene-content-head">
-                              <div>
-                                <p className="platform-scene-kicker">
-                                  {frame.lane}
-                                </p>
-                                <p className="platform-scene-title">
-                                  {frame.title}
-                                </p>
-                              </div>
-                              <div className="platform-scene-command">
-                                <Home className="h-3 w-3" /> / jump to route
+                            <div className="platform-scene-sidebar-header">
+                              <p className="platform-scene-sidebar-eyebrow">
+                                App Navigation
+                              </p>
+                              <p className="platform-scene-sidebar-name">
+                                {frame.surface}
+                              </p>
+                              <div className="platform-scene-quickfind">
+                                <Search
+                                  className="platform-scene-quickfind-icon"
+                                  aria-hidden
+                                />
+                                Quick find…
                               </div>
                             </div>
 
-                            <p className="platform-scene-summary">
-                              {frame.summary}
-                            </p>
-
-                            <div className="platform-scene-actions">
-                              {frame.quickActions.map((action) => (
-                                <span
-                                  key={action}
-                                  className="platform-scene-action-pill"
-                                >
-                                  {action}
-                                </span>
-                              ))}
-                            </div>
-
-                            <div className="platform-scene-metrics">
-                              {frame.metrics.map((metric) => (
-                                <article
-                                  key={metric.label}
-                                  className="platform-scene-metric"
-                                >
-                                  <p className="platform-scene-metric-label">
-                                    {metric.label}
-                                  </p>
-                                  <p className="platform-scene-metric-value">
-                                    {metric.value}
-                                  </p>
-                                </article>
-                              ))}
-                            </div>
-
-                            <div className="platform-scene-table">
-                              <div className="platform-scene-table-head">
-                                <span>Item</span>
-                                <span className="platform-scene-cell-muted">
-                                  Context
-                                </span>
-                                <span>State</span>
-                              </div>
-                              {frame.rows.map((row) => (
+                            <nav className="platform-scene-nav-area">
+                              {frame.navGroups.map((group) => (
                                 <div
-                                  key={row.primary}
-                                  className="platform-scene-table-row"
+                                  key={group.label}
+                                  className="platform-scene-nav-group"
                                 >
-                                  <span className="platform-scene-cell-primary">
-                                    {row.primary}
-                                  </span>
-                                  <span className="platform-scene-cell-muted">
-                                    {row.context}
-                                  </span>
-                                  <span>
-                                    <StatusBadge tone={row.tone}>
-                                      {row.status}
-                                    </StatusBadge>
-                                  </span>
+                                  <p className="platform-scene-nav-group-label">
+                                    {group.label}
+                                  </p>
+                                  {group.items.map((item) => (
+                                    <div
+                                      key={item}
+                                      className={cx(
+                                        "platform-scene-nav-item",
+                                        item === frame.activeNav &&
+                                          "platform-scene-nav-item-active",
+                                      )}
+                                    >
+                                      <span
+                                        className="platform-scene-nav-item-icon"
+                                        aria-hidden
+                                      />
+                                      <span className="platform-scene-nav-item-label">
+                                        {item}
+                                      </span>
+                                    </div>
+                                  ))}
                                 </div>
                               ))}
-                            </div>
+                            </nav>
+                          </aside>
 
-                            <p className="platform-scene-narration platform-scene-narration-stream">
-                              {frame.narration
-                                .split(" ")
-                                .map((word, wordIndex, words) => (
+                          {/* ── Content: ribbon + body ── */}
+                          <section className="platform-scene-content">
+                            {/* Command ribbon – mirrors WorkerCommandRibbon */}
+                            <div className="platform-scene-ribbon">
+                              <div className="platform-scene-ribbon-left">
+                                <p className="platform-scene-ribbon-eyebrow">
+                                  {frame.lane}
+                                </p>
+                                <p className="platform-scene-ribbon-title">
+                                  {frame.title}
+                                </p>
+                                <p className="platform-scene-ribbon-subtitle">
+                                  {frame.route}
+                                </p>
+                              </div>
+                              <div className="platform-scene-ribbon-actions">
+                                {frame.quickActions.map((action) => (
                                   <span
-                                    key={`${frame.id}-word-${wordIndex}`}
-                                    className="platform-scene-narration-word"
-                                    style={wordStyle(wordIndex)}
+                                    key={action}
+                                    className="platform-scene-action-pill"
                                   >
-                                    {word}
-                                    {wordIndex < words.length - 1 ? " " : ""}
+                                    {action}
                                   </span>
                                 ))}
-                            </p>
+                              </div>
+                            </div>
 
-                            <div className="platform-scene-events">
-                              {frame.events.map((eventLine) => (
-                                <p
-                                  key={eventLine}
-                                  className="platform-scene-event"
-                                >
-                                  {eventLine}
-                                </p>
-                              ))}
+                            {/* Content body – zinc-50 background */}
+                            <div className="platform-scene-content-body">
+                              <p className="platform-scene-summary">
+                                {frame.summary}
+                              </p>
+
+                              <div className="platform-scene-metrics">
+                                {frame.metrics.map((metric) => (
+                                  <article
+                                    key={metric.label}
+                                    className="platform-scene-metric"
+                                  >
+                                    <p className="platform-scene-metric-label">
+                                      {metric.label}
+                                    </p>
+                                    <p className="platform-scene-metric-value">
+                                      {metric.value}
+                                    </p>
+                                  </article>
+                                ))}
+                              </div>
+
+                              <div className="platform-scene-table">
+                                <div className="platform-scene-table-head">
+                                  <span>Item</span>
+                                  <span className="platform-scene-cell-muted">
+                                    Context
+                                  </span>
+                                  <span>State</span>
+                                </div>
+                                {frame.rows.map((row) => (
+                                  <div
+                                    key={row.primary}
+                                    className="platform-scene-table-row"
+                                  >
+                                    <span className="platform-scene-cell-primary">
+                                      {row.primary}
+                                    </span>
+                                    <span className="platform-scene-cell-muted">
+                                      {row.context}
+                                    </span>
+                                    <span>
+                                      <StatusBadge tone={row.tone}>
+                                        {row.status}
+                                      </StatusBadge>
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+
+                              <p className="platform-scene-narration platform-scene-narration-stream">
+                                {frame.narration
+                                  .split(" ")
+                                  .map((word, wordIndex, words) => (
+                                    <span
+                                      key={`${frame.id}-word-${wordIndex}`}
+                                      className="platform-scene-narration-word"
+                                      style={wordStyle(wordIndex)}
+                                    >
+                                      {word}
+                                      {wordIndex < words.length - 1 ? " " : ""}
+                                    </span>
+                                  ))}
+                              </p>
+
+                              <div className="platform-scene-events">
+                                {frame.events.map((eventLine) => (
+                                  <p
+                                    key={eventLine}
+                                    className="platform-scene-event"
+                                  >
+                                    {eventLine}
+                                  </p>
+                                ))}
+                              </div>
                             </div>
                           </section>
                         </div>
