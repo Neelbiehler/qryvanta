@@ -1,6 +1,11 @@
 import type { LucideIcon } from "lucide-react";
 import { Blocks, Briefcase, Shield, Workflow } from "lucide-react";
 
+type ShowcaseNavGroup = {
+  label: string;
+  items: string[];
+};
+
 type ShowcaseFrame = {
   id: string;
   frame: string;
@@ -13,8 +18,9 @@ type ShowcaseFrame = {
   narration: string;
   lane: string;
   quickActions: string[];
-  navItems: string[];
+  navGroups: ShowcaseNavGroup[];
   activeNav: string;
+  breadcrumbs: string[];
   metrics: Array<{
     label: string;
     value: string;
@@ -40,14 +46,18 @@ export const showcaseFrames: ShowcaseFrame[] = [
     surface: "Admin Center",
     route: "/admin/account",
     capture: "00:00 - 00:06",
-    title: "Governance and tenant policy",
+    title: "Security Settings",
     summary:
-      "Mirror the actual admin surface: roles, audit visibility, and security controls in one workflow.",
+      "Based on the admin surface in apps/web. Shows role assignment and audit trail access.",
     narration:
       "Start in Admin Center to lock tenant posture before scaling any runtime workflows.",
     lane: "Tenant Guardrails",
     quickActions: ["Create Role", "Export Audit", "Enforce MFA"],
-    navItems: ["Overview", "Roles", "Audit Log", "Security Settings"],
+    breadcrumbs: ["Admin Center", "Security", "Settings"],
+    navGroups: [
+      { label: "Governance", items: ["Overview", "Roles", "Audit Log"] },
+      { label: "Security", items: ["Security Settings", "MFA Policy"] },
+    ],
     activeNav: "Security Settings",
     metrics: [
       { label: "Roles", value: "14" },
@@ -90,14 +100,21 @@ export const showcaseFrames: ShowcaseFrame[] = [
     surface: "Maker Center",
     route: "/maker/entities",
     capture: "00:06 - 00:12",
-    title: "Model entities in app studio",
+    title: "Entity Library",
     summary:
-      "Reflect the Maker flow from the web app: entities, fields, and publish lifecycle.",
+      "Based on the Maker surface in apps/web. Entity schemas and their publish lifecycle.",
     narration:
       "Switch to Maker Center to define metadata once and publish contracts for every surface.",
     lane: "Metadata Studio",
     quickActions: ["Add Field", "Validate Draft", "Publish Schema"],
-    navItems: ["Overview", "Entities", "App Studio", "Automation"],
+    breadcrumbs: ["Maker Center", "Entities"],
+    navGroups: [
+      {
+        label: "Metadata",
+        items: ["Overview", "Entities", "Views", "Forms"],
+      },
+      { label: "App Studio", items: ["Sitemap", "Publish"] },
+    ],
     activeNav: "Entities",
     metrics: [
       { label: "Entities", value: "27" },
@@ -137,18 +154,25 @@ export const showcaseFrames: ShowcaseFrame[] = [
     id: "worker-operations",
     frame: "Scene 03",
     badge: "Worker",
-    surface: "Worker Apps",
+    surface: "Revenue App",
     route: "/worker/apps/revenue/contracts",
     capture: "00:12 - 00:18",
-    title: "Operate through focused runtime apps",
+    title: "Contracts",
     summary:
-      "Capture the Worker experience: app queue, runtime records, and capability-aware operations.",
+      "Based on the Worker surface in apps/web. App navigation and record-level operations.",
     narration:
       "Move into Worker Apps where teams execute daily tasks on the same trusted model.",
     lane: "Operational Runtime",
-    quickActions: ["Open App", "New Record", "Refresh Grid"],
-    navItems: ["Overview", "My Apps"],
-    activeNav: "My Apps",
+    quickActions: ["New Record", "Bulk Edit", "Export View"],
+    breadcrumbs: ["Worker", "Revenue App", "Contracts"],
+    navGroups: [
+      {
+        label: "Sales",
+        items: ["Contracts", "Invoices", "Opportunities"],
+      },
+      { label: "Customers", items: ["Accounts", "Contacts"] },
+    ],
+    activeNav: "Contracts",
     metrics: [
       { label: "Open Records", value: "146" },
       { label: "SLA Risk", value: "7" },
@@ -190,15 +214,22 @@ export const showcaseFrames: ShowcaseFrame[] = [
     surface: "Maker Center",
     route: "/maker/automation/workflows",
     capture: "00:18 - 00:24",
-    title: "Close the loop with workflow automation",
+    title: "Workflows",
     summary:
       "Use the same automation concepts as the web canvas: triggers, steps, branches, and run history.",
     narration:
-      "Finish with automation loops to orchestrate events, retries, and operational follow-through.",
+      "Finish with automation loops that handle retries and event-driven operations.",
     lane: "Workflow Orchestration",
     quickActions: ["Run Manually", "Open Inspector", "Publish Flow"],
-    navItems: ["Overview", "Entities", "App Studio", "Automation"],
-    activeNav: "Automation",
+    breadcrumbs: ["Maker Center", "Automation", "Workflows"],
+    navGroups: [
+      {
+        label: "Metadata",
+        items: ["Overview", "Entities", "Views", "Forms"],
+      },
+      { label: "Automation", items: ["Workflows", "Schedules", "Run History"] },
+    ],
+    activeNav: "Workflows",
     metrics: [
       { label: "Active Flows", value: "22" },
       { label: "Runs Today", value: "3,214" },

@@ -18,8 +18,7 @@ export function ContributeSection({ docsUrl, githubUrl }: ContributeSectionProps
               Ready to contribute?
             </p>
             <p className="mt-2 text-sm text-slate-600">
-              Follow the docs, review architecture, and contribute directly to
-              the repository.
+              Read the docs and contribute to the repository.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">

@@ -21,9 +21,9 @@ export function OssCloudSection({ docsUrl, cloudUrl }: OssCloudSectionProps) {
               Deploy yourself, or choose managed cloud when it helps.
             </h3>
             <p className="mt-3 text-sm text-slate-600">
-              Qryvanta.org stays focused on the OSS project. For teams that want
-              managed infrastructure, updates, and support, Qryvanta Cloud is
-              available without changing the platform story.
+              Qryvanta.org stays focused on the OSS project. For teams that
+              want managed infrastructure and ongoing support, Qryvanta Cloud
+              runs the same platform.
             </p>
           </div>
 
@@ -53,8 +53,7 @@ export function OssCloudSection({ docsUrl, cloudUrl }: OssCloudSectionProps) {
                 </p>
               </div>
               <p className="mt-1 text-xs text-slate-600">
-                Explore the hosted option for faster rollout and managed
-                operations.
+                Managed infrastructure with operations handled for you.
               </p>
               <Link href={cloudUrl} className={`${buttonVariants({ size: "sm" })} mt-2`}>
                 Visit qryvanta.com
