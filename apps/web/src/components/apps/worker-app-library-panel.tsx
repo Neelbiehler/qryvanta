@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { AppWindow, ArrowRight, Clock, Search, X } from "lucide-react";
 
 import {
@@ -55,24 +55,34 @@ function getInitials(displayName: string): string {
   return ((words[0]?.[0] ?? "") + (words[1]?.[0] ?? "")).toUpperCase();
 }
 
+function loadRecentEntries(): RecentEntry[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(RECENT_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (entry): entry is RecentEntry =>
+          typeof entry === "object" &&
+          entry !== null &&
+          typeof (entry as { logical_name?: unknown }).logical_name === "string" &&
+          typeof (entry as { display_name?: unknown }).display_name === "string" &&
+          typeof (entry as { opened_at?: unknown }).opened_at === "number",
+      )
+      .slice(0, MAX_RECENT);
+  } catch {
+    // ignore storage errors
+    return [];
+  }
+}
+
 export function WorkerAppLibraryPanel({ apps }: WorkerAppLibraryPanelProps) {
   const [query, setQuery] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("display_asc");
-  const [recentEntries, setRecentEntries] = useState<RecentEntry[]>([]);
+  const [recentEntries, setRecentEntries] = useState<RecentEntry[]>(loadRecentEntries);
   const searchRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(RECENT_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as unknown;
-      if (Array.isArray(parsed)) {
-        setRecentEntries(parsed as RecentEntry[]);
-      }
-    } catch {
-      // ignore storage errors
-    }
-  }, []);
 
   function recordOpen(app: AppResponse) {
     setRecentEntries((prev) => {

@@ -725,9 +725,10 @@ async fn replay_run_rejects_mismatched_workflow_name() {
     let replay = service
         .replay_run(&actor, "other_workflow", run.run_id.as_str())
         .await;
-    assert!(replay.is_err());
-    let error = replay.unwrap_err();
-    assert!(matches!(error, AppError::Validation(_)));
+    match replay {
+        Ok(_) => panic!("expected replay_run to reject mismatched workflow name"),
+        Err(error) => assert!(matches!(error, AppError::Validation(_))),
+    }
 }
 
 #[tokio::test]
@@ -1008,8 +1009,10 @@ async fn dispatch_schedule_tick_rejects_invalid_tick_timestamp() {
         )
         .await;
 
-    assert!(dispatched.is_err());
-    assert!(matches!(dispatched.unwrap_err(), AppError::Validation(_)));
+    match dispatched {
+        Ok(_) => panic!("expected dispatch_schedule_tick to fail for invalid tick_at"),
+        Err(error) => assert!(matches!(error, AppError::Validation(_))),
+    }
 }
 
 #[tokio::test]

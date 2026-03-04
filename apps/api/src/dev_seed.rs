@@ -1584,6 +1584,7 @@ async fn save_forms_and_views(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn save_form(
     metadata_service: &MetadataService,
     actor: &UserIdentity,
@@ -1611,6 +1612,7 @@ async fn save_form(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn save_view(
     metadata_service: &MetadataService,
     actor: &UserIdentity,
@@ -1661,6 +1663,7 @@ async fn save_view(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn ensure_entity(
     metadata_service: &MetadataService,
     actor: &UserIdentity,
@@ -1780,6 +1783,7 @@ async fn save_date_field(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn save_relation_field(
     metadata_service: &MetadataService,
     actor: &UserIdentity,
