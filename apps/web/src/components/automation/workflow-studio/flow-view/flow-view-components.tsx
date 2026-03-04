@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronUp,
   CheckCircle2,
+  Clock3,
   Copy,
   Database,
   GitBranch,
@@ -169,14 +170,21 @@ function stepTypeLabelColor(type: DraftWorkflowStep["type"]): string {
   }
 }
 
-export function FlowConnector({ onAdd }: { onAdd: () => void }) {
+export function FlowConnector({
+  onAdd,
+  disabled = false,
+}: {
+  onAdd: () => void;
+  disabled?: boolean;
+}) {
   return (
     <div className="flex flex-col items-center">
       <div className="h-6 w-px bg-zinc-200" />
       <button
         type="button"
-        className="flex size-6 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-400 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+        className="flex size-6 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-400 shadow-sm transition enabled:hover:border-emerald-300 enabled:hover:bg-emerald-50 enabled:hover:text-emerald-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
         onClick={onAdd}
+        disabled={disabled}
         title="Add step here"
       >
         <Plus className="size-3.5" />
@@ -186,8 +194,25 @@ export function FlowConnector({ onAdd }: { onAdd: () => void }) {
   );
 }
 
-function StepTraceStatus({ trace }: { trace: WorkflowRunStepTraceResponse | null }) {
-  if (!trace) return null;
+function StepTraceStatus({
+  trace,
+  showNotExecuted = false,
+}: {
+  trace: WorkflowRunStepTraceResponse | null;
+  showNotExecuted?: boolean;
+}) {
+  if (!trace) {
+    if (!showNotExecuted) {
+      return null;
+    }
+
+    return (
+      <div className="mt-1 flex items-center gap-1 text-[10px] font-medium text-zinc-400">
+        <Clock3 className="size-3" />
+        <span>not executed</span>
+      </div>
+    );
+  }
 
   const ok = trace.status === "succeeded";
   return (
@@ -764,6 +789,7 @@ function StepTraceDebug({
 type StepCardProps = {
   step: DraftWorkflowStep;
   isExpanded: boolean;
+  readOnly: boolean;
   trace: WorkflowRunStepTraceResponse | null;
   availableTokens: DynamicTokenOption[];
   runtimeEntityOptions: Array<{ value: string; label: string }>;
@@ -784,6 +810,7 @@ type StepCardProps = {
 function StepCard({
   step,
   isExpanded,
+  readOnly,
   trace,
   availableTokens,
   runtimeEntityOptions,
@@ -852,27 +879,31 @@ function StepCard({
                 ) : null}
               </div>
             ) : null}
-            <StepTraceStatus trace={trace} />
+            <StepTraceStatus trace={trace} showNotExecuted={readOnly} />
           </div>
         </button>
 
         <div className="flex shrink-0 items-center gap-0.5">
-          <button
-            type="button"
-            className="flex size-7 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600"
-            onClick={onDuplicate}
-            title="Duplicate step"
-          >
-            <Copy className="size-3.5" />
-          </button>
-          <button
-            type="button"
-            className="flex size-7 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600"
-            onClick={onRemove}
-            title="Remove step"
-          >
-            <Trash2 className="size-3.5" />
-          </button>
+          {!readOnly ? (
+            <>
+              <button
+                type="button"
+                className="flex size-7 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600"
+                onClick={onDuplicate}
+                title="Duplicate step"
+              >
+                <Copy className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                className="flex size-7 items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                onClick={onRemove}
+                title="Remove step"
+              >
+                <Trash2 className="size-3.5" />
+              </button>
+            </>
+          ) : null}
           <button
             type="button"
             className={`flex size-7 items-center justify-center rounded-md transition-colors ${
@@ -926,6 +957,7 @@ function StepCard({
 }
 
 export type SharedStepProps = {
+  readOnly: boolean;
   expandedNodeId: string | null;
   onExpandNode: (id: string | null) => void;
   onUpdateStep: (
@@ -988,14 +1020,16 @@ function BranchColumn({
             <StepBlock key={step.id} step={step} {...shared} />
           ))
         )}
-        <button
-          type="button"
-          className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-zinc-300 px-3 py-2 text-[11px] text-zinc-400 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600"
-          onClick={() => shared.onOpenNodePicker(addMode, conditionId)}
-        >
-          <Plus className="size-3.5" />
-          Add step
-        </button>
+        {!shared.readOnly ? (
+          <button
+            type="button"
+            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-zinc-300 px-3 py-2 text-[11px] text-zinc-400 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600"
+            onClick={() => shared.onOpenNodePicker(addMode, conditionId)}
+          >
+            <Plus className="size-3.5" />
+            Add step
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -1015,6 +1049,7 @@ function ConditionBlock({
       <StepCard
         step={step}
         isExpanded={isExpanded}
+        readOnly={shared.readOnly}
         trace={trace}
         availableTokens={tokens}
         runtimeEntityOptions={shared.runtimeEntityOptions}
@@ -1061,7 +1096,10 @@ export function StepBlock({ step, ...shared }: SharedStepProps & { step: DraftWo
     return (
       <>
         <ConditionBlock step={step} {...shared} />
-        <FlowConnector onAdd={() => shared.onOpenNodePicker("after_selected", step.id)} />
+        <FlowConnector
+          disabled={shared.readOnly}
+          onAdd={() => shared.onOpenNodePicker("after_selected", step.id)}
+        />
       </>
     );
   }
@@ -1076,6 +1114,7 @@ export function StepBlock({ step, ...shared }: SharedStepProps & { step: DraftWo
       <StepCard
         step={step}
         isExpanded={isExpanded}
+        readOnly={shared.readOnly}
         trace={trace}
         availableTokens={tokens}
         runtimeEntityOptions={shared.runtimeEntityOptions}
@@ -1088,7 +1127,10 @@ export function StepBlock({ step, ...shared }: SharedStepProps & { step: DraftWo
         isRetryingStep={shared.isRetryingStep}
         onRetryStep={shared.onRetryStep}
       />
-      <FlowConnector onAdd={() => shared.onOpenNodePicker("after_selected", step.id)} />
+      <FlowConnector
+        disabled={shared.readOnly}
+        onAdd={() => shared.onOpenNodePicker("after_selected", step.id)}
+      />
     </>
   );
 }

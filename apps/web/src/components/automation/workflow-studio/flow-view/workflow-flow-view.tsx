@@ -22,6 +22,7 @@ import type {
 } from "@/lib/api";
 
 export type WorkflowFlowViewProps = {
+  readOnly: boolean;
   steps: DraftWorkflowStep[];
   triggerType: TriggerType;
   triggerEntityLogicalName: string;
@@ -51,6 +52,7 @@ export type WorkflowFlowViewProps = {
 };
 
 export function WorkflowFlowView({
+  readOnly,
   steps,
   triggerType,
   triggerEntityLogicalName,
@@ -72,6 +74,7 @@ export function WorkflowFlowView({
   onRetryStep,
 }: WorkflowFlowViewProps) {
   const shared: SharedStepProps = {
+    readOnly,
     expandedNodeId,
     onExpandNode,
     onUpdateStep,
@@ -102,7 +105,7 @@ export function WorkflowFlowView({
             runtimeEntityOptions={runtimeEntityOptions}
           />
 
-          <FlowConnector onAdd={() => onOpenNodePicker("root")} />
+          <FlowConnector disabled={readOnly} onAdd={() => onOpenNodePicker("root")} />
 
           {steps.length > 0 ? (
             steps.map((step) => <StepBlock key={step.id} step={step} {...shared} />)
@@ -113,19 +116,27 @@ export function WorkflowFlowView({
               </div>
               <div>
                 <p className="text-sm font-medium text-zinc-600">No steps yet</p>
-                <p className="mt-0.5 text-xs text-zinc-400">
-                  Press <kbd className="rounded border border-zinc-200 bg-zinc-100 px-1 py-0.5 font-mono text-[10px]">A</kbd> or click + to add your first step
-                </p>
+                {readOnly ? (
+                  <p className="mt-0.5 text-xs text-zinc-400">
+                    This workflow has no executable steps.
+                  </p>
+                ) : (
+                  <p className="mt-0.5 text-xs text-zinc-400">
+                    Press <kbd className="rounded border border-zinc-200 bg-zinc-100 px-1 py-0.5 font-mono text-[10px]">A</kbd> or click + to add your first step
+                  </p>
+                )}
               </div>
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={() => onOpenNodePicker("root")}
-              >
-                <Plus className="mr-1.5 size-3.5" />
-                Add step
-              </Button>
+              {!readOnly ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onOpenNodePicker("root")}
+                >
+                  <Plus className="mr-1.5 size-3.5" />
+                  Add step
+                </Button>
+              ) : null}
             </div>
           )}
         </div>

@@ -3,7 +3,11 @@
 import { useCallback, type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import type { WorkflowResponse, WorkflowRunResponse, WorkflowStepDto } from "@/lib/api";
+import type {
+  WorkflowResponse,
+  WorkflowRunResponse,
+  WorkflowStepDto,
+} from "@/lib/api";
 import { WorkflowFlowView } from "@/components/automation/workflow-studio/flow-view/workflow-flow-view";
 import { useRuntimeSchemas } from "@/components/automation/workflow-studio/hooks/use-runtime-schemas";
 import {
@@ -37,6 +41,7 @@ import {
 } from "@/components/automation/workflow-studio/model";
 import { NodePickerDialog } from "@/components/automation/workflow-studio/panels/node-picker-dialog";
 import { WorkflowBuilderPanel } from "@/components/automation/workflow-studio/panels/workflow-builder-panel";
+import { WorkflowStepHistoryPanel } from "@/components/automation/workflow-studio/panels/workflow-step-history-panel";
 import { WorkflowStudioToolbar } from "@/components/automation/workflow-studio/panels/workflow-studio-toolbar";
 
 type WorkflowStudioPanelProps = {
@@ -44,6 +49,7 @@ type WorkflowStudioPanelProps = {
   runs: WorkflowRunResponse[];
   initialSelectedWorkflow?: string;
   initialWorkspaceMode?: WorkflowWorkspaceMode;
+  initialHistoryRunId?: string;
 };
 
 export type { WorkflowWorkspaceMode };
@@ -57,6 +63,7 @@ function useWorkflowStudioPanelContent({
   runs,
   initialSelectedWorkflow,
   initialWorkspaceMode,
+  initialHistoryRunId,
 }: WorkflowStudioPanelProps) {
   const router = useRouter();
   const {
@@ -80,6 +87,7 @@ function useWorkflowStudioPanelContent({
   });
 
   const selectedWorkflow = workspaceState.selectedWorkflow;
+  const workflowWorkspaceMode = workspaceState.workflowWorkspaceMode;
   const errorMessage = workspaceState.errorMessage;
   const statusMessage = workspaceState.statusMessage;
   const selectedStepId = selectionState.selectedStepId;
@@ -99,8 +107,10 @@ function useWorkflowStudioPanelContent({
   const [undoStack, setUndoStack] = useState<CanvasHistorySnapshot[]>([]);
   const [redoStack, setRedoStack] = useState<CanvasHistorySnapshot[]>([]);
   const [expandedNodeId, setExpandedNodeId] = useState<string | null>(null);
+  const [selectedAttemptNumber, setSelectedAttemptNumber] = useState<number | null>(null);
   const suppressHistoryRef = useRef(false);
   const initializedFromRouteRef = useRef(false);
+  const initializedHistoryRunRef = useRef(false);
   const nodePickerInputRef = useRef<HTMLInputElement | null>(null);
 
   const [steps, setSteps] = useState<DraftWorkflowStep[]>([
@@ -141,9 +151,11 @@ function useWorkflowStudioPanelContent({
     setExecutePayload,
     attemptsByRun,
     expandedRunId,
+    loadingAttemptsRunId,
     isExecuting,
     isRetryingStep,
     handleExecuteWorkflow,
+    selectRun,
     retryRunStep,
   } = useWorkflowExecution({
     selectedWorkflow,
@@ -217,15 +229,53 @@ function useWorkflowStudioPanelContent({
     [steps, triggerFieldPathSuggestions],
   );
 
+  const selectedWorkflowDefinition = useMemo(
+    () => workflows.find((workflow) => workflow.logical_name === selectedWorkflow) ?? null,
+    [selectedWorkflow, workflows],
+  );
+  const runsForSelectedWorkflow = useMemo(() => {
+    return runs
+      .filter((run) => run.workflow_logical_name === selectedWorkflow)
+      .sort((left, right) => {
+        const leftTime = Date.parse(left.started_at);
+        const rightTime = Date.parse(right.started_at);
+        return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
+      });
+  }, [runs, selectedWorkflow]);
+
   const stepPathIndex = useMemo(() => buildStepPathIndex(steps), [steps]);
-  const activeRunAttempt = useMemo(() => {
+  const stepIdByStepPath = useMemo(() => {
+    return Object.entries(stepPathIndex.byStepId).reduce(
+      (acc, [stepId, stepPath]) => {
+        acc[stepPath] = stepId;
+        return acc;
+      },
+      {} as Record<string, string>,
+    );
+  }, [stepPathIndex.byStepId]);
+  const activeRunAttempts = useMemo(() => {
     if (!expandedRunId) {
+      return [];
+    }
+
+    return attemptsByRun[expandedRunId] ?? [];
+  }, [attemptsByRun, expandedRunId]);
+  const activeRunAttempt = useMemo(() => {
+    if (activeRunAttempts.length === 0) {
       return null;
     }
 
-    const attempts = attemptsByRun[expandedRunId] ?? [];
-    return attempts.at(-1) ?? null;
-  }, [attemptsByRun, expandedRunId]);
+    if (selectedAttemptNumber !== null) {
+      const selectedAttempt = activeRunAttempts.find(
+        (attempt) => attempt.attempt_number === selectedAttemptNumber,
+      );
+      if (selectedAttempt) {
+        return selectedAttempt;
+      }
+    }
+
+    return activeRunAttempts.at(-1) ?? null;
+  }, [activeRunAttempts, selectedAttemptNumber]);
   const activeStepTraceByPath = useMemo(
     () => stepTraceMapByPath(activeRunAttempt?.step_traces),
     [activeRunAttempt],
@@ -238,7 +288,11 @@ function useWorkflowStudioPanelContent({
     return runs.find((run) => run.run_id === expandedRunId) ?? null;
   }, [expandedRunId, runs]);
 
-  const leftPanelOffset = showBuilderPanel ? 300 : 0;
+  const leftPanelOffset = showBuilderPanel
+    ? workflowWorkspaceMode === "history"
+      ? 340
+      : 300
+    : 0;
 
   function snapshotCanvasState(): CanvasHistorySnapshot {
     return {
@@ -315,6 +369,10 @@ function useWorkflowStudioPanelContent({
   }
 
   function openNodePicker() {
+    if (workflowWorkspaceMode === "history") {
+      return;
+    }
+
     setNodePickerQuery("");
     setNodePickerCategory("all");
     setNodePickerInsertMode(catalogInsertMode);
@@ -322,6 +380,10 @@ function useWorkflowStudioPanelContent({
   }
 
   function openNodePickerForInsert(mode: CatalogInsertMode, stepId?: string) {
+    if (workflowWorkspaceMode === "history") {
+      return;
+    }
+
     if (stepId) {
       selectStep(stepId);
     }
@@ -496,19 +558,25 @@ function useWorkflowStudioPanelContent({
     handleExpandNode(issue.stepId ?? "trigger");
   }
 
-  function loadWorkflowIntoBuilder(
+  function loadWorkflowIntoCanvas(
     workflow: WorkflowResponse,
-    options?: { pushRoute?: boolean },
+    options?: {
+      mode?: WorkflowWorkspaceMode;
+      pushRoute?: boolean;
+      statusMessage?: string | null;
+    },
   ) {
+    const mode = options?.mode ?? "edit";
     resetMessages();
     setSelectedWorkflow(workflow.logical_name);
-    setWorkflowWorkspaceMode("edit");
+    setWorkflowWorkspaceMode(mode);
     if (options?.pushRoute !== false) {
-      router.push(workflowModePath(workflow.logical_name, "edit"));
+      router.push(workflowModePath(workflow.logical_name, mode));
     }
 
     setUndoStack([]);
     setRedoStack([]);
+    setSelectedAttemptNumber(null);
 
     setLogicalName(workflow.logical_name);
     setDisplayName(workflow.display_name);
@@ -535,19 +603,31 @@ function useWorkflowStudioPanelContent({
     const firstStepId = draftSteps.at(0)?.id ?? null;
     setSelectedStepId(firstStepId);
     setInspectorNode(firstStepId ? "step" : "trigger");
-    setStatusMessage(`Loaded ${workflow.display_name} into the flow canvas.`);
+    setStatusMessage(
+      options?.statusMessage
+        ?? `Loaded ${workflow.display_name} into the flow canvas.`,
+    );
+  }
+
+  function loadWorkflowIntoBuilder(
+    workflow: WorkflowResponse,
+    options?: { pushRoute?: boolean },
+  ) {
+    loadWorkflowIntoCanvas(workflow, {
+      mode: "edit",
+      pushRoute: options?.pushRoute,
+    });
   }
 
   function openWorkflowHistory(
     workflow: WorkflowResponse,
     options?: { pushRoute?: boolean },
   ) {
-    resetMessages();
-    setSelectedWorkflow(workflow.logical_name);
-    setWorkflowWorkspaceMode("history");
-    if (options?.pushRoute !== false) {
-      router.push(workflowModePath(workflow.logical_name, "history"));
-    }
+    loadWorkflowIntoCanvas(workflow, {
+      mode: "history",
+      pushRoute: options?.pushRoute,
+      statusMessage: `Loaded ${workflow.display_name} in step history mode.`,
+    });
   }
 
   async function handleSaveWorkflow(event: FormEvent<HTMLFormElement>) {
@@ -569,8 +649,34 @@ function useWorkflowStudioPanelContent({
     router.push(`/maker/automation/${encodeURIComponent(nextWorkflow)}/edit`);
   }
 
+  function selectHistoryRun(runId: string) {
+    if (runId.trim().length === 0 || expandedRunId === runId) {
+      return;
+    }
+
+    setSelectedAttemptNumber(null);
+    void selectRun(runId);
+  }
+
+  function selectHistoryAttempt(attemptNumber: number | null) {
+    setSelectedAttemptNumber(attemptNumber);
+  }
+
+  function focusStepByPath(stepPath: string) {
+    const stepId = stepIdByStepPath[stepPath];
+    if (!stepId) {
+      return;
+    }
+
+    handleExpandNode(stepId);
+  }
+
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
+      if (workflowWorkspaceMode === "history") {
+        return;
+      }
+
       const key = event.key.toLowerCase();
 
       if (showNodePicker) {
@@ -611,8 +717,8 @@ function useWorkflowStudioPanelContent({
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- Keyboard handler intentionally keyed to picker visibility.
-  }, [showNodePicker]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- Keyboard handler intentionally keyed to picker visibility and mode.
+  }, [showNodePicker, workflowWorkspaceMode]);
 
   useEffect(() => {
     if (!showNodePicker) {
@@ -627,6 +733,74 @@ function useWorkflowStudioPanelContent({
       window.clearTimeout(timeoutId);
     };
   }, [showNodePicker]);
+
+  useEffect(() => {
+    setSelectedAttemptNumber(null);
+  }, [expandedRunId]);
+
+  useEffect(() => {
+    if (initializedHistoryRunRef.current) {
+      return;
+    }
+
+    if (workflowWorkspaceMode !== "history") {
+      return;
+    }
+
+    if (!initialHistoryRunId || initialHistoryRunId.trim().length === 0) {
+      initializedHistoryRunRef.current = true;
+      return;
+    }
+
+    const requestedRun = runsForSelectedWorkflow.find(
+      (run) => run.run_id === initialHistoryRunId,
+    );
+    if (!requestedRun) {
+      initializedHistoryRunRef.current = true;
+      return;
+    }
+
+    initializedHistoryRunRef.current = true;
+    if (expandedRunId === requestedRun.run_id || loadingAttemptsRunId === requestedRun.run_id) {
+      return;
+    }
+
+    void selectRun(requestedRun.run_id);
+  }, [
+    expandedRunId,
+    initialHistoryRunId,
+    loadingAttemptsRunId,
+    runsForSelectedWorkflow,
+    selectRun,
+    workflowWorkspaceMode,
+  ]);
+
+  useEffect(() => {
+    if (workflowWorkspaceMode !== "history") {
+      return;
+    }
+
+    if (!initializedHistoryRunRef.current) {
+      return;
+    }
+
+    const latestRunId = runsForSelectedWorkflow[0]?.run_id;
+    if (!latestRunId) {
+      return;
+    }
+
+    if (expandedRunId === latestRunId || loadingAttemptsRunId !== null) {
+      return;
+    }
+
+    void selectRun(latestRunId);
+  }, [
+    expandedRunId,
+    loadingAttemptsRunId,
+    runsForSelectedWorkflow,
+    selectRun,
+    workflowWorkspaceMode,
+  ]);
 
   useEffect(() => {
     if (initializedFromRouteRef.current) {
@@ -659,10 +833,15 @@ function useWorkflowStudioPanelContent({
   // eslint-disable-next-line react-hooks/exhaustive-deps -- Route initialization should run once per mount.
   }, [initialSelectedWorkflow, initialWorkspaceMode, workflows]);
 
+  useEffect(() => {
+    initializedHistoryRunRef.current = false;
+  }, [initialHistoryRunId, selectedWorkflow, workflowWorkspaceMode]);
+
   return (
     <div className="relative h-[calc(100vh-9rem)] min-h-[760px] overflow-hidden rounded-xl border border-zinc-200 bg-zinc-50">
       <WorkflowStudioToolbar
         selectedWorkflow={selectedWorkflow}
+        workspaceMode={workflowWorkspaceMode}
         validationErrorCount={validationErrorCount}
         errorMessage={errorMessage}
         statusMessage={statusMessage}
@@ -691,7 +870,7 @@ function useWorkflowStudioPanelContent({
       />
 
       <WorkflowBuilderPanel
-        open={showBuilderPanel}
+        open={showBuilderPanel && workflowWorkspaceMode === "edit"}
         onSaveWorkflow={handleSaveWorkflow}
         logicalName={logicalName}
         onLogicalNameChange={setLogicalName}
@@ -724,27 +903,67 @@ function useWorkflowStudioPanelContent({
         validationErrorCount={validationErrorCount}
         onFocusValidationIssue={focusValidationIssue}
       />
+      <WorkflowStepHistoryPanel
+        open={showBuilderPanel && workflowWorkspaceMode === "history"}
+        workflowLogicalName={selectedWorkflowDefinition?.logical_name ?? selectedWorkflow}
+        workflowDisplayName={selectedWorkflowDefinition?.display_name ?? selectedWorkflow}
+        runs={runsForSelectedWorkflow}
+        selectedRunId={expandedRunId}
+        attempts={activeRunAttempts}
+        selectedAttemptNumber={selectedAttemptNumber}
+        activeAttempt={activeRunAttempt}
+        loadingAttemptsRunId={loadingAttemptsRunId}
+        onSelectRun={selectHistoryRun}
+        onSelectAttempt={selectHistoryAttempt}
+        onFocusStepPath={focusStepByPath}
+      />
 
       <div
         className="absolute inset-0 transition-[padding]"
         style={{ paddingTop: "48px", paddingLeft: `${leftPanelOffset}px` }}
       >
         <WorkflowFlowView
+          readOnly={workflowWorkspaceMode === "history"}
           steps={steps}
           triggerType={triggerType}
           triggerEntityLogicalName={triggerEntityLogicalName}
           expandedNodeId={expandedNodeId}
           onExpandNode={handleExpandNode}
-          onUpdateStep={handleUpdateStepById}
-          onRemoveStep={handleRemoveStepById}
-          onDuplicateStep={handleDuplicateStepById}
+          onUpdateStep={(stepId, updater) => {
+            if (workflowWorkspaceMode === "history") {
+              return;
+            }
+            handleUpdateStepById(stepId, updater);
+          }}
+          onRemoveStep={(stepId) => {
+            if (workflowWorkspaceMode === "history") {
+              return;
+            }
+            handleRemoveStepById(stepId);
+          }}
+          onDuplicateStep={(stepId) => {
+            if (workflowWorkspaceMode === "history") {
+              return;
+            }
+            handleDuplicateStepById(stepId);
+          }}
           onOpenNodePicker={openNodePickerForInsert}
           getAvailableTokens={getAvailableTokensForStep}
           runtimeEntityOptions={runtimeEntityOptions}
           triggerFieldPathSuggestions={triggerFieldPathSuggestions}
           getEntityFieldPathSuggestions={getEntityFieldPathSuggestions}
-          onTriggerTypeChange={updateTriggerType}
-          onTriggerEntityChange={updateTriggerEntity}
+          onTriggerTypeChange={(next) => {
+            if (workflowWorkspaceMode === "history") {
+              return;
+            }
+            updateTriggerType(next);
+          }}
+          onTriggerEntityChange={(next) => {
+            if (workflowWorkspaceMode === "history") {
+              return;
+            }
+            updateTriggerEntity(next);
+          }}
           stepTraceByPath={activeStepTraceByPath}
           stepPathByStepId={stepPathIndex.byStepId}
           isRetryingStep={isRetryingStep}
