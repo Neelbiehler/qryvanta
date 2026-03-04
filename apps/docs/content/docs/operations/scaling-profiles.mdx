@@ -1,0 +1,70 @@
+---
+title: Scaling Profiles
+description: Reference deployment profiles for single-node, small-cluster, and large-cluster self-hosting.
+---
+
+Qryvanta publishes three reference scaling profiles as starting points:
+
+- Single node
+- Small cluster
+- Large cluster
+
+These are baseline templates, not hard limits.
+Always validate against your own tenant mix and workload shape.
+
+## Profile Artifacts
+
+Use the profile env templates in repository root:
+
+- `deploy/profiles/single-node.env`
+- `deploy/profiles/small-cluster.env`
+- `deploy/profiles/large-cluster.env`
+
+Apply these as overlays on top of your normal `.env`/secret configuration.
+
+## Profile Matrix
+
+| Profile | API replicas | Worker replicas | Redis mode | Typical use |
+| --- | --- | --- | --- | --- |
+| Single node | `1` | `1` | Optional | Local/internal, low-to-moderate traffic |
+| Small cluster | `2` | `2-3` | Required | Production baseline with HA API |
+| Large cluster | `6+` | `8+` | Required (HA) | High-volume multi-tenant workloads |
+
+## Runtime Control Differences
+
+| Setting | Single node | Small cluster | Large cluster |
+| --- | --- | --- | --- |
+| `RUNTIME_QUERY_MAX_LIMIT` | `120` | `200` | `300` |
+| `RUNTIME_QUERY_MAX_IN_FLIGHT` | `16` | `48` | `160` |
+| `WORKFLOW_BURST_MAX_IN_FLIGHT` | `8` | `24` | `80` |
+| `WORKER_MAX_CONCURRENCY` | `4` | `8` | `16` |
+| `WORKER_CLAIM_LIMIT` | `10` | `20` | `25` |
+
+## PERF-04 Validation Targets
+
+Validate each profile with `pnpm perf:benchmark` before promotion.
+
+Suggested benchmark baselines:
+
+1. Single node: default benchmark rates (`15/20/5` for workspace/runtime/workflow).
+2. Small cluster: increase to at least `60/120/25`.
+3. Large cluster: increase to at least `200/400/100`.
+
+Gate criteria per run:
+
+- `http_req_failed_rate` near `0`
+- `checks_pass_rate` at `1`
+- `http_req_duration_p95_ms` within your SLO budget
+- no sustained `429` during normal target traffic
+
+Use intentional overload runs separately to verify backpressure behavior.
+
+## Rollout Guidance
+
+1. Start with `single-node` defaults in staging.
+2. Move to `small-cluster` before production user growth.
+3. Adopt `large-cluster` only with shared Redis, HA Postgres, and queue observability in place.
+4. Re-run benchmark and incident runbooks after every change to:
+   - replica count
+   - worker concurrency/claim limits
+   - backpressure limits

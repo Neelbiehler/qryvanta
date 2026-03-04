@@ -6,7 +6,7 @@ use qryvanta_core::UserIdentity;
 use crate::dto::{
     DispatchScheduleTriggerRequest, ExecuteWorkflowRequest, RetryWorkflowStepRequest,
     RetryWorkflowStepStrategyDto, SaveWorkflowRequest, WorkflowResponse,
-    WorkflowRunAttemptResponse, WorkflowRunResponse,
+    WorkflowRunAttemptResponse, WorkflowRunReplayResponse, WorkflowRunResponse,
 };
 use crate::error::ApiResult;
 use crate::state::AppState;
@@ -52,6 +52,7 @@ pub async fn execute_workflow_handler(
     Path(workflow_logical_name): Path<String>,
     Json(payload): Json<ExecuteWorkflowRequest>,
 ) -> ApiResult<Json<WorkflowRunResponse>> {
+    let _burst_permit = state.try_acquire_workflow_burst_permit()?;
     let run = state
         .workflow_service
         .execute_workflow(
@@ -69,6 +70,7 @@ pub async fn dispatch_schedule_trigger_handler(
     Extension(user): Extension<UserIdentity>,
     Json(payload): Json<DispatchScheduleTriggerRequest>,
 ) -> ApiResult<Json<usize>> {
+    let _burst_permit = state.try_acquire_workflow_burst_permit()?;
     let dispatched = state
         .workflow_service
         .dispatch_schedule_tick(&user, payload.schedule_key.as_str(), payload.payload)
@@ -114,6 +116,19 @@ pub async fn list_workflow_run_attempts_handler(
         .collect();
 
     Ok(Json(attempts))
+}
+
+pub async fn replay_workflow_run_handler(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserIdentity>,
+    Path((workflow_logical_name, run_id)): Path<(String, String)>,
+) -> ApiResult<Json<WorkflowRunReplayResponse>> {
+    let replay = state
+        .workflow_service
+        .replay_run(&user, workflow_logical_name.as_str(), run_id.as_str())
+        .await?;
+
+    Ok(Json(WorkflowRunReplayResponse::from(replay)))
 }
 
 pub async fn retry_workflow_run_step_handler(

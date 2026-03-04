@@ -1,0 +1,43 @@
+---
+title: GraphQL Surface Evaluation
+description: Decision record for GraphQL as an optional, separately versioned API surface.
+---
+
+Qryvanta currently treats REST (`/api/v1`) as the primary public API contract.
+
+GraphQL is evaluated as an optional surface only, with independent versioning and rollout controls.
+
+## Decision
+
+- Status: `defer` (no production GraphQL endpoint yet).
+- Rationale: current product velocity is focused on hardening metadata/runtime guarantees and transport contract stability in REST + generated SDKs.
+- Constraint: introducing GraphQL must not weaken tenant isolation, authz boundaries, or deterministic publish/runtime behavior.
+
+## Versioning Boundary (If Enabled)
+
+- GraphQL must be versioned independently from REST.
+- Use explicit major pathing for GraphQL (for example `/graphql/v1`) instead of implicit unversioned schema drift.
+- REST and GraphQL release cadence may differ, but compatibility docs must map supported pairs.
+
+## Required Guards Before Pilot
+
+- Explicit tenant/auth scope enforcement at resolver boundary (no implicit context fallbacks).
+- Query cost/depth limits and timeouts to control abuse and accidental expensive graph traversal.
+- Persisted-query or allowlist mode for untrusted clients.
+- Audit/trace observability parity with REST endpoints.
+- Contract testing that validates schema changes against previous GraphQL major.
+
+## Pilot Entry Criteria
+
+All conditions must be true before enabling a pilot:
+
+1. REST `v1` stability targets are met for at least one release cycle.
+2. Security review signs off resolver-level isolation and authorization model.
+3. Performance tests confirm bounded query behavior under tenant-mixed workloads.
+4. Operator runbook exists for GraphQL limits, failures, and rollback.
+
+## Rollout Policy
+
+- Pilot must be opt-in and disabled by default.
+- Pilot is limited to internal or designated partner tenants.
+- Breaking GraphQL changes require a new GraphQL major version.

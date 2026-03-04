@@ -8,6 +8,7 @@ impl WorkflowService {
         limit: usize,
         lease_seconds: u32,
         partition: Option<WorkflowClaimPartition>,
+        tenant_filter: Option<TenantId>,
     ) -> AppResult<Vec<ClaimedWorkflowJob>> {
         if self.execution_mode != WorkflowExecutionMode::Queued {
             return Err(AppError::Conflict(
@@ -34,7 +35,7 @@ impl WorkflowService {
         }
 
         self.repository
-            .claim_jobs(worker_id, limit, lease_seconds, partition)
+            .claim_jobs(worker_id, limit, lease_seconds, partition, tenant_filter)
             .await
     }
 

@@ -1,9 +1,7 @@
 name: release-packages
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -26,8 +24,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
 
-      - name: Verify UI package
-        run: pnpm --filter @qryvanta/ui check && pnpm --filter @qryvanta/ui build
+      - name: Verify publishable packages
+        run: |
+          pnpm --filter @qryvanta/api-types check
+          pnpm --filter @qryvanta/api-types build
+          pnpm --filter @qryvanta/ui check
+          pnpm --filter @qryvanta/ui build
 
       - name: Check npm token availability
         id: token_check
@@ -48,6 +50,7 @@ jobs:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create release PR or publish
+        id: changesets
         if: steps.token_check.outputs.has_token == 'true'
         uses: changesets/action@v1
         with:
@@ -56,3 +59,72 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_GH_TOKEN || secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Install Cosign
+        if: steps.token_check.outputs.has_token == 'true' && steps.changesets.outputs.published == 'true'
+        uses: sigstore/cosign-installer@v3.8.2
+
+      - name: Pack published npm artifacts
+        if: steps.token_check.outputs.has_token == 'true' && steps.changesets.outputs.published == 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p release-artifacts/packages
+
+          published_packages='${{ steps.changesets.outputs.publishedPackages }}'
+          if [ -z "${published_packages}" ] || [ "${published_packages}" = "[]" ]; then
+            echo "changesets reported published=true but no published package payload was returned" >&2
+            exit 1
+          fi
+
+          printf '%s\n' "${published_packages}" > release-artifacts/published-packages.json
+
+          echo "${published_packages}" \
+            | jq -r '.[].name' \
+            | while read -r package_name; do
+                [ -z "${package_name}" ] && continue
+                pnpm --filter "${package_name}" pack --pack-destination release-artifacts/packages
+              done
+
+      - name: Sign release artifacts
+        if: steps.token_check.outputs.has_token == 'true' && steps.changesets.outputs.published == 'true'
+        run: |
+          set -euo pipefail
+
+          artifact_count=0
+          : > release-artifacts/SHA256SUMS
+
+          for tarball in release-artifacts/packages/*.tgz; do
+            artifact_count=$((artifact_count + 1))
+            sha256sum "${tarball}" >> release-artifacts/SHA256SUMS
+            cosign sign-blob --yes --bundle "${tarball}.sigstore.bundle" "${tarball}"
+          done
+
+          if [ "${artifact_count}" -eq 0 ]; then
+            echo "no release package tarballs were created for signing" >&2
+            exit 1
+          fi
+
+      - name: Verify release artifact signatures
+        if: steps.token_check.outputs.has_token == 'true' && steps.changesets.outputs.published == 'true'
+        run: |
+          set -euo pipefail
+
+          for tarball in release-artifacts/packages/*.tgz; do
+            cosign verify-blob \
+              --bundle "${tarball}.sigstore.bundle" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              --certificate-identity-regexp "^https://github.com/${{ github.repository }}/\\.github/workflows/release-packages\\.yml@refs/heads/main$" \
+              "${tarball}"
+          done
+
+      - name: Upload signed release artifacts
+        if: steps.token_check.outputs.has_token == 'true' && steps.changesets.outputs.published == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-release-artifacts-${{ github.sha }}
+          path: |
+            release-artifacts/published-packages.json
+            release-artifacts/SHA256SUMS
+            release-artifacts/packages/*.tgz
+            release-artifacts/packages/*.sigstore.bundle
+          retention-days: 90

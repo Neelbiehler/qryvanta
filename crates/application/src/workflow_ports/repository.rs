@@ -52,6 +52,7 @@ pub trait WorkflowRepository: Send + Sync {
         limit: usize,
         lease_seconds: u32,
         partition: Option<WorkflowClaimPartition>,
+        tenant_filter: Option<TenantId>,
     ) -> AppResult<Vec<ClaimedWorkflowJob>>;
 
     /// Marks one leased job as completed.

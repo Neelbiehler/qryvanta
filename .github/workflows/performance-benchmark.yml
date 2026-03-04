@@ -1,0 +1,90 @@
+name: performance-benchmark
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 2 * * *"
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  perf-benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: qryvanta
+          POSTGRES_PASSWORD: qryvanta
+          POSTGRES_DB: qryvanta
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U qryvanta -d qryvanta"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+    env:
+      DATABASE_URL: postgres://qryvanta:qryvanta@127.0.0.1:5432/qryvanta
+      REDIS_URL: redis://127.0.0.1:6379
+      FRONTEND_URL: http://localhost:3000
+      NEXT_PUBLIC_API_BASE_URL: http://127.0.0.1:3001
+      AUTH_BOOTSTRAP_TOKEN: ci-bootstrap-token
+      SESSION_SECRET: ci-session-secret-ci-session-secret-32
+      WORKER_SHARED_SECRET: ci-worker-shared-secret
+      BENCHMARK_RESULTS_DIR: benchmarks/results/ci
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Start API
+        run: |
+          pnpm dev:api > api.log 2>&1 &
+          echo $! > api.pid
+          for i in {1..90}; do
+            if curl -fsS "http://127.0.0.1:3001/metrics" >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "api did not become ready in time" >&2
+          exit 1
+
+      - name: Run mixed benchmark profile
+        run: ./scripts/perf/run-benchmarks.sh --profile mixed --duration 30s
+
+      - name: Stop API
+        if: always()
+        run: |
+          if [ -f api.pid ]; then
+            kill "$(cat api.pid)" || true
+          fi
+
+      - name: Upload benchmark artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-benchmark-${{ github.run_id }}
+          path: |
+            benchmarks/results/ci
+            api.log
+          retention-days: 30

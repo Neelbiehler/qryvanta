@@ -200,6 +200,7 @@ async fn runtime_query_payload_rejects_unpublished_entity() {
             sort: None,
             filters: None,
         },
+        200,
     )
     .await;
 
@@ -224,6 +225,7 @@ async fn runtime_query_validation_maps_to_bad_request_response() {
             sort: None,
             filters: None,
         },
+        200,
     )
     .await;
 
@@ -311,6 +313,7 @@ async fn runtime_query_full_where_and_link_entities_executes() {
             }]),
             filters: None,
         },
+        200,
     )
     .await;
     assert!(query.is_ok());
@@ -328,4 +331,30 @@ async fn runtime_query_full_where_and_link_entities_executes() {
             .and_then(|value| value.get("title")),
         Some(&serde_json::json!("Alpha"))
     );
+}
+
+#[tokio::test]
+async fn runtime_query_limit_is_clamped_by_backpressure_cap() {
+    let (metadata_service, actor) = seed_metadata_service().await;
+
+    let query = runtime_record_query_from_request(
+        &metadata_service,
+        &actor,
+        "contact",
+        QueryRuntimeRecordsRequest {
+            limit: Some(10_000),
+            offset: Some(0),
+            logical_mode: None,
+            where_clause: None,
+            conditions: None,
+            link_entities: None,
+            sort: None,
+            filters: None,
+        },
+        120,
+    )
+    .await;
+
+    assert!(query.is_ok());
+    assert_eq!(query.unwrap_or_else(|_| unreachable!()).limit, 120);
 }

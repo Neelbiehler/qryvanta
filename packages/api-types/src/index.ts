@@ -98,6 +98,8 @@ export * from "./generated/workflow-step-dto";
 export * from "./generated/workflow-run-response";
 export * from "./generated/workflow-run-attempt-response";
 export * from "./generated/workflow-run-step-trace-response";
+export * from "./generated/workflow-run-replay-response";
+export * from "./generated/workflow-run-replay-timeline-event-response";
 export * from "./generated/dashboard-widget-response";
 export * from "./generated/qrywell-search-hit-response";
 export * from "./generated/qrywell-search-click-event-request";

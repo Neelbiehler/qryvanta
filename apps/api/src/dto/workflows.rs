@@ -4,8 +4,11 @@ mod types;
 pub use types::{
     DispatchScheduleTriggerRequest, ExecuteWorkflowRequest, RetryWorkflowStepRequest,
     RetryWorkflowStepStrategyDto, SaveWorkflowRequest, WorkflowResponse,
-    WorkflowRunAttemptResponse, WorkflowRunResponse,
+    WorkflowRunAttemptResponse, WorkflowRunReplayResponse, WorkflowRunResponse,
 };
+
+#[cfg(test)]
+pub use types::WorkflowRunReplayTimelineEventResponse;
 
 #[cfg(test)]
 pub use types::WorkflowRunStepTraceResponse;

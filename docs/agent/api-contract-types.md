@@ -32,3 +32,19 @@ pnpm contracts:check
 3. Run `pnpm contracts:generate`.
 4. Export the generated type from `packages/api-types/src/index.ts`.
 5. Update frontend imports to use `@qryvanta/api-types`.
+
+## External SDK Release Flow
+
+`@qryvanta/api-types` is a publishable npm package for external consumers.
+
+1. Regenerate contracts with `pnpm contracts:generate`.
+2. Validate freshness with `pnpm contracts:check`.
+3. Verify package quality with:
+
+```bash
+pnpm --filter @qryvanta/api-types check
+pnpm --filter @qryvanta/api-types build
+```
+
+4. Add a changeset for `@qryvanta/api-types` when package API/contracts changed.
+5. Merge to `main`; `.github/workflows/release-packages.yml` creates the release PR/publishes via Changesets when `NPM_TOKEN` is configured.

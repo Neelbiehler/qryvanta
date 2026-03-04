@@ -11,6 +11,7 @@ out
 .turbo
 *.tsbuildinfo
 packages/ui/dist
+packages/api-types/dist
 
 # Env
 .env
@@ -32,3 +33,6 @@ dev/kanidm/*.pem
 
 # Local agent configuration (optional, machine-specific)
 .agent
+
+# Benchmark artifacts
+benchmarks/results

@@ -8,11 +8,12 @@ use ts_rs::TS;
     export_to = "../../../packages/api-types/src/generated/error-response.ts"
 )]
 pub struct ErrorResponse {
+    code: String,
     message: String,
 }
 
 impl ErrorResponse {
-    pub(super) fn new(message: String) -> Self {
-        Self { message }
+    pub(super) fn new(code: String, message: String) -> Self {
+        Self { code, message }
     }
 }

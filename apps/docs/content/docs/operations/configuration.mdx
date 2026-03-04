@@ -46,6 +46,10 @@ Never commit secrets or production credentials to git.
 | Variable | Required | Description |
 | --- | --- | --- |
 | `DATABASE_URL` | Yes | PostgreSQL connection string used by API and migrations |
+| `PHYSICAL_ISOLATION_MODE` | No | Tenant isolation deployment profile (`shared` default, `tenant_per_schema`, `tenant_per_database`) |
+| `PHYSICAL_ISOLATION_TENANT_ID` | Required for `tenant_per_schema`/`tenant_per_database` | Tenant UUID this API/worker deployment is pinned to for physical isolation |
+| `PHYSICAL_ISOLATION_SCHEMA_TEMPLATE` | Required if `PHYSICAL_ISOLATION_MODE=tenant_per_schema` | Schema template containing `{tenant_id}` placeholder (for example `tenant_{tenant_id}`) |
+| `PHYSICAL_ISOLATION_DATABASE_URL_TEMPLATE` | Required if `PHYSICAL_ISOLATION_MODE=tenant_per_database` | Database URL template containing `{tenant_id}` placeholder |
 | `API_HOST` | No | API bind host (`127.0.0.1` default) |
 | `API_PORT` | No | API bind port (`3001` default) |
 | `FRONTEND_URL` | No | Allowed CORS origin and post-login redirect target |
@@ -72,6 +76,12 @@ Never commit secrets or production credentials to git.
 | `WORKFLOW_WORKER_MAX_CLAIM_LIMIT` | No | Upper bound for jobs returned per worker claim request (`25` default) |
 | `WORKFLOW_WORKER_MAX_PARTITION_COUNT` | No | Upper bound for accepted queue partition counts in worker claim requests (`128` default) |
 | `WORKFLOW_QUEUE_STATS_CACHE_TTL_SECONDS` | No | Queue-stats cache TTL in seconds (`0` disables cache; default `0`) |
+| `RUNTIME_QUERY_MAX_LIMIT` | No | Upper bound for runtime query `limit` payloads (defaults to `200`; requests above the cap are clamped) |
+| `RUNTIME_QUERY_MAX_IN_FLIGHT` | No | Max concurrent runtime query executions before API returns `429` backpressure responses (`64` default) |
+| `WORKFLOW_BURST_MAX_IN_FLIGHT` | No | Max concurrent manual/schedule workflow dispatch executions before API returns `429` backpressure responses (`32` default) |
+| `AUDIT_IMMUTABLE_MODE` | No | Disables destructive audit purge operations when `true` (`false` default) |
+| `SLOW_REQUEST_THRESHOLD_MS` | No | HTTP latency warning threshold in milliseconds for API request observability (`1000` default) |
+| `SLOW_QUERY_THRESHOLD_MS` | No | Runtime-record query warning threshold in milliseconds for DB slow-query detection (`250` default) |
 | `WORKER_API_BASE_URL` | Required for `qryvanta-worker` | API base URL used by worker process for internal claim requests |
 | `WORKER_ID` | No | Stable worker identity sent to API (`worker-<pid>` default when unset) |
 | `WORKER_CLAIM_LIMIT` | No | Number of jobs requested per worker poll (`10` default) |
@@ -92,9 +102,21 @@ When configuring partitioned worker claims, define both `WORKER_PARTITION_COUNT`
 
 When `WORKER_COORDINATION_BACKEND=redis`, `REDIS_URL` must be set for worker runtimes.
 
+When `PHYSICAL_ISOLATION_MODE` is `tenant_per_schema` or `tenant_per_database`, `PHYSICAL_ISOLATION_TENANT_ID` is required and worker claim traffic is constrained to that tenant id.
+
+When `PHYSICAL_ISOLATION_MODE=tenant_per_schema`, `PHYSICAL_ISOLATION_SCHEMA_TEMPLATE` must include `{tenant_id}`.
+
+When `PHYSICAL_ISOLATION_MODE=tenant_per_database`, `PHYSICAL_ISOLATION_DATABASE_URL_TEMPLATE` must include `{tenant_id}`.
+
 Use a short `WORKFLOW_QUEUE_STATS_CACHE_TTL_SECONDS` only for operator polling workloads where a few seconds of staleness is acceptable.
 
+When in-flight runtime query or workflow dispatch pressure reaches `RUNTIME_QUERY_MAX_IN_FLIGHT` or `WORKFLOW_BURST_MAX_IN_FLIGHT`, API handlers fail fast with `429` to protect core latency and queue stability.
+
 When `SESSION_STORE=redis`, `RATE_LIMIT_STORE=redis`, or `WORKFLOW_QUEUE_STATS_CACHE_BACKEND=redis`, `REDIS_URL` must be set and reachable during API runtime.
+
+When `AUDIT_IMMUTABLE_MODE=true`, `POST /api/security/audit-log/purge` is blocked to preserve append-only audit history.
+
+When `SLOW_REQUEST_THRESHOLD_MS` or `SLOW_QUERY_THRESHOLD_MS` are exceeded, warning logs are emitted for triage and alerting pipelines.
 
 When `DEV_DEFAULT_TENANT_ID` is set, unauthenticated registration (`/auth/register`) follows that tenant's `registration_mode` (`invite_only` by default). Administrators can update this mode via `PUT /api/security/registration-mode`.
 

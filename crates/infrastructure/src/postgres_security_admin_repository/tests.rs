@@ -2,7 +2,7 @@ use qryvanta_application::{
     CreateTemporaryAccessGrantInput, SaveRuntimeFieldPermissionsInput, SecurityAdminRepository,
     TemporaryAccessGrantQuery,
 };
-use qryvanta_core::TenantId;
+use qryvanta_core::{AppError, TenantId};
 use qryvanta_domain::Permission;
 use sqlx::PgPool;
 use sqlx::migrate::Migrator;
@@ -233,5 +233,134 @@ async fn audit_retention_policy_round_trip_succeeds() {
             .unwrap_or_else(|_| unreachable!())
             .retention_days,
         90
+    );
+}
+
+#[tokio::test]
+async fn security_admin_runtime_permissions_and_temporary_grants_are_tenant_scoped() {
+    let Some(pool) = test_pool().await else {
+        return;
+    };
+
+    let repository = PostgresSecurityAdminRepository::new(pool.clone());
+    let left_tenant = TenantId::new();
+    let right_tenant = TenantId::new();
+    ensure_tenant(&pool, left_tenant, "Security Left Tenant").await;
+    ensure_tenant(&pool, right_tenant, "Security Right Tenant").await;
+
+    let left_permissions = repository
+        .save_runtime_field_permissions(
+            left_tenant,
+            SaveRuntimeFieldPermissionsInput {
+                subject: "alice".to_owned(),
+                entity_logical_name: "contact".to_owned(),
+                fields: vec![qryvanta_application::RuntimeFieldPermissionInput {
+                    field_logical_name: "email".to_owned(),
+                    can_read: true,
+                    can_write: false,
+                }],
+            },
+        )
+        .await;
+    assert!(left_permissions.is_ok());
+
+    let right_permissions = repository
+        .save_runtime_field_permissions(
+            right_tenant,
+            SaveRuntimeFieldPermissionsInput {
+                subject: "alice".to_owned(),
+                entity_logical_name: "contact".to_owned(),
+                fields: vec![qryvanta_application::RuntimeFieldPermissionInput {
+                    field_logical_name: "ssn".to_owned(),
+                    can_read: true,
+                    can_write: true,
+                }],
+            },
+        )
+        .await;
+    assert!(right_permissions.is_ok());
+
+    let listed_left = repository
+        .list_runtime_field_permissions(left_tenant, Some("alice"), Some("contact"))
+        .await;
+    assert!(listed_left.is_ok());
+    let listed_left = listed_left.unwrap_or_default();
+    assert_eq!(listed_left.len(), 1);
+    assert_eq!(listed_left[0].field_logical_name, "email");
+
+    let listed_right = repository
+        .list_runtime_field_permissions(right_tenant, Some("alice"), Some("contact"))
+        .await;
+    assert!(listed_right.is_ok());
+    let listed_right = listed_right.unwrap_or_default();
+    assert_eq!(listed_right.len(), 1);
+    assert_eq!(listed_right[0].field_logical_name, "ssn");
+
+    let right_grant = repository
+        .create_temporary_access_grant(
+            right_tenant,
+            "admin",
+            CreateTemporaryAccessGrantInput {
+                subject: "alice".to_owned(),
+                permissions: vec![Permission::RuntimeRecordWriteOwn],
+                reason: "tenant-right".to_owned(),
+                duration_minutes: 30,
+            },
+        )
+        .await;
+    assert!(right_grant.is_ok());
+    let right_grant = right_grant.unwrap_or_else(|_| unreachable!());
+
+    let left_grants = repository
+        .list_temporary_access_grants(
+            left_tenant,
+            TemporaryAccessGrantQuery {
+                subject: Some("alice".to_owned()),
+                active_only: true,
+                limit: 50,
+                offset: 0,
+            },
+        )
+        .await;
+    assert!(left_grants.is_ok());
+    assert!(left_grants.unwrap_or_default().is_empty());
+
+    let right_grants = repository
+        .list_temporary_access_grants(
+            right_tenant,
+            TemporaryAccessGrantQuery {
+                subject: Some("alice".to_owned()),
+                active_only: true,
+                limit: 50,
+                offset: 0,
+            },
+        )
+        .await;
+    assert!(right_grants.is_ok());
+    let right_grants = right_grants.unwrap_or_default();
+    assert_eq!(right_grants.len(), 1);
+    assert_eq!(right_grants[0].grant_id, right_grant.grant_id);
+
+    let cross_tenant_revoke = repository
+        .revoke_temporary_access_grant(left_tenant, "admin", right_grant.grant_id.as_str(), None)
+        .await;
+    assert!(matches!(cross_tenant_revoke, Err(AppError::NotFound(_))));
+
+    let left_policy_update = repository.set_audit_retention_policy(left_tenant, 45).await;
+    assert!(left_policy_update.is_ok());
+    assert_eq!(
+        left_policy_update
+            .unwrap_or_else(|_| unreachable!())
+            .retention_days,
+        45
+    );
+
+    let right_policy = repository.audit_retention_policy(right_tenant).await;
+    assert!(right_policy.is_ok());
+    assert_eq!(
+        right_policy
+            .unwrap_or_else(|_| unreachable!())
+            .retention_days,
+        365
     );
 }

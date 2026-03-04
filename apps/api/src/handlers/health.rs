@@ -9,3 +9,4 @@ mod checks;
 mod handlers;
 
 pub use handlers::health_handler;
+pub use handlers::metrics_handler;

@@ -887,6 +887,7 @@ impl RuntimeRecord {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
     use serde_json::json;
 
     use super::{
@@ -1060,5 +1061,91 @@ mod tests {
         let parsed: PublishedEntitySchema =
             serde_json::from_value(schema_json).unwrap_or_else(|_| unreachable!());
         assert!(parsed.option_sets().is_empty());
+    }
+
+    fn spaced_text_strategy() -> impl Strategy<Value = String> {
+        proptest::string::string_regex("[\\t\\n\\r A-Za-z0-9_-]{0,32}")
+            .unwrap_or_else(|_| unreachable!())
+    }
+
+    proptest! {
+        #[test]
+        fn entity_optional_text_fields_are_normalized(
+            description in spaced_text_strategy(),
+            plural_display_name in spaced_text_strategy(),
+            icon in spaced_text_strategy(),
+        ) {
+            let entity = EntityDefinition::new_with_details(
+                "contact",
+                "Contact",
+                Some(description.clone()),
+                Some(plural_display_name.clone()),
+                Some(icon.clone()),
+            )
+            .unwrap_or_else(|_| unreachable!());
+
+            let expected_description = super::normalize_optional_text(Some(description));
+            prop_assert_eq!(entity.description(), expected_description.as_deref());
+
+            let expected_plural = super::normalize_optional_text(Some(plural_display_name));
+            prop_assert_eq!(
+                entity.plural_display_name().map(|value| value.as_str()),
+                expected_plural.as_deref()
+            );
+
+            let expected_icon = super::normalize_optional_text(Some(icon));
+            prop_assert_eq!(entity.icon(), expected_icon.as_deref());
+        }
+
+        #[test]
+        fn number_field_min_max_invariant_holds(minimum in -1_000.0f64..1_000.0f64, maximum in -1_000.0f64..1_000.0f64) {
+            let result = EntityFieldDefinition::new_with_details(
+                "invoice",
+                "amount",
+                "Amount",
+                FieldType::Number,
+                true,
+                false,
+                None,
+                None,
+                None,
+                None,
+                None,
+                Some(minimum),
+                Some(maximum),
+            );
+
+            prop_assert_eq!(result.is_ok(), minimum <= maximum);
+        }
+
+        #[test]
+        fn option_set_definition_accepts_unique_values_and_rejects_duplicates(
+            unique_values in prop::collection::hash_set(-256i32..256, 1..16)
+        ) {
+            let mut values = unique_values.into_iter().collect::<Vec<_>>();
+            values.sort_unstable();
+
+            let options = values
+                .iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    OptionSetItem::new(*value, format!("Label {value}"), None, index as i32)
+                        .unwrap_or_else(|_| unreachable!())
+                })
+                .collect::<Vec<_>>();
+
+            let valid = OptionSetDefinition::new("contact", "status", "Status", options.clone());
+            prop_assert!(valid.is_ok());
+
+            let mut duplicated = options;
+            let first_value = values.first().copied().unwrap_or(0);
+            duplicated.push(
+                OptionSetItem::new(first_value, "Duplicate", None, 999)
+                    .unwrap_or_else(|_| unreachable!()),
+            );
+
+            let invalid = OptionSetDefinition::new("contact", "status", "Status", duplicated);
+            prop_assert!(invalid.is_err());
+        }
     }
 }

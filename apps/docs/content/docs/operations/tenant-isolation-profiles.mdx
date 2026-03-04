@@ -1,0 +1,45 @@
+---
+title: Tenant Isolation Profiles
+description: Deployment profiles for shared, tenant-per-schema, and tenant-per-database isolation.
+---
+
+Qryvanta supports an optional physical isolation profile for self-hosted deployments.
+
+## Modes
+
+- `shared` (default): all tenants share one database and rely on logical tenant scoping.
+- `tenant_per_schema`: deployment is pinned to one tenant and intended to route that tenant to a dedicated schema.
+- `tenant_per_database`: deployment is pinned to one tenant and intended to route that tenant to a dedicated database.
+
+## Configuration
+
+Set:
+
+- `PHYSICAL_ISOLATION_MODE`
+- `PHYSICAL_ISOLATION_TENANT_ID` (required for non-`shared` modes)
+
+Mode-specific requirements:
+
+- `tenant_per_schema` requires `PHYSICAL_ISOLATION_SCHEMA_TEMPLATE` with `{tenant_id}`.
+- `tenant_per_database` requires `PHYSICAL_ISOLATION_DATABASE_URL_TEMPLATE` with `{tenant_id}`.
+
+Examples:
+
+```bash
+PHYSICAL_ISOLATION_MODE=tenant_per_schema
+PHYSICAL_ISOLATION_TENANT_ID=11111111-1111-1111-1111-111111111111
+PHYSICAL_ISOLATION_SCHEMA_TEMPLATE=tenant_{tenant_id}
+```
+
+```bash
+PHYSICAL_ISOLATION_MODE=tenant_per_database
+PHYSICAL_ISOLATION_TENANT_ID=11111111-1111-1111-1111-111111111111
+PHYSICAL_ISOLATION_DATABASE_URL_TEMPLATE=postgres://qryvanta:***@postgres/qryvanta_{tenant_id}
+```
+
+## Worker Behavior
+
+When `PHYSICAL_ISOLATION_TENANT_ID` is set, worker claim requests include that tenant id filter.
+API worker claim endpoint enforces the configured isolation tenant and rejects mismatched tenant filters.
+
+This prevents one isolated worker deployment from claiming jobs for other tenants.

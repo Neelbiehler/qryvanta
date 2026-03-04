@@ -5,6 +5,7 @@
 mod app;
 mod business_rule;
 mod dashboard;
+mod extension;
 mod form;
 mod metadata;
 mod security;
@@ -23,6 +24,10 @@ pub use business_rule::{
 };
 pub use dashboard::{
     ChartAggregation, ChartDefinition, ChartType, DashboardDefinition, DashboardWidget,
+};
+pub use extension::{
+    ExtensionCapability, ExtensionDefinition, ExtensionIsolationPolicy, ExtensionLifecycleState,
+    ExtensionManifest, ExtensionManifestInput, ExtensionRuntimeKind,
 };
 pub use form::{FormDefinition, FormFieldPlacement, FormSection, FormSubgrid, FormTab, FormType};
 pub use metadata::{

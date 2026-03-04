@@ -3,4 +3,4 @@
 /**
  * API error payload.
  */
-export type ErrorResponse = { message: string, };
+export type ErrorResponse = { code: string, message: string, };

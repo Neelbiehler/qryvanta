@@ -43,6 +43,7 @@ impl PostgresWorkflowRepository {
         limit: usize,
         lease_seconds: u32,
         partition: Option<WorkflowClaimPartition>,
+        tenant_filter: Option<TenantId>,
     ) -> AppResult<Vec<ClaimedWorkflowJob>> {
         let partition_count = partition
             .map(|value| {
@@ -74,6 +75,7 @@ impl PostgresWorkflowRepository {
                         status = 'pending'
                         OR (status = 'leased' AND lease_expires_at < now())
                       )
+                  AND ($6::UUID IS NULL OR tenant_id = $6)
                   AND (
                         $4::INT IS NULL
                         OR mod(
@@ -134,6 +136,7 @@ impl PostgresWorkflowRepository {
         })?)
         .bind(partition_count)
         .bind(partition_index)
+        .bind(tenant_filter.map(|value| value.as_uuid()))
         .fetch_all(&mut *transaction)
         .await
         .map_err(|error| {

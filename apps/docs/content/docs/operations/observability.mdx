@@ -7,6 +7,8 @@ Use this page to define baseline alerts and incident triage checks.
 
 For self-hosting environments, this page is part of the production readiness checklist.
 
+Use [Performance Benchmarks](/docs/operations/performance-benchmarks) to generate reproducible load profiles before and after infra/config changes.
+
 ## Logging
 
 - Use structured logs with request and tenant context.
@@ -18,6 +20,7 @@ For self-hosting environments, this page is part of the production readiness che
 
 - `GET /health` returns dependency-level health for Postgres and Redis.
 - The endpoint returns `503 Service Unavailable` when required dependencies are not ready.
+- `GET /metrics` exposes Prometheus text metrics for HTTP throughput/latency/error ratios and workflow queue gauges.
 
 Probe this endpoint from your load balancer and uptime monitor.
 
@@ -31,17 +34,17 @@ Track at minimum:
 - Worker heartbeat freshness and active worker count
 - DB query latency and connection pool health
 - Redis command latency and connection health when Redis backends are enabled
+- Backpressure rejection counters (`qryvanta_runtime_query_backpressure_rejections_total`, `qryvanta_workflow_burst_backpressure_rejections_total`)
 
 Keep metric names stable across releases so dashboard and alert queries remain valid.
 
 ## Tracing
 
-Add distributed trace spans across:
+Trace correlation baseline:
 
-1. HTTP request entry
-2. Application use-case execution
-3. Infrastructure calls
-4. Workflow action pipelines
+1. API ingress accepts or generates `x-trace-id` and returns it in response headers.
+2. Worker internal API calls propagate `x-trace-id`.
+3. Workflow outbound HTTP and webhook dispatch actions include `X-Trace-Id`.
 
 Use trace ids in logs for correlation.
 
@@ -52,6 +55,7 @@ Use trace ids in logs for correlation.
 - Low `active_workers` relative to expected replicas indicates worker health/connectivity drift; verify internal auth, network path, and worker process restarts.
 - For partitioned workers, compare `/api/internal/worker/jobs/stats?partition_count=<n>&partition_index=<i>` across slices to detect partition skew and rebalance workers.
 - If Redis-backed rate limiting is enabled, alert on elevated Redis error rates because auth/mutation throttling depends on Redis availability.
+- Alert on sustained growth of `qryvanta_runtime_query_backpressure_rejections_total` or `qryvanta_workflow_burst_backpressure_rejections_total` during normal traffic; this indicates profile under-capacity or overly aggressive client burst behavior.
 - If `WORKER_COORDINATION_BACKEND=redis`, track repeated "lease not acquired" worker logs per scope to detect coordination contention or duplicate worker identities.
 - If lease renewal fails with ownership-loss logs, investigate Redis latency/outages or overlapping worker scope keys.
 - On lease ownership loss, workers now cancel in-flight execution tasks; monitor cancellation spikes as a signal of coordination instability.

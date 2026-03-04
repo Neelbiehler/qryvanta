@@ -3,9 +3,20 @@
   "pages": [
     "index",
     "self-hosting",
+    "scaling-profiles",
     "configuration",
+    "tenant-isolation-profiles",
+    "api-versioning",
+    "api-error-codes",
+    "api-sdk-releases",
+    "graphql-surface-evaluation",
+    "migration-rollback",
+    "data-portability",
+    "extensions-runtime",
     "email-delivery",
     "workflow-integration-runbook",
+    "performance-benchmarks",
+    "supply-chain",
     "observability"
   ]
 }

@@ -3,14 +3,15 @@ use std::sync::Arc;
 use qryvanta_application::TenantRepository;
 use qryvanta_infrastructure::{
     PostgresAppRepository, PostgresAuditLogRepository, PostgresAuditRepository,
-    PostgresAuthEventRepository, PostgresAuthorizationRepository, PostgresMetadataRepository,
-    PostgresPasskeyRepository, PostgresSecurityAdminRepository, PostgresTenantRepository,
-    PostgresUserRepository, PostgresWorkflowRepository,
+    PostgresAuthEventRepository, PostgresAuthorizationRepository, PostgresExtensionRepository,
+    PostgresMetadataRepository, PostgresPasskeyRepository, PostgresSecurityAdminRepository,
+    PostgresTenantRepository, PostgresUserRepository, PostgresWorkflowRepository,
 };
 use sqlx::PgPool;
 
 pub(super) struct RepositorySet {
     pub(super) metadata_repository: Arc<PostgresMetadataRepository>,
+    pub(super) extension_repository: Arc<PostgresExtensionRepository>,
     pub(super) app_repository: Arc<PostgresAppRepository>,
     pub(super) workflow_repository: Arc<PostgresWorkflowRepository>,
     pub(super) audit_repository: Arc<PostgresAuditRepository>,
@@ -26,6 +27,7 @@ pub(super) struct RepositorySet {
 pub(super) fn build_repository_set(pool: &PgPool) -> RepositorySet {
     RepositorySet {
         metadata_repository: Arc::new(PostgresMetadataRepository::new(pool.clone())),
+        extension_repository: Arc::new(PostgresExtensionRepository::new(pool.clone())),
         app_repository: Arc::new(PostgresAppRepository::new(pool.clone())),
         workflow_repository: Arc::new(PostgresWorkflowRepository::new(pool.clone())),
         audit_repository: Arc::new(PostgresAuditRepository::new(pool.clone())),

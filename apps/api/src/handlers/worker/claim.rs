@@ -6,6 +6,7 @@ pub struct ClaimWorkflowJobsRequest {
     pub lease_seconds: Option<u32>,
     pub partition_count: Option<u32>,
     pub partition_index: Option<u32>,
+    pub tenant_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -49,6 +50,34 @@ pub async fn claim_workflow_jobs_handler(
         payload.partition_index,
         state.workflow_worker_max_partition_count,
     )?;
+    let requested_tenant_filter = payload
+        .tenant_id
+        .as_deref()
+        .map(parse_tenant_id)
+        .transpose()?;
+    let tenant_filter = match state.physical_isolation_mode {
+        crate::api_config::PhysicalIsolationMode::Shared => requested_tenant_filter,
+        crate::api_config::PhysicalIsolationMode::TenantPerSchema
+        | crate::api_config::PhysicalIsolationMode::TenantPerDatabase => {
+            let scoped_tenant_id = state.physical_isolation_tenant_id.ok_or_else(|| {
+                AppError::Validation(
+                    "physical isolation tenant id is required for non-shared isolation mode"
+                        .to_owned(),
+                )
+            })?;
+            if let Some(requested_tenant_id) = requested_tenant_filter
+                && requested_tenant_id != scoped_tenant_id
+            {
+                return Err(AppError::Validation(format!(
+                    "worker tenant filter '{}' does not match configured physical isolation tenant '{}'",
+                    requested_tenant_id, scoped_tenant_id
+                ))
+                .into());
+            }
+
+            Some(scoped_tenant_id)
+        }
+    };
 
     let jobs = state
         .workflow_service
@@ -57,6 +86,7 @@ pub async fn claim_workflow_jobs_handler(
             effective_limit,
             effective_lease_seconds,
             partition,
+            tenant_filter,
         )
         .await?
         .into_iter()
@@ -78,4 +108,12 @@ pub async fn claim_workflow_jobs_handler(
         .collect();
 
     Ok(Json(ClaimedWorkflowJobsResponse { jobs }))
+}
+
+fn parse_tenant_id(value: &str) -> Result<qryvanta_core::TenantId, AppError> {
+    let tenant_uuid = uuid::Uuid::parse_str(value).map_err(|error| {
+        AppError::Validation(format!("invalid worker tenant_id '{}': {error}", value))
+    })?;
+
+    Ok(qryvanta_core::TenantId::from_uuid(tenant_uuid))
 }

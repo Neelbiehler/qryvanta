@@ -139,11 +139,16 @@ For high-frequency ops polling, set `WORKFLOW_QUEUE_STATS_CACHE_TTL_SECONDS` to 
 - `pnpm dev:landing`: run landing app only.
 - `pnpm build`: build JS workspaces.
 - `pnpm check`: static checks and contract checks.
+- `pnpm api-types:build`: build publishable `@qryvanta/api-types` SDK artifacts.
 - `pnpm lint`: lint checks.
 - `pnpm test`: workspace tests.
+- `pnpm perf:benchmark`: run reproducible PERF-04 k6 benchmark suite (`-- --profile runtime` for single-profile run).
 - `cargo xcheck`: Rust checks.
 - `cargo xclippy`: Rust lints.
 - `cargo xtest`: Rust tests.
+- `just perf-benchmark mixed 120s`: run the same benchmark suite via `just` with explicit profile/duration.
+- `just portability-export <tenant_id> <output_path>`: export tenant portability bundle.
+- `just portability-import <tenant_id> <input_path>`: import tenant portability bundle.
 
 ## Documentation and Standards
 

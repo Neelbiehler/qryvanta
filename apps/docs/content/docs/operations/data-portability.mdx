@@ -1,0 +1,111 @@
+---
+title: Data Portability
+description: Export and import metadata and runtime data bundles for migration, backup, and recovery.
+---
+
+Qryvanta provides deterministic workspace portability bundles for metadata and runtime records.
+
+Use this runbook for:
+
+- Backup snapshots
+- Tenant migration between environments
+- Restore drills
+- Dry-run validation before cutover
+
+## API Endpoints
+
+Protected endpoints:
+
+- `GET /api/portability/export`
+- `POST /api/portability/import`
+
+`GET /api/portability/export` query options:
+
+- `include_metadata=true|false` (default `true`)
+- `include_runtime_data=true|false` (default `true`)
+
+`POST /api/portability/import` body options:
+
+- `bundle` (portable package JSON)
+- `dry_run` (default `false`)
+- `import_metadata` (default `true`)
+- `import_runtime_data` (default `true`)
+- `remap_record_ids` (default `false`)
+
+`remap_record_ids=true` deterministically rewrites runtime record IDs and relation references using tenant/entity/source-id seeded hashing.
+This requires metadata content in the bundle so relation fields can be remapped safely.
+
+## CLI Flow
+
+Run from repository root.
+
+Export full metadata + runtime bundle:
+
+```bash
+cargo run -p qryvanta-api -- portability-export \
+  --tenant-id <tenant-uuid> \
+  --output /tmp/qryvanta-portable.json
+```
+
+Export metadata-only bundle:
+
+```bash
+cargo run -p qryvanta-api -- portability-export \
+  --tenant-id <tenant-uuid> \
+  --metadata-only \
+  --output /tmp/qryvanta-metadata-only.json
+```
+
+Dry-run import with deterministic ID remap:
+
+```bash
+cargo run -p qryvanta-api -- portability-import \
+  --tenant-id <tenant-uuid> \
+  --input /tmp/qryvanta-portable.json \
+  --dry-run \
+  --remap-record-ids
+```
+
+Apply import:
+
+```bash
+cargo run -p qryvanta-api -- portability-import \
+  --tenant-id <tenant-uuid> \
+  --input /tmp/qryvanta-portable.json \
+  --remap-record-ids
+```
+
+Equivalent `just` recipes:
+
+- `just portability-export <tenant_id> <output_path>`
+- `just portability-import <tenant_id> <input_path>`
+
+## Package Guarantees
+
+Portable package properties:
+
+- Stable `package_format` and `package_version`
+- Canonicalized payload hashing (`payload_sha256`) for integrity checks
+- Tenant-scoped content only
+- JSON-only format (no proprietary binary envelope)
+
+Import validations:
+
+- Package format/version check
+- SHA-256 payload checksum verification
+- Entity and record identity consistency checks
+- Relation reference validation against bundle content and existing tenant runtime records
+
+## Recommended Procedure
+
+1. Export from source and archive checksum + artifact.
+2. Run import with `dry_run=true` in target.
+3. If target already contains runtime records, prefer `remap_record_ids=true` to avoid collisions.
+4. Apply import.
+5. Re-export from target and compare expected entity counts and runtime totals.
+
+## Operational Notes
+
+- Metadata import applies entity/field/component upserts through application rules and publish lifecycle.
+- Runtime import upserts records by target id (preserved ids or remapped ids).
+- Every imported runtime create/update writes an audit event.

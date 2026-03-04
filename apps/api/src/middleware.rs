@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use axum::extract::{Request, State};
 use axum::http::{HeaderValue, Method, header};
 use axum::middleware::Next;
@@ -5,6 +7,8 @@ use axum::response::Response;
 use qryvanta_application::RateLimitRule;
 use qryvanta_core::{AppError, UserIdentity};
 use tower_sessions::Session;
+use tracing::warn;
+use uuid::Uuid;
 
 use crate::auth::SESSION_USER_KEY;
 use crate::error::ApiResult;
@@ -14,6 +18,19 @@ use crate::state::AppState;
 /// OWASP Session Management Cheat Sheet: enforce absolute timeout regardless
 /// of activity to limit the window for session hijacking.
 const ABSOLUTE_SESSION_TIMEOUT_SECONDS: i64 = 8 * 60 * 60;
+const TRACE_ID_HEADER: &str = "x-trace-id";
+
+#[derive(Debug, Clone)]
+pub struct RequestTraceContext {
+    trace_id: String,
+}
+
+impl RequestTraceContext {
+    #[must_use]
+    pub fn trace_id(&self) -> &str {
+        self.trace_id.as_str()
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct WorkerIdentity {
@@ -25,6 +42,62 @@ impl WorkerIdentity {
     pub fn worker_id(&self) -> &str {
         self.worker_id.as_str()
     }
+}
+
+pub async fn trace_and_observe(
+    State(state): State<AppState>,
+    mut request: Request,
+    next: Next,
+) -> Response {
+    let trace_id = request
+        .headers()
+        .get(TRACE_ID_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(generate_trace_id);
+
+    request.extensions_mut().insert(RequestTraceContext {
+        trace_id: trace_id.clone(),
+    });
+    let trace_id = request
+        .extensions()
+        .get::<RequestTraceContext>()
+        .map(|context| context.trace_id().to_owned())
+        .unwrap_or(trace_id);
+
+    let method = request.method().clone();
+    let path = request.uri().path().to_owned();
+
+    state.observability_metrics.on_request_start();
+    let started = Instant::now();
+    let mut response = next.run(request).await;
+    let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+
+    state.observability_metrics.on_request_end(
+        response.status().as_u16(),
+        elapsed_ms,
+        state.slow_request_threshold_ms,
+    );
+
+    if elapsed_ms >= state.slow_request_threshold_ms {
+        warn!(
+            trace_id = %trace_id,
+            method = %method,
+            path = %path,
+            status = response.status().as_u16(),
+            elapsed_ms,
+            threshold_ms = state.slow_request_threshold_ms,
+            "slow http request detected"
+        );
+    }
+
+    if let Ok(header_value) = HeaderValue::from_str(trace_id.as_str()) {
+        response.headers_mut().insert(TRACE_ID_HEADER, header_value);
+    }
+
+    response
 }
 
 pub async fn require_auth(
@@ -199,4 +272,8 @@ fn extract_client_ip(request: &Request) -> String {
                 .map(|ip| ip.trim().to_owned())
         })
         .unwrap_or_else(|| "unknown".to_owned())
+}
+
+fn generate_trace_id() -> String {
+    format!("api-{}", Uuid::new_v4())
 }

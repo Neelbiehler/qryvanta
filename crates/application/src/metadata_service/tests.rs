@@ -7,19 +7,20 @@ use qryvanta_domain::{
     AuditAction, BusinessRuleAction, BusinessRuleActionType, BusinessRuleCondition,
     BusinessRuleDefinition, BusinessRuleOperator, BusinessRuleScope, EntityDefinition,
     EntityFieldDefinition, FieldType, FormDefinition, FormFieldPlacement, FormSection, FormTab,
-    FormType, OptionSetDefinition, Permission, PublishedEntitySchema, RuntimeRecord, ViewColumn,
-    ViewDefinition, ViewType,
+    FormType, OptionSetDefinition, OptionSetItem, Permission, PublishedEntitySchema, RuntimeRecord,
+    ViewColumn, ViewDefinition, ViewType,
 };
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::{
-    AuditEvent, AuditRepository, AuthorizationRepository, AuthorizationService, MetadataRepository,
+    AuditEvent, AuditRepository, AuthorizationRepository, AuthorizationService,
+    ExportWorkspaceBundleOptions, ImportWorkspaceBundleOptions, MetadataRepository,
     RecordListQuery, RuntimeFieldGrant, RuntimeRecordFilter, RuntimeRecordLogicalMode,
     RuntimeRecordOperator, RuntimeRecordQuery, RuntimeRecordSortDirection, SaveBusinessRuleInput,
-    SaveFieldInput, SaveFormInput, SaveViewInput, TemporaryPermissionGrant, UniqueFieldValue,
-    UpdateFieldInput,
+    SaveFieldInput, SaveFormInput, SaveOptionSetInput, SaveViewInput, TemporaryPermissionGrant,
+    UniqueFieldValue, UpdateFieldInput,
 };
 
 use super::MetadataService;
@@ -614,7 +615,40 @@ impl MetadataRepository for FakeRepository {
         created_by_subject: &str,
     ) -> AppResult<RuntimeRecord> {
         let record_id = Uuid::new_v4().to_string();
+        self.create_runtime_record_with_id(
+            tenant_id,
+            entity_logical_name,
+            record_id.as_str(),
+            data,
+            unique_values,
+            created_by_subject,
+        )
+        .await
+    }
+
+    async fn create_runtime_record_with_id(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        record_id: &str,
+        data: Value,
+        unique_values: Vec<UniqueFieldValue>,
+        created_by_subject: &str,
+    ) -> AppResult<RuntimeRecord> {
         let record = RuntimeRecord::new(record_id, entity_logical_name, data)?;
+        let record_key = (
+            tenant_id,
+            entity_logical_name.to_owned(),
+            record.record_id().as_str().to_owned(),
+        );
+
+        if self.runtime_records.lock().await.contains_key(&record_key) {
+            return Err(AppError::Conflict(format!(
+                "runtime record '{}' already exists for entity '{}'",
+                record.record_id().as_str(),
+                entity_logical_name
+            )));
+        }
 
         let mut unique_index = self.unique_values.lock().await;
         for unique_value in &unique_values {
@@ -645,23 +679,15 @@ impl MetadataRepository for FakeRepository {
             );
         }
 
-        self.runtime_records.lock().await.insert(
-            (
-                tenant_id,
-                entity_logical_name.to_owned(),
-                record.record_id().as_str().to_owned(),
-            ),
-            record.clone(),
-        );
+        self.runtime_records
+            .lock()
+            .await
+            .insert(record_key.clone(), record.clone());
 
-        self.record_owners.lock().await.insert(
-            (
-                tenant_id,
-                entity_logical_name.to_owned(),
-                record.record_id().as_str().to_owned(),
-            ),
-            created_by_subject.to_owned(),
-        );
+        self.record_owners
+            .lock()
+            .await
+            .insert(record_key, created_by_subject.to_owned());
 
         Ok(record)
     }
@@ -1440,6 +1466,467 @@ async fn publish_checks_allow_selected_unpublished_relation_dependencies() {
 
     assert!(result.is_ok());
     assert!(result.unwrap_or_default().is_empty());
+}
+
+#[tokio::test]
+async fn publish_checks_report_compatibility_break_when_field_becomes_required() {
+    let tenant_id = TenantId::new();
+    let subject = "nora";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+            Permission::MetadataFieldRead,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    assert!(
+        service
+            .register_entity(&actor, "contact", "Contact")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "nickname".to_owned(),
+                    display_name: "Nickname".to_owned(),
+                    field_type: FieldType::Text,
+                    is_required: false,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(service.publish_entity(&actor, "contact").await.is_ok());
+
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "nickname".to_owned(),
+                    display_name: "Nickname".to_owned(),
+                    field_type: FieldType::Text,
+                    is_required: true,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+
+    let checks = service.publish_checks(&actor, "contact").await;
+    assert!(checks.is_ok());
+    let errors = checks.unwrap_or_default();
+    assert!(errors.iter().any(|message| {
+        message.contains("compatibility check failed")
+            && message.contains("cannot be tightened from optional to required")
+    }));
+}
+
+#[tokio::test]
+async fn publish_checks_report_compatibility_break_when_field_becomes_unique() {
+    let tenant_id = TenantId::new();
+    let subject = "nora";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+            Permission::MetadataFieldRead,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    assert!(
+        service
+            .register_entity(&actor, "contact", "Contact")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "email".to_owned(),
+                    display_name: "Email".to_owned(),
+                    field_type: FieldType::Text,
+                    is_required: false,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(service.publish_entity(&actor, "contact").await.is_ok());
+
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "email".to_owned(),
+                    display_name: "Email".to_owned(),
+                    field_type: FieldType::Text,
+                    is_required: false,
+                    is_unique: true,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+
+    let checks = service.publish_checks(&actor, "contact").await;
+    assert!(checks.is_ok());
+    let errors = checks.unwrap_or_default();
+    assert!(errors.iter().any(|message| {
+        message.contains("compatibility check failed")
+            && message.contains("cannot be tightened from non-unique to unique")
+    }));
+}
+
+#[tokio::test]
+async fn publish_checks_report_compatibility_break_when_max_length_is_added_after_publish() {
+    let tenant_id = TenantId::new();
+    let subject = "nora";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+            Permission::MetadataFieldRead,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    assert!(
+        service
+            .register_entity(&actor, "contact", "Contact")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "note".to_owned(),
+                    display_name: "Note".to_owned(),
+                    field_type: FieldType::Text,
+                    is_required: false,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(service.publish_entity(&actor, "contact").await.is_ok());
+
+    let updated = service
+        .update_field(
+            &actor,
+            UpdateFieldInput {
+                entity_logical_name: "contact".to_owned(),
+                logical_name: "note".to_owned(),
+                display_name: "Note".to_owned(),
+                description: None,
+                default_value: None,
+                calculation_expression: None,
+                max_length: Some(255),
+                min_value: None,
+                max_value: None,
+            },
+        )
+        .await;
+    assert!(updated.is_ok());
+
+    let checks = service.publish_checks(&actor, "contact").await;
+    assert!(checks.is_ok());
+    let errors = checks.unwrap_or_default();
+    assert!(errors.iter().any(|message| {
+        message.contains("compatibility check failed")
+            && message.contains("cannot add a max_length constraint after publish")
+    }));
+}
+
+#[tokio::test]
+async fn publish_checks_report_compatibility_break_when_minimum_is_increased() {
+    let tenant_id = TenantId::new();
+    let subject = "nora";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+            Permission::MetadataFieldRead,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    assert!(
+        service
+            .register_entity(&actor, "invoice", "Invoice")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "invoice".to_owned(),
+                    logical_name: "amount".to_owned(),
+                    display_name: "Amount".to_owned(),
+                    field_type: FieldType::Number,
+                    is_required: false,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    let initial_updated = service
+        .update_field(
+            &actor,
+            UpdateFieldInput {
+                entity_logical_name: "invoice".to_owned(),
+                logical_name: "amount".to_owned(),
+                display_name: "Amount".to_owned(),
+                description: None,
+                default_value: None,
+                calculation_expression: None,
+                max_length: None,
+                min_value: Some(0.0),
+                max_value: None,
+            },
+        )
+        .await;
+    assert!(initial_updated.is_ok());
+    assert!(service.publish_entity(&actor, "invoice").await.is_ok());
+
+    let tightened = service
+        .update_field(
+            &actor,
+            UpdateFieldInput {
+                entity_logical_name: "invoice".to_owned(),
+                logical_name: "amount".to_owned(),
+                display_name: "Amount".to_owned(),
+                description: None,
+                default_value: None,
+                calculation_expression: None,
+                max_length: None,
+                min_value: Some(10.0),
+                max_value: None,
+            },
+        )
+        .await;
+    assert!(tightened.is_ok());
+
+    let checks = service.publish_checks(&actor, "invoice").await;
+    assert!(checks.is_ok());
+    let errors = checks.unwrap_or_default();
+    assert!(errors.iter().any(|message| {
+        message.contains("compatibility check failed")
+            && message.contains("cannot increase minimum constraint from 0 to 10")
+    }));
+}
+
+#[tokio::test]
+async fn publish_checks_report_compatibility_break_when_option_value_is_removed() {
+    let tenant_id = TenantId::new();
+    let subject = "nora";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+            Permission::MetadataFieldRead,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    assert!(
+        service
+            .register_entity(&actor, "contact", "Contact")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_option_set(
+                &actor,
+                SaveOptionSetInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "status".to_owned(),
+                    display_name: "Status".to_owned(),
+                    options: vec![
+                        OptionSetItem::new(1, "Open", None, 0).unwrap_or_else(|_| unreachable!()),
+                        OptionSetItem::new(2, "Closed", None, 1).unwrap_or_else(|_| unreachable!()),
+                    ],
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "status".to_owned(),
+                    display_name: "Status".to_owned(),
+                    field_type: FieldType::Choice,
+                    is_required: false,
+                    is_unique: false,
+                    default_value: Some(json!(1)),
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: Some("status".to_owned()),
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(service.publish_entity(&actor, "contact").await.is_ok());
+
+    assert!(
+        service
+            .save_option_set(
+                &actor,
+                SaveOptionSetInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "status".to_owned(),
+                    display_name: "Status".to_owned(),
+                    options: vec![
+                        OptionSetItem::new(1, "Open", None, 0).unwrap_or_else(|_| unreachable!()),
+                    ],
+                },
+            )
+            .await
+            .is_ok()
+    );
+
+    let checks = service.publish_checks(&actor, "contact").await;
+    assert!(checks.is_ok());
+    let errors = checks.unwrap_or_default();
+    assert!(errors.iter().any(|message| {
+        message.contains("compatibility check failed")
+            && message.contains("cannot remove option value '2'")
+    }));
+}
+
+#[tokio::test]
+async fn publish_entity_rejects_compatibility_breaking_changes() {
+    let tenant_id = TenantId::new();
+    let subject = "nora";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+            Permission::MetadataFieldRead,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    assert!(
+        service
+            .register_entity(&actor, "contact", "Contact")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "nickname".to_owned(),
+                    display_name: "Nickname".to_owned(),
+                    field_type: FieldType::Text,
+                    is_required: false,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(service.publish_entity(&actor, "contact").await.is_ok());
+
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "nickname".to_owned(),
+                    display_name: "Nickname".to_owned(),
+                    field_type: FieldType::Text,
+                    is_required: true,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+
+    let publish = service.publish_entity(&actor, "contact").await;
+    assert!(
+        matches!(publish, Err(AppError::Validation(message)) if message
+        .contains("compatibility check failed")
+        && message.contains("cannot be tightened from optional to required"))
+    );
 }
 
 #[tokio::test]
@@ -3144,6 +3631,248 @@ async fn update_field_updates_mutable_metadata_properties() {
 }
 
 #[tokio::test]
+async fn save_field_rejects_type_change_for_published_field() {
+    let tenant_id = TenantId::new();
+    let subject = "sam";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+            Permission::MetadataFieldRead,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    assert!(
+        service
+            .register_entity(&actor, "contact", "Contact")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "name".to_owned(),
+                    display_name: "Name".to_owned(),
+                    field_type: FieldType::Text,
+                    is_required: true,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(service.publish_entity(&actor, "contact").await.is_ok());
+
+    let changed = service
+        .save_field(
+            &actor,
+            SaveFieldInput {
+                entity_logical_name: "contact".to_owned(),
+                logical_name: "name".to_owned(),
+                display_name: "Name".to_owned(),
+                field_type: FieldType::Number,
+                is_required: true,
+                is_unique: false,
+                default_value: None,
+                calculation_expression: None,
+                relation_target_entity: None,
+                option_set_logical_name: None,
+            },
+        )
+        .await;
+
+    assert!(
+        matches!(changed, Err(AppError::Validation(message)) if message
+        .contains("field type cannot be changed for published field"))
+    );
+}
+
+#[tokio::test]
+async fn save_field_rejects_relation_target_change_for_published_field() {
+    let tenant_id = TenantId::new();
+    let subject = "sam";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+            Permission::MetadataFieldRead,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    assert!(
+        service
+            .register_entity(&actor, "contact", "Contact")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .register_entity(&actor, "account", "Account")
+            .await
+            .is_ok()
+    );
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "manager_id".to_owned(),
+                    display_name: "Manager".to_owned(),
+                    field_type: FieldType::Relation,
+                    is_required: false,
+                    is_unique: false,
+                    default_value: None,
+                    calculation_expression: None,
+                    relation_target_entity: Some("contact".to_owned()),
+                    option_set_logical_name: None,
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(service.publish_entity(&actor, "contact").await.is_ok());
+
+    let changed = service
+        .save_field(
+            &actor,
+            SaveFieldInput {
+                entity_logical_name: "contact".to_owned(),
+                logical_name: "manager_id".to_owned(),
+                display_name: "Manager".to_owned(),
+                field_type: FieldType::Relation,
+                is_required: false,
+                is_unique: false,
+                default_value: None,
+                calculation_expression: None,
+                relation_target_entity: Some("account".to_owned()),
+                option_set_logical_name: None,
+            },
+        )
+        .await;
+
+    assert!(
+        matches!(changed, Err(AppError::Validation(message)) if message
+        .contains("relation target cannot be changed for published field"))
+    );
+}
+
+#[tokio::test]
+async fn save_field_rejects_option_set_change_for_published_field() {
+    let tenant_id = TenantId::new();
+    let subject = "sam";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataFieldWrite,
+            Permission::MetadataFieldRead,
+        ],
+    )]);
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    assert!(
+        service
+            .register_entity(&actor, "contact", "Contact")
+            .await
+            .is_ok()
+    );
+
+    assert!(
+        service
+            .save_option_set(
+                &actor,
+                SaveOptionSetInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "status_primary".to_owned(),
+                    display_name: "Status Primary".to_owned(),
+                    options: vec![
+                        OptionSetItem::new(1, "Open", None, 0).unwrap_or_else(|_| unreachable!())
+                    ],
+                },
+            )
+            .await
+            .is_ok()
+    );
+
+    assert!(
+        service
+            .save_option_set(
+                &actor,
+                SaveOptionSetInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "status_secondary".to_owned(),
+                    display_name: "Status Secondary".to_owned(),
+                    options: vec![
+                        OptionSetItem::new(1, "Open", None, 0).unwrap_or_else(|_| unreachable!())
+                    ],
+                },
+            )
+            .await
+            .is_ok()
+    );
+
+    assert!(
+        service
+            .save_field(
+                &actor,
+                SaveFieldInput {
+                    entity_logical_name: "contact".to_owned(),
+                    logical_name: "status".to_owned(),
+                    display_name: "Status".to_owned(),
+                    field_type: FieldType::Choice,
+                    is_required: true,
+                    is_unique: false,
+                    default_value: Some(json!(1)),
+                    calculation_expression: None,
+                    relation_target_entity: None,
+                    option_set_logical_name: Some("status_primary".to_owned()),
+                },
+            )
+            .await
+            .is_ok()
+    );
+    assert!(service.publish_entity(&actor, "contact").await.is_ok());
+
+    let changed = service
+        .save_field(
+            &actor,
+            SaveFieldInput {
+                entity_logical_name: "contact".to_owned(),
+                logical_name: "status".to_owned(),
+                display_name: "Status".to_owned(),
+                field_type: FieldType::Choice,
+                is_required: true,
+                is_unique: false,
+                default_value: Some(json!(1)),
+                calculation_expression: None,
+                relation_target_entity: None,
+                option_set_logical_name: Some("status_secondary".to_owned()),
+            },
+        )
+        .await;
+
+    assert!(
+        matches!(changed, Err(AppError::Validation(message)) if message
+        .contains("option set reference cannot be changed for published field"))
+    );
+}
+
+#[tokio::test]
 async fn delete_field_rejects_published_fields() {
     let tenant_id = TenantId::new();
     let subject = "judy";
@@ -3980,4 +4709,272 @@ async fn save_view_supports_column_reorder_then_undo_redo_transitions() {
         .map(|column| column.field_logical_name().as_str())
         .collect();
     assert_eq!(listed_columns, vec!["email", "name", "phone"]);
+}
+
+#[tokio::test]
+async fn portability_export_import_round_trip_remaps_relations_deterministically() {
+    let source_tenant_id = TenantId::new();
+    let target_tenant_id = TenantId::new();
+    let subject = "porter";
+    let permissions = vec![
+        Permission::MetadataEntityCreate,
+        Permission::MetadataEntityRead,
+        Permission::MetadataFieldRead,
+        Permission::MetadataFieldWrite,
+        Permission::RuntimeRecordRead,
+        Permission::RuntimeRecordWrite,
+    ];
+
+    let source_grants =
+        HashMap::from([((source_tenant_id, subject.to_owned()), permissions.clone())]);
+    let target_grants = HashMap::from([((target_tenant_id, subject.to_owned()), permissions)]);
+
+    let (source_service, _) = build_service(source_grants);
+    let (target_service, _) = build_service(target_grants);
+
+    let source_actor = actor(source_tenant_id, subject);
+    let target_actor = actor(target_tenant_id, subject);
+
+    source_service
+        .register_entity(&source_actor, "account", "Account")
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    source_service
+        .save_field(
+            &source_actor,
+            SaveFieldInput {
+                entity_logical_name: "account".to_owned(),
+                logical_name: "name".to_owned(),
+                display_name: "Name".to_owned(),
+                field_type: FieldType::Text,
+                is_required: true,
+                is_unique: false,
+                default_value: None,
+                calculation_expression: None,
+                relation_target_entity: None,
+                option_set_logical_name: None,
+            },
+        )
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    source_service
+        .publish_entity(&source_actor, "account")
+        .await
+        .unwrap_or_else(|_| unreachable!());
+
+    source_service
+        .register_entity(&source_actor, "contact", "Contact")
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    source_service
+        .save_field(
+            &source_actor,
+            SaveFieldInput {
+                entity_logical_name: "contact".to_owned(),
+                logical_name: "name".to_owned(),
+                display_name: "Name".to_owned(),
+                field_type: FieldType::Text,
+                is_required: true,
+                is_unique: false,
+                default_value: None,
+                calculation_expression: None,
+                relation_target_entity: None,
+                option_set_logical_name: None,
+            },
+        )
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    source_service
+        .save_field(
+            &source_actor,
+            SaveFieldInput {
+                entity_logical_name: "contact".to_owned(),
+                logical_name: "account_id".to_owned(),
+                display_name: "Account".to_owned(),
+                field_type: FieldType::Relation,
+                is_required: true,
+                is_unique: false,
+                default_value: None,
+                calculation_expression: None,
+                relation_target_entity: Some("account".to_owned()),
+                option_set_logical_name: None,
+            },
+        )
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    source_service
+        .publish_entity_with_allowed_unpublished_entities(
+            &source_actor,
+            "contact",
+            &["account".to_owned(), "contact".to_owned()],
+        )
+        .await
+        .unwrap_or_else(|_| unreachable!());
+
+    let account_record = source_service
+        .create_runtime_record(&source_actor, "account", json!({"name": "ACME"}))
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    let source_account_record_id = account_record.record_id().as_str().to_owned();
+
+    let contact_record = source_service
+        .create_runtime_record(
+            &source_actor,
+            "contact",
+            json!({"name": "Jane", "account_id": source_account_record_id}),
+        )
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    let source_contact_record_id = contact_record.record_id().as_str().to_owned();
+
+    let bundle = source_service
+        .export_workspace_bundle(&source_actor, ExportWorkspaceBundleOptions::default())
+        .await
+        .unwrap_or_else(|_| unreachable!());
+
+    let dry_run = target_service
+        .import_workspace_bundle(
+            &target_actor,
+            bundle.clone(),
+            ImportWorkspaceBundleOptions {
+                dry_run: true,
+                remap_record_ids: true,
+                ..ImportWorkspaceBundleOptions::default()
+            },
+        )
+        .await
+        .unwrap_or_else(|_| unreachable!());
+
+    assert!(dry_run.dry_run);
+    assert_eq!(dry_run.entities_processed, 2);
+    assert_eq!(dry_run.runtime_records_discovered, 2);
+    assert_eq!(dry_run.runtime_records_remapped, 2);
+
+    target_service
+        .import_workspace_bundle(
+            &target_actor,
+            bundle,
+            ImportWorkspaceBundleOptions {
+                remap_record_ids: true,
+                ..ImportWorkspaceBundleOptions::default()
+            },
+        )
+        .await
+        .unwrap_or_else(|_| unreachable!());
+
+    let imported_accounts = target_service
+        .list_runtime_records(
+            &target_actor,
+            "account",
+            RecordListQuery {
+                limit: 10,
+                offset: 0,
+                owner_subject: None,
+            },
+        )
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    assert_eq!(imported_accounts.len(), 1);
+
+    let imported_contacts = target_service
+        .list_runtime_records(
+            &target_actor,
+            "contact",
+            RecordListQuery {
+                limit: 10,
+                offset: 0,
+                owner_subject: None,
+            },
+        )
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    assert_eq!(imported_contacts.len(), 1);
+
+    let imported_account_id = imported_accounts[0].record_id().as_str().to_owned();
+    let imported_contact_data = imported_contacts[0].data();
+
+    assert_ne!(source_account_record_id, imported_account_id);
+    assert_ne!(
+        source_contact_record_id,
+        imported_contacts[0].record_id().as_str()
+    );
+    assert_eq!(
+        imported_contact_data
+            .get("account_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
+        imported_account_id
+    );
+}
+
+#[tokio::test]
+async fn portability_import_rejects_checksum_mismatch() {
+    let tenant_id = TenantId::new();
+    let subject = "porter";
+    let grants = HashMap::from([(
+        (tenant_id, subject.to_owned()),
+        vec![
+            Permission::MetadataEntityCreate,
+            Permission::MetadataEntityRead,
+            Permission::MetadataFieldRead,
+            Permission::MetadataFieldWrite,
+            Permission::RuntimeRecordRead,
+            Permission::RuntimeRecordWrite,
+        ],
+    )]);
+
+    let (service, _) = build_service(grants);
+    let actor = actor(tenant_id, subject);
+
+    service
+        .register_entity(&actor, "account", "Account")
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    service
+        .save_field(
+            &actor,
+            SaveFieldInput {
+                entity_logical_name: "account".to_owned(),
+                logical_name: "name".to_owned(),
+                display_name: "Name".to_owned(),
+                field_type: FieldType::Text,
+                is_required: true,
+                is_unique: false,
+                default_value: None,
+                calculation_expression: None,
+                relation_target_entity: None,
+                option_set_logical_name: None,
+            },
+        )
+        .await
+        .unwrap_or_else(|_| unreachable!());
+
+    let mut bundle = service
+        .export_workspace_bundle(
+            &actor,
+            ExportWorkspaceBundleOptions {
+                include_metadata: true,
+                include_runtime_data: false,
+            },
+        )
+        .await
+        .unwrap_or_else(|_| unreachable!());
+
+    bundle.payload_sha256 = "bad-checksum".to_owned();
+
+    let result = service
+        .import_workspace_bundle(
+            &actor,
+            bundle,
+            ImportWorkspaceBundleOptions {
+                dry_run: true,
+                import_metadata: true,
+                import_runtime_data: false,
+                remap_record_ids: false,
+            },
+        )
+        .await;
+
+    assert!(result.is_err());
+    assert!(matches!(result, Err(AppError::Validation(_))));
 }

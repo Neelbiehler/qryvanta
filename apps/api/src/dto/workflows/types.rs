@@ -184,3 +184,38 @@ pub struct WorkflowRunStepTraceResponse {
     pub error_message: Option<String>,
     pub duration_ms: Option<u64>,
 }
+
+/// API representation of one replay timeline event.
+#[derive(Debug, Serialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/workflow-run-replay-timeline-event-response.ts"
+)]
+pub struct WorkflowRunReplayTimelineEventResponse {
+    pub sequence: u64,
+    pub attempt_number: i32,
+    pub attempt_status: String,
+    pub attempt_executed_at: String,
+    pub step_path: String,
+    pub step_type: String,
+    pub status: String,
+    #[ts(type = "Record<string, unknown>")]
+    pub input_payload: Value,
+    #[ts(type = "Record<string, unknown>")]
+    pub output_payload: Value,
+    pub error_message: Option<String>,
+    pub duration_ms: Option<u64>,
+}
+
+/// API representation of one deterministic workflow run replay.
+#[derive(Debug, Serialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/workflow-run-replay-response.ts"
+)]
+pub struct WorkflowRunReplayResponse {
+    pub run: WorkflowRunResponse,
+    pub attempts: Vec<WorkflowRunAttemptResponse>,
+    pub timeline: Vec<WorkflowRunReplayTimelineEventResponse>,
+    pub checksum_sha256: String,
+}

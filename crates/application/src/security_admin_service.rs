@@ -20,6 +20,7 @@ pub struct SecurityAdminService {
     repository: Arc<dyn SecurityAdminRepository>,
     audit_log_repository: Arc<dyn AuditLogRepository>,
     audit_repository: Arc<dyn AuditRepository>,
+    audit_immutable_mode: bool,
 }
 
 impl SecurityAdminService {
@@ -36,7 +37,15 @@ impl SecurityAdminService {
             repository,
             audit_log_repository,
             audit_repository,
+            audit_immutable_mode: false,
         }
+    }
+
+    /// Enables or disables immutable audit mode for this service instance.
+    #[must_use]
+    pub fn with_audit_immutable_mode(mut self, enabled: bool) -> Self {
+        self.audit_immutable_mode = enabled;
+        self
     }
 
     pub(super) async fn require_role_manage_permission(

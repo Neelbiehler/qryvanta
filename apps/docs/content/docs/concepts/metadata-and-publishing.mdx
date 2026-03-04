@@ -20,8 +20,29 @@ This contract keeps runtime behavior predictable for worker users.
 
 - Relation dependencies
 - Missing field references in forms and views
+- Published-schema compatibility breaks
 - Invalid sitemap or app bindings
 - App permission and binding issues that block runtime access
+
+## Compatibility Gates
+
+When an entity already has a published schema, publish checks block breaking contract changes.
+
+Blocked examples:
+
+- Removing a previously published field.
+- Tightening `optional -> required` on a published field.
+- Tightening `non-unique -> unique` on a published field.
+- Changing field type, relation target, or option-set reference for a published field.
+- Adding stricter text or numeric constraints after publish (`max_length`, `min_value`, `max_value`).
+- Removing previously published option values from an option set.
+
+Safe pattern:
+
+1. Add new fields or option values first.
+2. Migrate runtime records and forms/views to the new shape.
+3. Keep old published contracts until rollout is complete.
+4. Publish compatibility-safe changes in small steps.
 
 ## Common Rule
 

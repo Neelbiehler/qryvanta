@@ -569,7 +569,28 @@ impl MetadataRepository for FakeMetadataRepository {
         _unique_values: Vec<UniqueFieldValue>,
         _created_by_subject: &str,
     ) -> AppResult<RuntimeRecord> {
-        let record = RuntimeRecord::new(Uuid::new_v4().to_string(), entity_logical_name, data)?;
+        let generated_record_id = Uuid::new_v4().to_string();
+        self.create_runtime_record_with_id(
+            tenant_id,
+            entity_logical_name,
+            generated_record_id.as_str(),
+            data,
+            Vec::new(),
+            "bootstrap",
+        )
+        .await
+    }
+
+    async fn create_runtime_record_with_id(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        record_id: &str,
+        data: Value,
+        _unique_values: Vec<UniqueFieldValue>,
+        _created_by_subject: &str,
+    ) -> AppResult<RuntimeRecord> {
+        let record = RuntimeRecord::new(record_id, entity_logical_name, data)?;
         self.runtime_records.lock().await.insert(
             (
                 tenant_id,

@@ -432,3 +432,21 @@ async fn update_registration_mode_writes_audit_event() {
         qryvanta_domain::AuditAction::SecurityTenantRegistrationModeUpdated
     );
 }
+
+#[tokio::test]
+async fn purge_audit_log_entries_rejects_when_immutable_mode_enabled() {
+    let tenant_id = TenantId::new();
+    let actor = actor(tenant_id, "alice");
+    let (service, audit_repository) =
+        service_with_permissions(tenant_id, "alice", vec![Permission::SecurityRoleManage]);
+    let service = service.with_audit_immutable_mode(true);
+
+    let result = service.purge_audit_log_entries(&actor).await;
+    assert!(
+        matches!(result, Err(AppError::Forbidden(message)) if message
+        .contains("audit log is immutable; purge is disabled"))
+    );
+
+    let events = audit_repository.events.lock().await;
+    assert!(events.is_empty());
+}

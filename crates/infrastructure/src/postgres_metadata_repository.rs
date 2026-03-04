@@ -397,6 +397,26 @@ impl MetadataRepository for PostgresMetadataRepository {
         .await
     }
 
+    async fn create_runtime_record_with_id(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        record_id: &str,
+        data: Value,
+        unique_values: Vec<UniqueFieldValue>,
+        created_by_subject: &str,
+    ) -> AppResult<RuntimeRecord> {
+        self.create_runtime_record_with_id_impl(
+            tenant_id,
+            entity_logical_name,
+            record_id,
+            data,
+            unique_values,
+            created_by_subject,
+        )
+        .await
+    }
+
     async fn update_runtime_record(
         &self,
         tenant_id: TenantId,

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use chrono::Utc;
-use qryvanta_core::{AppError, AppResult, UserIdentity};
+use qryvanta_core::{AppError, AppResult, TenantId, UserIdentity};
 use qryvanta_domain::{
     AuditAction, Permission, RuntimeRecord, WorkflowAction, WorkflowConditionOperator,
     WorkflowDefinition, WorkflowDefinitionInput, WorkflowStep, WorkflowTrigger,
@@ -14,7 +14,8 @@ use crate::workflow_ports::{
     ClaimedWorkflowJob, CompleteWorkflowRunInput, CreateWorkflowRunInput, SaveWorkflowInput,
     WorkflowActionDispatcher, WorkflowClaimPartition, WorkflowExecutionMode, WorkflowQueueStats,
     WorkflowQueueStatsCache, WorkflowQueueStatsQuery, WorkflowRepository, WorkflowRun,
-    WorkflowRunAttempt, WorkflowRunAttemptStatus, WorkflowRunListQuery, WorkflowRunStatus,
+    WorkflowRunAttempt, WorkflowRunAttemptStatus, WorkflowRunListQuery, WorkflowRunReplay,
+    WorkflowRunReplayTimelineEvent, WorkflowRunStatus, WorkflowRunStepTrace,
     WorkflowRuntimeRecordService, WorkflowWorkerHeartbeatInput,
 };
 use crate::{AuditEvent, AuditRepository, AuthorizationService};

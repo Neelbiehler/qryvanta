@@ -1,0 +1,48 @@
+---
+title: API Versioning
+description: Versioning baseline and compatibility policy for Qryvanta HTTP APIs.
+---
+
+Qryvanta uses explicit URL versioning for application APIs.
+
+## Baseline
+
+- Current baseline version: `v1`
+- Canonical versioned prefix: `/api/v1`
+- Compatibility alias: `/api` maps to the same `v1` handlers
+
+Use `/api/v1` for integrations and automation scripts. The `/api` alias remains for backward compatibility during migration.
+
+## Evolution Rules
+
+Additive changes are allowed within `v1`:
+
+- Add new optional request fields.
+- Add new response fields.
+- Add new endpoints.
+
+Breaking changes require a new major API version (`/api/v2`):
+
+- Remove or rename fields.
+- Change field types or semantics incompatibly.
+- Change endpoint behavior in a way that can break existing clients.
+
+## Version Lifecycle
+
+- New major versions are introduced under a new prefix.
+- Previous major versions remain available for a documented deprecation window.
+- Deprecation notices are published in release notes and docs before removal.
+
+## Deprecation Policy
+
+When a major API version is deprecated:
+
+- Announcement window: at least 90 days before removal.
+- Support window: at least one previous major version remains supported in parallel with the current major version.
+- Warning period: deprecation notices are included in release notes for every release in the support window.
+- Removal: removed versions are documented in migration notes with replacement guidance.
+
+## Operator Guidance
+
+- Keep reverse proxies and allowlists configured for both `/api/v1` and `/api` while migrating clients.
+- Validate external integrations against `/api/v1` in staging before production rollout.

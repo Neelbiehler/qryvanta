@@ -19,6 +19,20 @@ You can run every documented product capability in your own environment.
 - Background worker process (`qryvanta-worker`) when workflow execution is queued
 - Optional Redis service for shared rate limiting and queue-stats cache
 
+## Isolation Profiles
+
+Default deployments use shared-database logical isolation.
+
+For stricter tenancy boundaries, configure:
+
+- `PHYSICAL_ISOLATION_MODE=tenant_per_schema` or `tenant_per_database`
+- `PHYSICAL_ISOLATION_TENANT_ID=<tenant-uuid>`
+
+Run one API/worker deployment per isolated tenant profile.
+See `Tenant Isolation Profiles` in this operations section for profile-specific template settings.
+
+For capacity planning and replica sizing, use `Scaling Profiles` in this operations section.
+
 ## Deployment Direction
 
 1. Docker Compose baseline for local and small deployments.

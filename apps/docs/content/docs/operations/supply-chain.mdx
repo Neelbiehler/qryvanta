@@ -1,0 +1,68 @@
+---
+title: Supply Chain And SBOM
+description: Generate and retrieve software bill of materials artifacts from CI runs.
+---
+
+Qryvanta CI generates SBOM artifacts on every pull request and `main` push in `.github/workflows/ci.yml`.
+Release automation signs published npm package artifacts in `.github/workflows/release-packages.yml`.
+
+## Generated Formats
+
+- `CycloneDX JSON` (`sbom-cyclonedx.json`)
+- `SPDX JSON` (`sbom-spdx.json`)
+
+Both artifacts are produced with `syft` from repository source (`dir:.`) and include the current commit SHA as source version metadata.
+
+## Artifact Retention
+
+- SBOM artifacts are uploaded with `actions/upload-artifact@v4`.
+- Retention is set to `30` days.
+- Artifact name format: `sbom-<commit_sha>`.
+
+## Signed Release Artifacts
+
+When Changesets publishes packages from `main`, release workflow produces:
+
+- package tarballs (`*.tgz`) for each published workspace package
+- Sigstore bundles (`*.sigstore.bundle`) for each tarball
+- checksum manifest (`SHA256SUMS`)
+- `published-packages.json` from Changesets output
+
+Signed artifacts are uploaded as:
+
+- `signed-release-artifacts-<commit_sha>`
+
+Retention is set to `90` days.
+
+## Local Verification
+
+To reproduce locally:
+
+```bash
+syft dir:. --source-name qryvanta --source-version "$(git rev-parse HEAD)" -o cyclonedx-json=sbom-cyclonedx.json
+syft dir:. --source-name qryvanta --source-version "$(git rev-parse HEAD)" -o spdx-json=sbom-spdx.json
+```
+
+## Operator Workflow
+
+1. Open the CI run in GitHub Actions.
+2. Download the `sbom-<commit_sha>` artifact.
+3. Archive both files with release evidence or compliance records.
+
+For release signature verification:
+
+1. Open the `release-packages` workflow run for the released commit.
+2. Download `signed-release-artifacts-<commit_sha>`.
+3. Verify checksums and signatures:
+
+```bash
+sha256sum -c SHA256SUMS
+
+for tarball in ./*.tgz; do
+  cosign verify-blob \
+    --bundle "${tarball}.sigstore.bundle" \
+    --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+    --certificate-identity-regexp "^https://github.com/<org>/<repo>/\\.github/workflows/release-packages\\.yml@refs/heads/main$" \
+    "${tarball}"
+done
+```

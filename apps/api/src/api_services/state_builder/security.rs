@@ -1,5 +1,7 @@
 use qryvanta_application::{AuthEventService, AuthorizationService, SecurityAdminService};
 
+use crate::api_config::ApiConfig;
+
 use super::repositories::RepositorySet;
 
 pub(super) struct SecurityServices {
@@ -8,7 +10,10 @@ pub(super) struct SecurityServices {
     pub(super) auth_event_service: AuthEventService,
 }
 
-pub(super) fn build_security_services(repositories: &RepositorySet) -> SecurityServices {
+pub(super) fn build_security_services(
+    repositories: &RepositorySet,
+    config: &ApiConfig,
+) -> SecurityServices {
     let authorization_service = AuthorizationService::new(
         repositories.authorization_repository.clone(),
         repositories.audit_repository.clone(),
@@ -19,7 +24,8 @@ pub(super) fn build_security_services(repositories: &RepositorySet) -> SecurityS
         repositories.security_admin_repository.clone(),
         repositories.audit_log_repository.clone(),
         repositories.audit_repository.clone(),
-    );
+    )
+    .with_audit_immutable_mode(config.audit_immutable_mode);
 
     let auth_event_service = AuthEventService::new(repositories.auth_event_repository.clone());
 

@@ -3,7 +3,7 @@ use redis::AsyncCommands;
 use super::*;
 
 pub(super) async fn check_postgres(pool: sqlx::PgPool) -> HealthDependencyStatus {
-    let check = sqlx::query_scalar::<_, i64>("SELECT 1")
+    let check = sqlx::query_scalar::<_, i32>("SELECT 1")
         .fetch_one(&pool)
         .await;
 
