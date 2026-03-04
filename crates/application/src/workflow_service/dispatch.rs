@@ -1,5 +1,7 @@
 use super::*;
 
+const SCHEDULE_CLOCK_SKEW_TOLERANCE_SECONDS: i64 = 300;
+
 impl WorkflowService {
     async fn dispatch_trigger(
         &self,
@@ -190,11 +192,7 @@ impl WorkflowService {
         schedule_key: &str,
         payload: Option<Value>,
     ) -> AppResult<usize> {
-        let event_payload = serde_json::json!({
-            "schedule_key": schedule_key,
-            "event": "schedule_tick",
-            "data": payload,
-        });
+        let event_payload = Self::normalize_schedule_tick_payload(schedule_key, payload)?;
 
         self.dispatch_trigger(
             actor,
@@ -204,6 +202,64 @@ impl WorkflowService {
             event_payload,
         )
         .await
+    }
+
+    fn normalize_schedule_tick_payload(
+        schedule_key: &str,
+        payload: Option<Value>,
+    ) -> AppResult<Value> {
+        let data = payload.unwrap_or_else(|| serde_json::json!({}));
+        let data_object = data.as_object().ok_or_else(|| {
+            AppError::Validation("schedule_tick payload must be an object".to_owned())
+        })?;
+
+        let reference_now = Utc::now();
+        let timezone = data_object
+            .get("timezone")
+            .and_then(Value::as_str)
+            .unwrap_or("UTC")
+            .trim()
+            .to_owned();
+        if timezone.is_empty() {
+            return Err(AppError::Validation(
+                "schedule_tick timezone must not be empty when provided".to_owned(),
+            ));
+        }
+
+        let tick_at_source = data_object
+            .get("tick_at")
+            .or_else(|| data_object.get("tick"))
+            .and_then(Value::as_str);
+
+        let (tick_at_utc, tick_source) = match tick_at_source {
+            Some(timestamp) => (
+                chrono::DateTime::parse_from_rfc3339(timestamp)
+                    .map_err(|error| {
+                        AppError::Validation(format!(
+                            "schedule_tick tick_at must be RFC3339 timestamp: {error}"
+                        ))
+                    })?
+                    .with_timezone(&Utc),
+                "payload",
+            ),
+            None => (reference_now, "system_clock"),
+        };
+
+        let clock_skew_seconds = (reference_now - tick_at_utc).num_seconds().abs();
+        let clock_skew_within_tolerance =
+            clock_skew_seconds <= SCHEDULE_CLOCK_SKEW_TOLERANCE_SECONDS;
+
+        Ok(serde_json::json!({
+            "schedule_key": schedule_key,
+            "event": "schedule_tick",
+            "tick_at_utc": tick_at_utc.to_rfc3339(),
+            "tick_source": tick_source,
+            "timezone": timezone,
+            "clock_skew_seconds": clock_skew_seconds,
+            "clock_skew_tolerance_seconds": SCHEDULE_CLOCK_SKEW_TOLERANCE_SECONDS,
+            "clock_skew_within_tolerance": clock_skew_within_tolerance,
+            "data": data,
+        }))
     }
 
     /// Retries one workflow step for an existing run.

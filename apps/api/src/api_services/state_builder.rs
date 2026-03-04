@@ -1,11 +1,15 @@
 use std::sync::Arc;
 
-use qryvanta_application::{AppService, ContactBootstrapService, MetadataService, WorkflowService};
+use qryvanta_application::{
+    AppService, ContactBootstrapService, ExtensionService, MetadataService, WorkflowService,
+};
 use qryvanta_core::AppError;
-use qryvanta_infrastructure::HttpWorkflowActionDispatcher;
+use qryvanta_infrastructure::{HttpWorkflowActionDispatcher, WasmExtensionRuntime};
 use sqlx::PgPool;
+use tokio::sync::Semaphore;
 
 use crate::api_config::ApiConfig;
+use crate::observability::ApiObservabilityMetrics;
 use crate::state::AppState;
 
 use super::redis::build_redis_client;
@@ -24,7 +28,7 @@ pub fn build_app_state(pool: PgPool, config: &ApiConfig) -> Result<AppState, App
         .transpose()?;
 
     let repositories = repositories::build_repository_set(&pool);
-    let security_services = security::build_security_services(&repositories);
+    let security_services = security::build_security_services(&repositories, config);
     let user_services = users::build_user_services(
         &pool,
         config,
@@ -41,6 +45,11 @@ pub fn build_app_state(pool: PgPool, config: &ApiConfig) -> Result<AppState, App
         repositories.metadata_repository.clone(),
         security_services.authorization_service.clone(),
         repositories.audit_repository.clone(),
+    );
+    let extension_service = ExtensionService::new(
+        security_services.authorization_service.clone(),
+        repositories.extension_repository.clone(),
+        Arc::new(WasmExtensionRuntime::new()),
     );
 
     let app_runtime_service = Arc::new(metadata_service.clone());
@@ -61,6 +70,7 @@ pub fn build_app_state(pool: PgPool, config: &ApiConfig) -> Result<AppState, App
             repositories.audit_repository.clone(),
         ),
         metadata_service: metadata_service.clone(),
+        extension_service,
         contact_bootstrap_service: ContactBootstrapService::new(
             repositories.metadata_repository.clone(),
             repositories.tenant_repository.clone(),
@@ -88,12 +98,20 @@ pub fn build_app_state(pool: PgPool, config: &ApiConfig) -> Result<AppState, App
         passkey_repository: repositories.passkey_repository,
         webauthn,
         frontend_url: config.frontend_url.clone(),
+        physical_isolation_mode: config.physical_isolation_mode,
+        physical_isolation_tenant_id: config.physical_isolation_tenant_id,
         bootstrap_token: config.bootstrap_token.clone(),
         bootstrap_tenant_id: config.bootstrap_tenant_id,
         worker_shared_secret: config.worker_shared_secret.clone(),
         workflow_worker_default_lease_seconds: config.workflow_worker_default_lease_seconds,
         workflow_worker_max_claim_limit: config.workflow_worker_max_claim_limit,
         workflow_worker_max_partition_count: config.workflow_worker_max_partition_count,
+        runtime_query_max_limit: config.runtime_query_max_limit,
+        runtime_query_backpressure: Arc::new(Semaphore::new(config.runtime_query_max_in_flight)),
+        workflow_burst_backpressure: Arc::new(Semaphore::new(config.workflow_burst_max_in_flight)),
+        slow_request_threshold_ms: config.slow_request_threshold_ms,
+        slow_query_threshold_ms: config.slow_query_threshold_ms,
+        observability_metrics: Arc::new(ApiObservabilityMetrics::default()),
         postgres_pool: pool,
         redis_client,
         redis_required: config.requires_redis(),

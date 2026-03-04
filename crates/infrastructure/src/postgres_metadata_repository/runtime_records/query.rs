@@ -132,16 +132,25 @@ impl PostgresMetadataRepository {
         builder.push(" OFFSET ");
         builder.push_bind(offset);
 
-        let rows = builder
+        let started_at = std::time::Instant::now();
+        let rows_result = builder
             .build_query_as::<RuntimeRecordRow>()
             .fetch_all(&self.pool)
-            .await
-            .map_err(|error| {
-                AppError::Internal(format!(
-                    "failed to query runtime records for entity '{}' in tenant '{}': {error}",
-                    entity_logical_name, tenant_id
-                ))
-            })?;
+            .await;
+
+        warn_if_runtime_query_slow(
+            "runtime_records.query",
+            tenant_id,
+            entity_logical_name,
+            started_at,
+        );
+
+        let rows = rows_result.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to query runtime records for entity '{}' in tenant '{}': {error}",
+                entity_logical_name, tenant_id
+            ))
+        })?;
 
         rows.into_iter().map(runtime_record_from_row).collect()
     }

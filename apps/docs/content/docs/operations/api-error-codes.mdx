@@ -1,0 +1,61 @@
+---
+title: API Error Codes
+description: Stable API error code catalog for deterministic client handling.
+---
+
+Qryvanta API error responses include:
+
+- `code`: stable machine-readable identifier
+- `message`: human-readable error detail
+
+Example payload:
+
+```json
+{
+  "code": "validation.runtime.query.limit_invalid",
+  "message": "validation error: runtime record query limit must be greater than zero"
+}
+```
+
+## Baseline Codes
+
+- `validation.generic`
+- `not_found`
+- `conflict`
+- `unauthorized`
+- `forbidden`
+- `rate_limited`
+- `internal_error`
+
+## Publish Validation Codes
+
+- `validation.publish.checks_failed`
+
+## Runtime Validation Codes
+
+- `validation.runtime.payload.not_object`
+- `validation.runtime.payload.unknown_field`
+- `validation.runtime.payload.required_field_missing`
+- `validation.runtime.payload.calculated_field_read_only`
+- `validation.runtime.relation.target_missing`
+- `validation.runtime.business_rule.locked_field`
+- `validation.runtime.query.limit_invalid`
+- `validation.runtime.query.where_empty`
+- `validation.runtime.query.duplicate_sort_field`
+- `validation.runtime.query.alias_empty`
+- `validation.runtime.query.alias_duplicate`
+- `validation.runtime.query.parent_alias_unknown`
+- `validation.runtime.query.parent_alias_empty`
+- `validation.runtime.query.relation_field_empty`
+- `validation.runtime.query.scope_alias_unknown`
+- `validation.runtime.query.field_unknown`
+- `validation.runtime.query.field_type_mismatch`
+- `validation.runtime.query.operator_invalid`
+- `validation.runtime.query.sort_unsupported`
+- `validation.runtime.query.link_invalid`
+
+## Compatibility Policy
+
+- New codes are additive.
+- Existing code meanings are stable within an API major version.
+- Breaking changes to code semantics require a new API major version.

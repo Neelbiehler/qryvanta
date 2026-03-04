@@ -9,7 +9,38 @@ impl InMemoryMetadataRepository {
         unique_values: Vec<UniqueFieldValue>,
         created_by_subject: &str,
     ) -> AppResult<RuntimeRecord> {
-        let record = RuntimeRecord::new(Uuid::new_v4().to_string(), entity_logical_name, data)?;
+        let generated_record_id = Uuid::new_v4().to_string();
+        self.create_runtime_record_with_id_impl(
+            tenant_id,
+            entity_logical_name,
+            generated_record_id.as_str(),
+            data,
+            unique_values,
+            created_by_subject,
+        )
+        .await
+    }
+
+    pub(in super::super) async fn create_runtime_record_with_id_impl(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        record_id: &str,
+        data: Value,
+        unique_values: Vec<UniqueFieldValue>,
+        created_by_subject: &str,
+    ) -> AppResult<RuntimeRecord> {
+        let record = RuntimeRecord::new(record_id, entity_logical_name, data)?;
+        let record_key =
+            runtime_record_storage_key(tenant_id, entity_logical_name, record.record_id().as_str());
+
+        if self.runtime_records.read().await.contains_key(&record_key) {
+            return Err(AppError::Conflict(format!(
+                "runtime record '{}' already exists for entity '{}'",
+                record.record_id().as_str(),
+                entity_logical_name
+            )));
+        }
 
         let mut unique_index = self.unique_values.write().await;
         ensure_unique_values_available(
@@ -26,9 +57,6 @@ impl InMemoryMetadataRepository {
                 record.record_id().as_str().to_owned(),
             );
         }
-
-        let record_key =
-            runtime_record_storage_key(tenant_id, entity_logical_name, record.record_id().as_str());
 
         self.runtime_records
             .write()

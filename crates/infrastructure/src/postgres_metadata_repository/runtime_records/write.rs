@@ -9,6 +9,48 @@ impl PostgresMetadataRepository {
         unique_values: Vec<UniqueFieldValue>,
         created_by_subject: &str,
     ) -> AppResult<RuntimeRecord> {
+        let generated_record_id = Uuid::new_v4();
+        self.create_runtime_record_with_id_uuid_impl(
+            tenant_id,
+            entity_logical_name,
+            generated_record_id,
+            data,
+            unique_values,
+            created_by_subject,
+        )
+        .await
+    }
+
+    pub(in super::super) async fn create_runtime_record_with_id_impl(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        record_id: &str,
+        data: Value,
+        unique_values: Vec<UniqueFieldValue>,
+        created_by_subject: &str,
+    ) -> AppResult<RuntimeRecord> {
+        let parsed_record_id = parse_runtime_record_uuid(record_id)?;
+        self.create_runtime_record_with_id_uuid_impl(
+            tenant_id,
+            entity_logical_name,
+            parsed_record_id,
+            data,
+            unique_values,
+            created_by_subject,
+        )
+        .await
+    }
+
+    async fn create_runtime_record_with_id_uuid_impl(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        record_id: Uuid,
+        data: Value,
+        unique_values: Vec<UniqueFieldValue>,
+        created_by_subject: &str,
+    ) -> AppResult<RuntimeRecord> {
         let mut transaction = self.pool.begin().await.map_err(|error| {
             AppError::Internal(format!(
                 "failed to start runtime record create transaction for entity '{}' in tenant '{}': {error}",
@@ -18,11 +60,12 @@ impl PostgresMetadataRepository {
 
         let created = sqlx::query_as::<_, RuntimeRecordRow>(
             r#"
-            INSERT INTO runtime_records (tenant_id, entity_logical_name, data, created_by_subject)
-            VALUES ($1, $2, $3, $4)
+            INSERT INTO runtime_records (id, tenant_id, entity_logical_name, data, created_by_subject)
+            VALUES ($1, $2, $3, $4, $5)
             RETURNING id, entity_logical_name, data
             "#,
         )
+        .bind(record_id)
         .bind(tenant_id.as_uuid())
         .bind(entity_logical_name)
         .bind(&data)
@@ -30,6 +73,14 @@ impl PostgresMetadataRepository {
         .fetch_one(&mut *transaction)
         .await
         .map_err(|error| {
+            if let sqlx::Error::Database(database_error) = &error
+                && database_error.code().as_deref() == Some("23505")
+            {
+                return AppError::Conflict(format!(
+                    "runtime record '{}' already exists for entity '{}'",
+                    record_id, entity_logical_name
+                ));
+            }
             AppError::Internal(format!(
                 "failed to create runtime record for entity '{}' in tenant '{}': {error}",
                 entity_logical_name, tenant_id

@@ -7,285 +7,331 @@ use crate::{auth, handlers, middleware};
 
 pub(super) fn build_protected_routes() -> Router<AppState> {
     Router::new()
+        .nest("/api", build_api_routes())
+        .nest("/api/v1", build_api_routes())
+        .merge(build_authenticated_auth_routes())
+        .route_layer(from_fn(middleware::require_auth))
+}
+
+fn build_api_routes() -> Router<AppState> {
+    Router::new()
         .route(
-            "/api/apps",
+            "/apps",
             get(handlers::apps::list_apps_handler).post(handlers::apps::create_app_handler),
         )
         .route(
-            "/api/apps/{app_logical_name}/entities",
+            "/apps/{app_logical_name}/entities",
             get(handlers::apps::list_app_entities_handler).post(handlers::apps::bind_app_entity_handler),
         )
         .route(
-            "/api/apps/{app_logical_name}/permissions",
+            "/apps/{app_logical_name}/permissions",
             get(handlers::apps::list_app_role_permissions_handler)
                 .put(handlers::apps::save_app_role_permission_handler),
         )
         .route(
-            "/api/apps/{app_logical_name}/sitemap",
+            "/apps/{app_logical_name}/sitemap",
             get(handlers::apps::get_app_sitemap_handler)
                 .put(handlers::apps::save_app_sitemap_handler),
         )
         .route(
-            "/api/apps/{app_logical_name}/publish-checks",
+            "/apps/{app_logical_name}/publish-checks",
             get(handlers::apps::app_publish_checks_handler),
         )
         .route(
-            "/api/workflows",
+            "/workflows",
             get(handlers::workflows::list_workflows_handler)
                 .post(handlers::workflows::save_workflow_handler),
         )
         .route(
-            "/api/workflows/runs",
+            "/workflows/runs",
             get(handlers::workflows::list_workflow_runs_handler),
         )
         .route(
-            "/api/workflows/runs/{run_id}/attempts",
+            "/workflows/runs/{run_id}/attempts",
             get(handlers::workflows::list_workflow_run_attempts_handler),
         )
         .route(
-            "/api/workflows/{workflow_logical_name}/runs/{run_id}/retry-step",
+            "/workflows/{workflow_logical_name}/runs/{run_id}/replay",
+            get(handlers::workflows::replay_workflow_run_handler),
+        )
+        .route(
+            "/workflows/{workflow_logical_name}/runs/{run_id}/retry-step",
             post(handlers::workflows::retry_workflow_run_step_handler),
         )
         .route(
-            "/api/workflows/{workflow_logical_name}/execute",
+            "/workflows/{workflow_logical_name}/execute",
             post(handlers::workflows::execute_workflow_handler),
         )
         .route(
-            "/api/workflows/triggers/schedule/dispatch",
+            "/workflows/triggers/schedule/dispatch",
             post(handlers::workflows::dispatch_schedule_trigger_handler),
         )
         .route(
-            "/api/workspace/apps",
+            "/workspace/apps",
             get(handlers::apps::list_workspace_apps_handler),
         )
         .route(
-            "/api/workspace/apps/{app_logical_name}/navigation",
+            "/workspace/apps/{app_logical_name}/navigation",
             get(handlers::apps::app_navigation_handler),
         )
         .route(
-            "/api/workspace/apps/{app_logical_name}/dashboards/{dashboard_logical_name}",
+            "/workspace/apps/{app_logical_name}/dashboards/{dashboard_logical_name}",
             get(handlers::apps::workspace_dashboard_handler),
         )
         .route(
-            "/api/workspace/apps/{app_logical_name}/entities/{entity_logical_name}/schema",
+            "/workspace/apps/{app_logical_name}/entities/{entity_logical_name}/schema",
             get(handlers::apps::workspace_entity_schema_handler),
         )
         .route(
-            "/api/workspace/apps/{app_logical_name}/entities/{entity_logical_name}/capabilities",
+            "/workspace/apps/{app_logical_name}/entities/{entity_logical_name}/capabilities",
             get(handlers::apps::workspace_entity_capabilities_handler),
         )
         .route(
-            "/api/workspace/apps/{app_logical_name}/entities/{entity_logical_name}/forms",
+            "/workspace/apps/{app_logical_name}/entities/{entity_logical_name}/forms",
             get(handlers::apps::workspace_list_forms_handler),
         )
         .route(
-            "/api/workspace/apps/{app_logical_name}/entities/{entity_logical_name}/forms/{form_logical_name}",
+            "/workspace/apps/{app_logical_name}/entities/{entity_logical_name}/forms/{form_logical_name}",
             get(handlers::apps::workspace_get_form_handler),
         )
         .route(
-            "/api/workspace/apps/{app_logical_name}/entities/{entity_logical_name}/views",
+            "/workspace/apps/{app_logical_name}/entities/{entity_logical_name}/views",
             get(handlers::apps::workspace_list_views_handler),
         )
         .route(
-            "/api/workspace/apps/{app_logical_name}/entities/{entity_logical_name}/views/{view_logical_name}",
+            "/workspace/apps/{app_logical_name}/entities/{entity_logical_name}/views/{view_logical_name}",
             get(handlers::apps::workspace_get_view_handler),
         )
         .route(
-            "/api/workspace/apps/{app_logical_name}/entities/{entity_logical_name}/records",
+            "/workspace/apps/{app_logical_name}/entities/{entity_logical_name}/records",
             get(handlers::apps::workspace_list_records_handler)
                 .post(handlers::apps::workspace_create_record_handler),
         )
         .route(
-            "/api/workspace/apps/{app_logical_name}/entities/{entity_logical_name}/records/query",
+            "/workspace/apps/{app_logical_name}/entities/{entity_logical_name}/records/query",
             post(handlers::apps::workspace_query_records_handler),
         )
         .route(
-            "/api/workspace/apps/{app_logical_name}/entities/{entity_logical_name}/records/{record_id}",
+            "/workspace/apps/{app_logical_name}/entities/{entity_logical_name}/records/{record_id}",
             get(handlers::apps::workspace_get_record_handler)
                 .put(handlers::apps::workspace_update_record_handler)
                 .delete(handlers::apps::workspace_delete_record_handler),
         )
         .route(
-            "/api/entities",
+            "/entities",
             get(handlers::entities::list_entities_handler)
                 .post(handlers::entities::create_entity_handler),
         )
         .route(
-            "/api/entities/{entity_logical_name}",
+            "/entities/{entity_logical_name}",
             put(handlers::entities::update_entity_handler),
         )
         .route(
-            "/api/entities/{entity_logical_name}/fields",
+            "/entities/{entity_logical_name}/fields",
             get(handlers::entities::list_fields_handler)
                 .post(handlers::entities::save_field_handler),
         )
         .route(
-            "/api/entities/{entity_logical_name}/fields/{field_logical_name}",
+            "/entities/{entity_logical_name}/fields/{field_logical_name}",
             put(handlers::entities::update_field_handler)
                 .delete(handlers::entities::delete_field_handler),
         )
         .route(
-            "/api/entities/{entity_logical_name}/option-sets",
+            "/entities/{entity_logical_name}/option-sets",
             get(handlers::entities::list_option_sets_handler)
                 .post(handlers::entities::save_option_set_handler),
         )
         .route(
-            "/api/entities/{entity_logical_name}/option-sets/{option_set_logical_name}",
+            "/entities/{entity_logical_name}/option-sets/{option_set_logical_name}",
             get(handlers::entities::get_option_set_handler)
                 .put(handlers::entities::update_option_set_handler)
                 .delete(handlers::entities::delete_option_set_handler),
         )
         .route(
-            "/api/entities/{entity_logical_name}/forms",
+            "/entities/{entity_logical_name}/forms",
             get(handlers::entities::list_forms_handler)
                 .post(handlers::entities::save_form_handler),
         )
         .route(
-            "/api/entities/{entity_logical_name}/forms/{form_logical_name}",
+            "/entities/{entity_logical_name}/forms/{form_logical_name}",
             get(handlers::entities::get_form_handler)
                 .put(handlers::entities::update_form_handler)
                 .delete(handlers::entities::delete_form_handler),
         )
         .route(
-            "/api/entities/{entity_logical_name}/views",
+            "/entities/{entity_logical_name}/views",
             get(handlers::entities::list_views_handler)
                 .post(handlers::entities::save_view_handler),
         )
         .route(
-            "/api/entities/{entity_logical_name}/views/{view_logical_name}",
+            "/entities/{entity_logical_name}/views/{view_logical_name}",
             get(handlers::entities::get_view_handler)
                 .put(handlers::entities::update_view_handler)
                 .delete(handlers::entities::delete_view_handler),
         )
         .route(
-            "/api/entities/{entity_logical_name}/business-rules",
+            "/entities/{entity_logical_name}/business-rules",
             get(handlers::entities::list_business_rules_handler)
                 .post(handlers::entities::save_business_rule_handler),
         )
         .route(
-            "/api/entities/{entity_logical_name}/business-rules/{business_rule_logical_name}",
+            "/entities/{entity_logical_name}/business-rules/{business_rule_logical_name}",
             get(handlers::entities::get_business_rule_handler)
                 .put(handlers::entities::update_business_rule_handler)
                 .delete(handlers::entities::delete_business_rule_handler),
         )
         .route(
-            "/api/entities/{entity_logical_name}/publish",
+            "/entities/{entity_logical_name}/publish",
             post(handlers::entities::publish_entity_handler),
         )
         .route(
-            "/api/entities/{entity_logical_name}/publish-checks",
+            "/entities/{entity_logical_name}/publish-checks",
             get(handlers::entities::publish_checks_handler),
         )
         .route(
-            "/api/entities/{entity_logical_name}/published",
+            "/entities/{entity_logical_name}/published",
             get(handlers::entities::latest_published_schema_handler),
         )
         .route(
-            "/api/publish/checks",
+            "/publish/checks",
             get(handlers::publish::workspace_publish_checks_handler)
                 .post(handlers::publish::run_workspace_publish_handler),
         )
         .route(
-            "/api/publish/history",
+            "/publish/history",
             get(handlers::publish::workspace_publish_history_handler),
         )
         .route(
-            "/api/publish/diff",
+            "/publish/diff",
             post(handlers::publish::workspace_publish_diff_handler),
         )
         .route(
-            "/api/search/qrywell",
+            "/portability/export",
+            get(handlers::portability::export_workspace_bundle_handler),
+        )
+        .route(
+            "/portability/import",
+            post(handlers::portability::import_workspace_bundle_handler),
+        )
+        .route(
+            "/extensions",
+            get(handlers::extensions::list_extensions_handler)
+                .post(handlers::extensions::create_extension_handler),
+        )
+        .route(
+            "/extensions/{extension_logical_name}/publish",
+            post(handlers::extensions::publish_extension_handler),
+        )
+        .route(
+            "/extensions/{extension_logical_name}/disable",
+            post(handlers::extensions::disable_extension_handler),
+        )
+        .route(
+            "/extensions/{extension_logical_name}/compatibility",
+            post(handlers::extensions::extension_compatibility_handler),
+        )
+        .route(
+            "/extensions/{extension_logical_name}/execute",
+            post(handlers::extensions::execute_extension_action_handler),
+        )
+        .route(
+            "/search/qrywell",
             post(handlers::search::qrywell_search_handler),
         )
         .route(
-            "/api/search/qrywell/events/click",
+            "/search/qrywell/events/click",
             post(handlers::search::qrywell_search_click_event_handler),
         )
         .route(
-            "/api/search/qrywell/queue-health",
+            "/search/qrywell/queue-health",
             get(handlers::search::qrywell_sync_health_handler),
         )
         .route(
-            "/api/search/qrywell/analytics",
+            "/search/qrywell/analytics",
             get(handlers::search::qrywell_search_analytics_handler),
         )
         .route(
-            "/api/search/qrywell/sync/{entity_logical_name}",
+            "/search/qrywell/sync/{entity_logical_name}",
             post(handlers::search::qrywell_sync_entity_handler),
         )
         .route(
-            "/api/search/qrywell/sync-all",
+            "/search/qrywell/sync-all",
             post(handlers::search::qrywell_sync_all_handler),
         )
         .route(
-            "/api/runtime/{entity_logical_name}/records",
+            "/runtime/{entity_logical_name}/records",
             get(handlers::runtime::list_runtime_records_handler)
                 .post(handlers::runtime::create_runtime_record_handler),
         )
         .route(
-            "/api/runtime/{entity_logical_name}/records/query",
+            "/runtime/{entity_logical_name}/records/query",
             post(handlers::runtime::query_runtime_records_handler),
         )
         .route(
-            "/api/runtime/{entity_logical_name}/business-rules",
+            "/runtime/{entity_logical_name}/business-rules",
             get(handlers::runtime::list_runtime_business_rules_handler),
         )
         .route(
-            "/api/runtime/{entity_logical_name}/records/{record_id}",
+            "/runtime/{entity_logical_name}/records/{record_id}",
             get(handlers::runtime::get_runtime_record_handler)
                 .put(handlers::runtime::update_runtime_record_handler)
                 .delete(handlers::runtime::delete_runtime_record_handler),
         )
         .route(
-            "/api/security/roles",
+            "/security/roles",
             get(handlers::security::list_roles_handler)
                 .post(handlers::security::create_role_handler),
         )
         .route(
-            "/api/security/role-assignments",
+            "/security/role-assignments",
             get(handlers::security::list_role_assignments_handler)
                 .post(handlers::security::assign_role_handler),
         )
         .route(
-            "/api/security/role-unassignments",
+            "/security/role-unassignments",
             post(handlers::security::unassign_role_handler),
         )
         .route(
-            "/api/security/audit-log",
+            "/security/audit-log",
             get(handlers::security::list_audit_log_handler),
         )
         .route(
-            "/api/security/audit-log/export",
+            "/security/audit-log/export",
             get(handlers::security::export_audit_log_handler),
         )
         .route(
-            "/api/security/audit-log/purge",
+            "/security/audit-log/purge",
             post(handlers::security::purge_audit_log_handler),
         )
         .route(
-            "/api/security/registration-mode",
+            "/security/registration-mode",
             get(handlers::security::registration_mode_handler)
                 .put(handlers::security::update_registration_mode_handler),
         )
         .route(
-            "/api/security/audit-retention-policy",
+            "/security/audit-retention-policy",
             get(handlers::security::audit_retention_policy_handler)
                 .put(handlers::security::update_audit_retention_policy_handler),
         )
         .route(
-            "/api/security/runtime-field-permissions",
+            "/security/runtime-field-permissions",
             get(handlers::security::list_runtime_field_permissions_handler)
                 .put(handlers::security::save_runtime_field_permissions_handler),
         )
         .route(
-            "/api/security/temporary-access-grants",
+            "/security/temporary-access-grants",
             get(handlers::security::list_temporary_access_grants_handler)
                 .post(handlers::security::create_temporary_access_grant_handler),
         )
         .route(
-            "/api/security/temporary-access-grants/{grant_id}/revoke",
+            "/security/temporary-access-grants/{grant_id}/revoke",
             post(handlers::security::revoke_temporary_access_grant_handler),
         )
+        .route("/profile/password", put(auth::change_password_handler))
+}
+
+fn build_authenticated_auth_routes() -> Router<AppState> {
+    Router::new()
         .route("/auth/me", get(auth::me_handler))
         .route(
             "/auth/webauthn/register/start",
@@ -295,7 +341,6 @@ pub(super) fn build_protected_routes() -> Router<AppState> {
             "/auth/webauthn/register/finish",
             post(auth::webauthn_registration_finish_handler),
         )
-        .route("/api/profile/password", put(auth::change_password_handler))
         .route("/auth/mfa/totp/enroll", post(auth::mfa_enroll_handler))
         .route("/auth/mfa/totp/confirm", post(auth::mfa_confirm_handler))
         .route("/auth/mfa/totp", delete(auth::mfa_disable_handler))
@@ -308,5 +353,4 @@ pub(super) fn build_protected_routes() -> Router<AppState> {
             post(auth::resend_verification_handler),
         )
         .route("/auth/invite", post(auth::send_invite_handler))
-        .route_layer(from_fn(middleware::require_auth))
 }

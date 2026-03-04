@@ -1,0 +1,83 @@
+---
+title: Migration and Rollback
+description: Forward migration checks and backup-restore rollback runbook for self-hosted operators.
+---
+
+Qryvanta migrations are forward-only SQL files.
+Rollback strategy is backup restore plus redeploy of the previous known-good release.
+
+## Production Policy
+
+1. Take a database backup before deploying a release with new migrations.
+2. Apply migrations once per environment.
+3. Run application smoke checks before opening traffic.
+4. Keep rollback owner and rollback window explicit in the release plan.
+
+## Zero-Downtime Schema Pattern
+
+Use an `expand -> migrate -> contract` sequence for schema changes that affect live traffic.
+
+1. Expand:
+   - Add new nullable columns or additive tables/indexes.
+   - Keep old read/write paths working.
+2. Migrate:
+   - Backfill data in controlled batches.
+   - Deploy application code that reads/writes both old and new shapes where needed.
+3. Contract:
+   - Remove old paths only after runtime confirms no reads/writes depend on them.
+   - Run destructive cleanup in a separate, explicitly reviewed migration window.
+
+### Blocked in Forward Migrations by Default
+
+- `DROP TABLE`
+- `DROP COLUMN`
+- `RENAME COLUMN`
+- `ALTER TABLE ... ALTER COLUMN ... SET NOT NULL`
+- `ADD COLUMN ... NOT NULL` without `DEFAULT`
+
+These patterns are guarded in CI by `.github/scripts/verify-zero-downtime-migrations.sh` for new migrations.
+If an exceptional change is required, annotate that specific SQL line with `-- qv:allow-non-zdt` and document operator mitigation in the release plan.
+
+## Forward Migration Procedure
+
+1. Stop write traffic or enter maintenance mode for the tenant scope.
+2. Run API migration command:
+
+```bash
+cargo run -p qryvanta-api -- migrate
+```
+
+3. Start API/worker processes on the new release.
+4. Validate health and publish/runtime flows:
+   - `GET /health`
+   - Maker publish checks
+   - Worker record create/update path
+
+## Rollback Procedure (Backup Restore)
+
+Use this only when migration-era issues cannot be mitigated in place.
+
+1. Stop API and worker write traffic.
+2. Redeploy previous application version (without opening writes yet).
+3. Restore pre-release backup into the target database.
+4. Run application migration command from previous release image.
+5. Verify:
+   - `_sqlx_migrations` table is readable.
+   - Critical tables exist (`entity_definitions`, `runtime_records`, auth/session tables).
+   - Health endpoint is `ready=true`.
+6. Reopen traffic after smoke tests pass.
+
+## Automated Drill in CI
+
+The CI migration job runs a rollback simulation:
+
+1. Apply migrations on a fresh database.
+2. Create a backup artifact (`pg_dump` custom format).
+3. Inject probe mutations.
+4. Restore backup into a new database (`pg_restore --clean --if-exists`).
+5. Assert probe artifacts are removed and migration replay stays idempotent.
+
+Script location:
+
+- `.github/scripts/migration-drill.sh`
+- `.github/scripts/verify-zero-downtime-migrations.sh`

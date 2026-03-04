@@ -172,6 +172,46 @@ pub struct WorkflowRunStepTrace {
     pub duration_ms: Option<u64>,
 }
 
+/// Reconstructed deterministic replay model for one workflow run.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WorkflowRunReplay {
+    /// Persisted run record.
+    pub run: WorkflowRun,
+    /// Ordered run attempts.
+    pub attempts: Vec<WorkflowRunAttempt>,
+    /// Flattened ordered timeline derived from attempt step traces.
+    pub timeline: Vec<WorkflowRunReplayTimelineEvent>,
+    /// Stable SHA-256 checksum over replay content.
+    pub checksum_sha256: String,
+}
+
+/// One flattened replay timeline event.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WorkflowRunReplayTimelineEvent {
+    /// 1-based deterministic sequence value within one replay.
+    pub sequence: u64,
+    /// Attempt sequence this event belongs to.
+    pub attempt_number: i32,
+    /// Attempt status captured with this event.
+    pub attempt_status: WorkflowRunAttemptStatus,
+    /// Attempt execution timestamp.
+    pub attempt_executed_at: DateTime<Utc>,
+    /// Deterministic step path within workflow graph.
+    pub step_path: String,
+    /// Step type that executed.
+    pub step_type: String,
+    /// Step status value.
+    pub status: String,
+    /// Input payload observed at this step.
+    pub input_payload: Value,
+    /// Output payload produced by this step.
+    pub output_payload: Value,
+    /// Optional error message for failed steps.
+    pub error_message: Option<String>,
+    /// Duration spent executing this step in milliseconds.
+    pub duration_ms: Option<u64>,
+}
+
 /// Internal run creation payload for repository implementations.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CreateWorkflowRunInput {

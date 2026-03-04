@@ -8,6 +8,8 @@ mod auth_event_service;
 mod auth_token_service;
 mod authorization_service;
 mod contact_bootstrap_service;
+mod extension_ports;
+mod extension_service;
 mod metadata_ports;
 mod metadata_service;
 mod mfa_service;
@@ -33,6 +35,13 @@ pub use authorization_service::{
     TemporaryPermissionGrant,
 };
 pub use contact_bootstrap_service::ContactBootstrapService;
+pub use extension_ports::{
+    ExecuteExtensionActionInput, ExtensionActionResult, ExtensionActionType, ExtensionRepository,
+    ExtensionRuntime, RuntimeExtensionActionRequest,
+};
+pub use extension_service::{
+    ExtensionCompatibilityReport, ExtensionService, RegisterExtensionInput,
+};
 pub use metadata_ports::{
     AuditEvent, AuditRepository, MetadataComponentsRepository, MetadataDefinitionsRepository,
     MetadataPublishRepository, MetadataRepository, MetadataRepositoryByConcern,
@@ -43,7 +52,11 @@ pub use metadata_ports::{
     SaveOptionSetInput, SaveViewInput, TenantRepository, UniqueFieldValue, UpdateEntityInput,
     UpdateFieldInput,
 };
-pub use metadata_service::MetadataService;
+pub use metadata_service::{
+    ExportWorkspaceBundleOptions, ImportWorkspaceBundleOptions, ImportWorkspaceBundleResult,
+    MetadataService, PortableEntityBundle, PortableRuntimeRecord, WorkspacePortableBundle,
+    WorkspacePortablePayload,
+};
 pub use mfa_service::{MfaService, SecretEncryptor, TotpEnrollment, TotpProvider};
 pub use rate_limit_service::{AttemptInfo, RateLimitRepository, RateLimitRule, RateLimitService};
 pub use security_admin_ports::{
@@ -62,7 +75,8 @@ pub use workflow_ports::{
     WorkflowActionDispatchRequest, WorkflowActionDispatchType, WorkflowActionDispatcher,
     WorkflowClaimPartition, WorkflowExecutionMode, WorkflowQueueStats, WorkflowQueueStatsCache,
     WorkflowQueueStatsQuery, WorkflowRepository, WorkflowRun, WorkflowRunAttempt,
-    WorkflowRunAttemptStatus, WorkflowRunListQuery, WorkflowRunStatus, WorkflowRunStepTrace,
+    WorkflowRunAttemptStatus, WorkflowRunListQuery, WorkflowRunReplay,
+    WorkflowRunReplayTimelineEvent, WorkflowRunStatus, WorkflowRunStepTrace,
     WorkflowRuntimeRecordService, WorkflowWorkerHeartbeatInput, WorkflowWorkerLease,
     WorkflowWorkerLeaseCoordinator,
 };

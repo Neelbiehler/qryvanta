@@ -37,6 +37,24 @@ pub enum SessionStoreBackend {
     Redis,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PhysicalIsolationMode {
+    Shared,
+    TenantPerSchema,
+    TenantPerDatabase,
+}
+
+impl PhysicalIsolationMode {
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Shared => "shared",
+            Self::TenantPerSchema => "tenant_per_schema",
+            Self::TenantPerDatabase => "tenant_per_database",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ApiConfig {
     pub migrate_only: bool,
@@ -62,6 +80,16 @@ pub struct ApiConfig {
     pub workflow_worker_max_claim_limit: usize,
     pub workflow_worker_max_partition_count: u32,
     pub workflow_queue_stats_cache_ttl_seconds: u32,
+    pub runtime_query_max_limit: usize,
+    pub runtime_query_max_in_flight: usize,
+    pub workflow_burst_max_in_flight: usize,
+    pub audit_immutable_mode: bool,
+    pub slow_request_threshold_ms: u64,
+    pub slow_query_threshold_ms: u64,
+    pub physical_isolation_mode: PhysicalIsolationMode,
+    pub physical_isolation_tenant_id: Option<TenantId>,
+    pub physical_isolation_schema_template: Option<String>,
+    pub physical_isolation_database_url_template: Option<String>,
     pub qrywell_api_base_url: Option<String>,
     pub qrywell_api_key: Option<String>,
     pub qrywell_sync_poll_interval_ms: u64,

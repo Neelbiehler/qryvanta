@@ -1,0 +1,61 @@
+---
+title: Extension Operations
+description: API flow for registering, publishing, validating, and executing extensions.
+---
+
+Use this page for extension runtime operations in self-hosted environments.
+
+Extension definitions are persisted in Postgres (`extension_definitions` table). Lifecycle and policy state survives API restarts.
+
+## API Endpoints
+
+Protected extension endpoints:
+
+- `GET /api/extensions`
+- `POST /api/extensions`
+- `POST /api/extensions/{extension_logical_name}/publish`
+- `POST /api/extensions/{extension_logical_name}/disable`
+- `POST /api/extensions/{extension_logical_name}/compatibility`
+- `POST /api/extensions/{extension_logical_name}/execute`
+
+## Registration Flow
+
+1. Register extension with manifest, capabilities, isolation profile, and package checksum.
+2. Run compatibility check against target platform API versions.
+3. Publish extension.
+4. Execute controlled action probes.
+
+## Isolation Checklist
+
+Validate extension manifests before publishing:
+
+- Memory budget is set and realistic for workload.
+- CPU time budget is set with fail-fast expectations.
+- Storage budget is constrained.
+- Network access is disabled by default.
+- If network is enabled, hosts are explicitly allowlisted.
+
+## Compatibility Gate
+
+Use compatibility endpoint as release gate:
+
+- Check all production target platform versions.
+- Block rollout if any version is incompatible.
+- Keep extension package/runtime API versions tracked with release notes.
+
+## Execution Guardrails
+
+Execution requests must:
+
+- Match requested action to granted capability.
+- Stay within isolation policy limits.
+- Respect network/host restrictions.
+- Run only while extension lifecycle is `published`.
+
+## Incident Response
+
+If extension behavior is suspicious:
+
+1. Disable extension via lifecycle endpoint.
+2. Review extension manifest capabilities and isolation profile.
+3. Re-run compatibility checks before re-publish.

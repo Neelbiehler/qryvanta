@@ -1,6 +1,8 @@
 pub mod apps;
 pub mod entities;
+pub mod extensions;
 pub mod health;
+pub mod portability;
 pub mod publish;
 pub mod runtime;
 pub mod search;

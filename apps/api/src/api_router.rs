@@ -40,6 +40,7 @@ where
 
     Ok(Router::new()
         .route("/health", get(handlers::health::health_handler))
+        .route("/metrics", get(handlers::health::metrics_handler))
         .route("/auth/bootstrap", post(auth::bootstrap_handler))
         .merge(login_routes)
         .merge(register_routes)
@@ -52,6 +53,10 @@ where
         .route_layer(from_fn_with_state(
             app_state.clone(),
             middleware::require_same_origin_for_mutations,
+        ))
+        .layer(from_fn_with_state(
+            app_state.clone(),
+            middleware::trace_and_observe,
         ))
         .layer(TraceLayer::new_for_http())
         .layer(cors_layer)

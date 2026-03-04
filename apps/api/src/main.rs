@@ -11,12 +11,14 @@ mod dto;
 mod error;
 mod handlers;
 mod middleware;
+mod observability;
 mod qrywell_sync;
 mod redis_session_store;
 mod state;
 
 use qryvanta_core::AppError;
 use tracing::info;
+use uuid::Uuid;
 
 use crate::api_config::SessionStoreBackend;
 
@@ -24,9 +26,17 @@ use crate::api_config::SessionStoreBackend;
 async fn main() -> Result<(), AppError> {
     dotenvy::dotenv().ok();
     api_config::init_tracing();
-    let command = std::env::args().nth(1);
+    let args = std::env::args().collect::<Vec<_>>();
+    let command = args.get(1).map(String::as_str);
 
     let config = api_config::ApiConfig::load()?;
+    info!(
+        physical_isolation_mode = %config.physical_isolation_mode.as_str(),
+        physical_isolation_tenant_id = config.physical_isolation_tenant_id.map(|value| value.to_string()),
+        physical_isolation_schema_template_configured = config.physical_isolation_schema_template.is_some(),
+        physical_isolation_database_url_template_configured = config.physical_isolation_database_url_template.is_some(),
+        "physical isolation profile configured"
+    );
 
     let pool = api_services::connect_and_migrate(&config.database_url).await?;
     if config.migrate_only {
@@ -34,8 +44,18 @@ async fn main() -> Result<(), AppError> {
         return Ok(());
     }
 
-    if command.as_deref() == Some("seed-dev") {
+    if command == Some("seed-dev") {
         dev_seed::run(pool, &config).await?;
+        return Ok(());
+    }
+
+    if command == Some("portability-export") {
+        run_portability_export(&config, pool, &args).await?;
+        return Ok(());
+    }
+
+    if command == Some("portability-import") {
+        run_portability_import(&config, pool, &args).await?;
         return Ok(());
     }
 
@@ -69,4 +89,139 @@ async fn main() -> Result<(), AppError> {
     axum::serve(listener, app)
         .await
         .map_err(|error| AppError::Internal(format!("api server error: {error}")))
+}
+
+async fn run_portability_export(
+    config: &api_config::ApiConfig,
+    pool: sqlx::PgPool,
+    args: &[String],
+) -> Result<(), AppError> {
+    let output_path = required_arg_value(args, "--output")?;
+    let tenant_id = parse_tenant_id(required_arg_value(args, "--tenant-id")?)?;
+    let subject =
+        optional_arg_value(args, "--subject").unwrap_or_else(|| "portability-cli".to_owned());
+    let display_name =
+        optional_arg_value(args, "--display-name").unwrap_or_else(|| subject.clone());
+    let metadata_only = has_flag(args, "--metadata-only");
+    let runtime_only = has_flag(args, "--runtime-only");
+
+    if metadata_only && runtime_only {
+        return Err(AppError::Validation(
+            "cannot combine --metadata-only and --runtime-only".to_owned(),
+        ));
+    }
+
+    let include_metadata = !runtime_only;
+    let include_runtime_data = !metadata_only;
+
+    let state = api_services::build_app_state(pool, config)?;
+    let actor = qryvanta_core::UserIdentity::new(subject, display_name, None, tenant_id);
+
+    let bundle = state
+        .metadata_service
+        .export_workspace_bundle(
+            &actor,
+            qryvanta_application::ExportWorkspaceBundleOptions {
+                include_metadata,
+                include_runtime_data,
+            },
+        )
+        .await?;
+
+    let encoded = serde_json::to_vec_pretty(&bundle).map_err(|error| {
+        AppError::Internal(format!("failed to serialize export bundle: {error}"))
+    })?;
+    std::fs::write(output_path.as_str(), encoded).map_err(|error| {
+        AppError::Internal(format!(
+            "failed to write export bundle '{}': {error}",
+            output_path
+        ))
+    })?;
+
+    info!(output_path = %output_path, "workspace portability export completed");
+    Ok(())
+}
+
+async fn run_portability_import(
+    config: &api_config::ApiConfig,
+    pool: sqlx::PgPool,
+    args: &[String],
+) -> Result<(), AppError> {
+    let input_path = required_arg_value(args, "--input")?;
+    let tenant_id = parse_tenant_id(required_arg_value(args, "--tenant-id")?)?;
+    let subject =
+        optional_arg_value(args, "--subject").unwrap_or_else(|| "portability-cli".to_owned());
+    let display_name =
+        optional_arg_value(args, "--display-name").unwrap_or_else(|| subject.clone());
+    let dry_run = has_flag(args, "--dry-run");
+    let skip_metadata = has_flag(args, "--skip-metadata");
+    let skip_runtime = has_flag(args, "--skip-runtime");
+    let remap_record_ids = has_flag(args, "--remap-record-ids");
+
+    if skip_metadata && skip_runtime {
+        return Err(AppError::Validation(
+            "cannot combine --skip-metadata and --skip-runtime".to_owned(),
+        ));
+    }
+
+    let raw_bundle = std::fs::read_to_string(input_path.as_str()).map_err(|error| {
+        AppError::Internal(format!(
+            "failed to read import bundle '{}': {error}",
+            input_path
+        ))
+    })?;
+    let bundle: qryvanta_application::WorkspacePortableBundle = serde_json::from_str(&raw_bundle)
+        .map_err(|error| {
+        AppError::Validation(format!(
+            "invalid import bundle JSON in '{}': {error}",
+            input_path
+        ))
+    })?;
+
+    let state = api_services::build_app_state(pool, config)?;
+    let actor = qryvanta_core::UserIdentity::new(subject, display_name, None, tenant_id);
+
+    let summary = state
+        .metadata_service
+        .import_workspace_bundle(
+            &actor,
+            bundle,
+            qryvanta_application::ImportWorkspaceBundleOptions {
+                dry_run,
+                import_metadata: !skip_metadata,
+                import_runtime_data: !skip_runtime,
+                remap_record_ids,
+            },
+        )
+        .await?;
+
+    let summary_json = serde_json::to_string_pretty(&summary).map_err(|error| {
+        AppError::Internal(format!("failed to serialize import summary: {error}"))
+    })?;
+    println!("{summary_json}");
+
+    info!("workspace portability import command completed");
+    Ok(())
+}
+
+fn required_arg_value(args: &[String], flag: &str) -> Result<String, AppError> {
+    optional_arg_value(args, flag)
+        .ok_or_else(|| AppError::Validation(format!("missing required argument {flag}")))
+}
+
+fn optional_arg_value(args: &[String], flag: &str) -> Option<String> {
+    args.iter()
+        .position(|argument| argument == flag)
+        .and_then(|index| args.get(index + 1))
+        .map(ToOwned::to_owned)
+}
+
+fn has_flag(args: &[String], flag: &str) -> bool {
+    args.iter().any(|argument| argument == flag)
+}
+
+fn parse_tenant_id(value: String) -> Result<qryvanta_core::TenantId, AppError> {
+    let uuid = Uuid::parse_str(value.as_str())
+        .map_err(|error| AppError::Validation(format!("invalid tenant id '{}': {error}", value)))?;
+    Ok(qryvanta_core::TenantId::from_uuid(uuid))
 }

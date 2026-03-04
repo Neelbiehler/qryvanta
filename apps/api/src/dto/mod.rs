@@ -2,6 +2,8 @@ mod apps;
 mod auth;
 mod common;
 mod entities;
+mod extensions;
+mod portability;
 mod publish;
 pub(crate) mod runtime;
 mod search;
@@ -26,6 +28,15 @@ pub use entities::{
     CreateFormRequest, CreateOptionSetRequest, CreateViewRequest, EntityResponse, FieldResponse,
     FormResponse, OptionSetResponse, PublishChecksResponse, PublishedSchemaResponse,
     UpdateEntityRequest, UpdateFieldRequest, ViewResponse,
+};
+pub use extensions::{
+    CreateExtensionRequest, ExecuteExtensionActionRequest, ExecuteExtensionActionResponse,
+    ExtensionCompatibilityRequest, ExtensionCompatibilityResponse, ExtensionIsolationPolicyDto,
+    ExtensionResponse,
+};
+pub use portability::{
+    ImportWorkspacePortableBundleRequest, ImportWorkspacePortableBundleResponse,
+    WorkspacePortableBundleResponse,
 };
 pub use publish::{
     AppBindingDiffResponse, AppPublishDiffResponse, EntityPublishDiffResponse,
@@ -58,8 +69,11 @@ pub use security::{
 pub use workflows::{
     DispatchScheduleTriggerRequest, ExecuteWorkflowRequest, RetryWorkflowStepRequest,
     RetryWorkflowStepStrategyDto, SaveWorkflowRequest, WorkflowResponse,
-    WorkflowRunAttemptResponse, WorkflowRunResponse,
+    WorkflowRunAttemptResponse, WorkflowRunReplayResponse, WorkflowRunResponse,
 };
+
+#[cfg(test)]
+pub use workflows::WorkflowRunReplayTimelineEventResponse;
 
 #[cfg(test)]
 mod tests {
@@ -75,11 +89,14 @@ mod tests {
         AssignRoleRequest, AuditLogEntryResponse, AuditPurgeResultResponse,
         AuditRetentionPolicyResponse, AuthLoginRequest, AuthLoginResponse, AuthMfaVerifyRequest,
         AuthRegisterRequest, BindAppEntityRequest, BusinessRuleResponse, CreateAppRequest,
-        CreateBusinessRuleRequest, CreateEntityRequest, CreateFieldRequest, CreateFormRequest,
-        CreateOptionSetRequest, CreateRoleRequest, CreateRuntimeRecordRequest,
+        CreateBusinessRuleRequest, CreateEntityRequest, CreateExtensionRequest, CreateFieldRequest,
+        CreateFormRequest, CreateOptionSetRequest, CreateRoleRequest, CreateRuntimeRecordRequest,
         CreateTemporaryAccessGrantRequest, CreateViewRequest, DispatchScheduleTriggerRequest,
-        EntityResponse, ExecuteWorkflowRequest, FieldResponse, FormResponse,
-        GenericMessageResponse, HealthResponse, InviteRequest, OptionSetResponse,
+        EntityResponse, ExecuteExtensionActionRequest, ExecuteExtensionActionResponse,
+        ExecuteWorkflowRequest, ExtensionCompatibilityRequest, ExtensionCompatibilityResponse,
+        ExtensionIsolationPolicyDto, ExtensionResponse, FieldResponse, FormResponse,
+        GenericMessageResponse, HealthResponse, ImportWorkspacePortableBundleRequest,
+        ImportWorkspacePortableBundleResponse, InviteRequest, OptionSetResponse,
         PublishCheckCategoryDto, PublishCheckIssueResponse, PublishCheckScopeDto,
         PublishCheckSeverityDto, PublishChecksResponse, PublishSurfaceDeltaItemResponse,
         PublishedSchemaResponse, QrywellSearchAnalyticsResponse, QrywellSearchClickEventRequest,
@@ -95,8 +112,9 @@ mod tests {
         TenantRegistrationModeResponse, UpdateAuditRetentionPolicyRequest, UpdateEntityRequest,
         UpdateFieldRequest, UpdateRuntimeRecordRequest, UpdateTenantRegistrationModeRequest,
         UserIdentityResponse, ViewResponse, WorkflowResponse, WorkflowRunAttemptResponse,
-        WorkflowRunResponse, WorkspaceDashboardResponse, WorkspacePublishChecksResponse,
-        WorkspacePublishDiffRequest, WorkspacePublishDiffResponse,
+        WorkflowRunReplayResponse, WorkflowRunReplayTimelineEventResponse, WorkflowRunResponse,
+        WorkspaceDashboardResponse, WorkspacePortableBundleResponse,
+        WorkspacePublishChecksResponse, WorkspacePublishDiffRequest, WorkspacePublishDiffResponse,
         WorkspacePublishHistoryEntryResponse,
     };
 
@@ -146,6 +164,16 @@ mod tests {
         super::runtime::RuntimeRecordQueryLinkEntityRequest::export(&config)?;
         super::runtime::RuntimeRecordQuerySortRequest::export(&config)?;
         QueryRuntimeRecordsRequest::export(&config)?;
+        CreateExtensionRequest::export(&config)?;
+        ExtensionIsolationPolicyDto::export(&config)?;
+        ExtensionResponse::export(&config)?;
+        ExtensionCompatibilityRequest::export(&config)?;
+        ExtensionCompatibilityResponse::export(&config)?;
+        ExecuteExtensionActionRequest::export(&config)?;
+        ExecuteExtensionActionResponse::export(&config)?;
+        WorkspacePortableBundleResponse::export(&config)?;
+        ImportWorkspacePortableBundleRequest::export(&config)?;
+        ImportWorkspacePortableBundleResponse::export(&config)?;
         QrywellSearchRequest::export(&config)?;
         QrywellSearchClickEventRequest::export(&config)?;
         QrywellSyncRequest::export(&config)?;
@@ -199,6 +227,8 @@ mod tests {
         WorkflowResponse::export(&config)?;
         WorkflowRunResponse::export(&config)?;
         WorkflowRunAttemptResponse::export(&config)?;
+        WorkflowRunReplayResponse::export(&config)?;
+        WorkflowRunReplayTimelineEventResponse::export(&config)?;
         super::workflows::WorkflowRunStepTraceResponse::export(&config)?;
         RoleResponse::export(&config)?;
         RoleAssignmentResponse::export(&config)?;

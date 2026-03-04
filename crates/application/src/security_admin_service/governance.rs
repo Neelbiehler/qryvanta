@@ -155,6 +155,12 @@ impl SecurityAdminService {
     ) -> AppResult<AuditPurgeResult> {
         self.require_role_manage_permission(actor).await?;
 
+        if self.audit_immutable_mode {
+            return Err(qryvanta_core::AppError::Forbidden(
+                "audit log is immutable; purge is disabled".to_owned(),
+            ));
+        }
+
         let policy = self
             .repository
             .audit_retention_policy(actor.tenant_id())

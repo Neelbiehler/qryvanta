@@ -29,7 +29,9 @@ Request body:
 {
   "schedule_key": "hourly",
   "payload": {
-    "tick_at": "2026-03-01T00:00:00Z"
+    "tick_at": "2026-03-01T00:00:00+00:00",
+    "timezone": "UTC",
+    "source": "scheduler-primary"
   }
 }
 ```
@@ -38,6 +40,14 @@ Notes:
 
 - Endpoint requires authenticated protected API access.
 - Use stable schedule keys like `hourly`, `daily`, or tenant-specific keys such as `tenant_a_daily_0900_utc`.
+- `payload.tick_at` (or legacy alias `payload.tick`) should be RFC3339; runtime normalizes to UTC.
+- Workflow trigger payload includes deterministic schedule fields:
+  - `tick_at_utc`
+  - `tick_source` (`payload` or `system_clock`)
+  - `timezone`
+  - `clock_skew_seconds`
+  - `clock_skew_tolerance_seconds`
+  - `clock_skew_within_tolerance`
 
 ## Outbound Integration Actions
 
@@ -88,6 +98,25 @@ Use workflow tokens to build outbound payloads:
 - `{{now.iso}}`
 
 Prefer including `{{run.id}}` and business record ids in external payloads for supportability.
+
+## Deterministic Replay
+
+Use replay output to reconstruct one workflow run from persisted execution history:
+
+- `GET /api/workflows/{workflow_logical_name}/runs/{run_id}/replay`
+
+Response includes:
+
+- Run snapshot (`run`)
+- Ordered attempts (`attempts`)
+- Flattened deterministic timeline (`timeline`)
+- Stable checksum (`checksum_sha256`) for replay integrity checks
+
+Operational guidance:
+
+1. Capture `checksum_sha256` in incident tickets when coordinating across teams.
+2. Compare checksums before/after export/import validation to confirm replay-equivalent history.
+3. Use `timeline` sequence values for deterministic step ordering during postmortems.
 
 ## Production Readiness Checklist
 

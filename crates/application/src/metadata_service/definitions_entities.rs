@@ -228,6 +228,18 @@ impl MetadataService {
                     field.logical_name().as_str()
                 )));
             }
+
+            if existing
+                .option_set_logical_name()
+                .map(|value| value.as_str())
+                != field.option_set_logical_name().map(|value| value.as_str())
+            {
+                return Err(AppError::Validation(format!(
+                    "option set reference cannot be changed for published field '{}.{}'",
+                    field.entity_logical_name().as_str(),
+                    field.logical_name().as_str()
+                )));
+            }
         }
 
         self.repository

@@ -1,0 +1,39 @@
+---
+title: API SDK Releases
+description: How to consume and track versioned TypeScript API contract packages.
+---
+
+Qryvanta publishes generated TypeScript transport contracts as `@qryvanta/api-types`.
+
+## Install
+
+```bash
+pnpm add @qryvanta/api-types
+```
+
+## What It Contains
+
+- Request DTO types for API endpoints.
+- Response DTO types for API endpoints.
+- Error payload transport types.
+
+These types are generated from Rust DTO definitions to keep backend and frontend/API clients aligned.
+
+## Versioning Expectations
+
+- Prefer the versioned API route prefix (`/api/v1`) for integrations.
+- SDK package major versions track API major compatibility.
+- Additive DTO updates may appear in minor or patch releases.
+- Breaking DTO/API changes are released under a new major API and SDK version.
+
+## Release Process
+
+- Changesets controls version bumps and npm publishing.
+- Release automation runs on `main` in `.github/workflows/release-packages.yml`.
+- Package publish requires a configured `NPM_TOKEN` repository secret.
+
+## Consumer Upgrade Flow
+
+1. Upgrade `@qryvanta/api-types` in your integration repository.
+2. Re-run type checks and fix compile errors.
+3. Validate critical API workflows against your target Qryvanta version.

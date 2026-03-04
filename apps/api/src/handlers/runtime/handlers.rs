@@ -89,11 +89,13 @@ pub async fn query_runtime_records_handler(
     Path(entity_logical_name): Path<String>,
     Json(payload): Json<QueryRuntimeRecordsRequest>,
 ) -> ApiResult<Json<Vec<RuntimeRecordResponse>>> {
+    let _query_permit = state.try_acquire_runtime_query_permit()?;
     let query = runtime_record_query_from_request(
         &state.metadata_service,
         &user,
         entity_logical_name.as_str(),
         payload,
+        state.runtime_query_max_limit,
     )
     .await?;
 

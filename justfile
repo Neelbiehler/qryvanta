@@ -143,6 +143,14 @@ db-reset: infra-wait
 db-shell:
     docker-compose exec postgres psql -U qryvanta -d qryvanta
 
+# Export a tenant portability bundle to JSON
+portability-export tenant_id output_path:
+    cargo run -p qryvanta-api -- portability-export --tenant-id {{tenant_id}} --output {{output_path}}
+
+# Import a tenant portability bundle from JSON
+portability-import tenant_id input_path:
+    cargo run -p qryvanta-api -- portability-import --tenant-id {{tenant_id}} --input {{input_path}}
+
 # =============================================================================
 # Setup & Maintenance
 # =============================================================================
@@ -189,6 +197,14 @@ contracts-generate:
 # Verify generated TypeScript API contracts are up to date
 contracts-check:
     pnpm contracts:check
+
+# Verify zero-downtime migration guard rules
+migration-zdt-check:
+    .github/scripts/verify-zero-downtime-migrations.sh
+
+# Run reproducible k6 load benchmarks (PERF-04)
+perf-benchmark profile='mixed' duration='90s':
+    ./scripts/perf/run-benchmarks.sh --profile {{profile}} --duration {{duration}}
 
 # Run security audit
 audit:

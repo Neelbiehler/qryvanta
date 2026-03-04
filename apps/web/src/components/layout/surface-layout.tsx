@@ -1,6 +1,7 @@
 "use client";
 
 import { Header } from "@/components/layout/header";
+import { ApiRateLimitBanner } from "@/components/layout/api-rate-limit-banner";
 import { SurfaceSidebar } from "@/components/layout/surface-sidebar";
 import { AccessDeniedCard } from "@/components/shared/access-denied-card";
 import { type UserIdentityResponse } from "@/lib/api";
@@ -83,6 +84,7 @@ export function SurfaceLayout({
           disableGlobalCommand={disableGlobalCommand}
           disableSurfaceSwitcher={disableSurfaceSwitcher}
         />
+        <ApiRateLimitBanner />
         {commandBar ? <div className="shrink-0">{commandBar}</div> : null}
         <main className={cn("flex-1 px-4 py-5 md:px-8 md:py-8", mainClassName)}>{children}</main>
       </div>

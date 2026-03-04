@@ -66,11 +66,13 @@ impl HttpWorkflowActionDispatcher {
         let body = payload.get("body").cloned().unwrap_or(Value::Null);
 
         self.dispatch_with_retry(request, |client| {
+            let trace_id = workflow_trace_id(request);
             let mut builder = client
                 .request(method.clone(), url)
                 .header("Idempotency-Key", request.idempotency_key.as_str())
                 .header("X-Qryvanta-Workflow-Run", request.run_id.as_str())
-                .header("X-Qryvanta-Workflow-Step", request.step_path.as_str());
+                .header("X-Qryvanta-Workflow-Step", request.step_path.as_str())
+                .header("X-Trace-Id", trace_id.as_str());
 
             for (key, value) in &headers {
                 if let Some(header_value) = value.as_str() {
@@ -107,11 +109,14 @@ impl HttpWorkflowActionDispatcher {
         let event_payload = payload.get("payload").cloned().unwrap_or(Value::Null);
 
         self.dispatch_with_retry(request, |client| {
+            let trace_id = workflow_trace_id(request);
             client
                 .post(endpoint)
                 .header("Idempotency-Key", request.idempotency_key.as_str())
                 .header("X-Qryvanta-Workflow-Run", request.run_id.as_str())
+                .header("X-Qryvanta-Workflow-Step", request.step_path.as_str())
                 .header("X-Qryvanta-Webhook-Event", event)
+                .header("X-Trace-Id", trace_id.as_str())
                 .json(&serde_json::json!({
                     "event": event,
                     "payload": event_payload,
@@ -202,6 +207,10 @@ impl HttpWorkflowActionDispatcher {
             "workflow external dispatch exhausted retries".to_owned()
         })))
     }
+}
+
+fn workflow_trace_id(request: &WorkflowActionDispatchRequest) -> String {
+    format!("workflow-{}-{}", request.run_id, request.step_path)
 }
 
 #[async_trait]

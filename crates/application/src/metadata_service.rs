@@ -57,6 +57,7 @@ impl EntityBusinessRuleEffects {
 mod definitions_business_rules;
 mod definitions_components;
 mod definitions_entities;
+mod portability;
 mod publish;
 mod publish_access;
 mod publish_defaults;
@@ -73,6 +74,11 @@ mod runtime_query_validation;
 mod runtime_records_read;
 mod runtime_records_write;
 mod runtime_write;
+
+pub use portability::{
+    ExportWorkspaceBundleOptions, ImportWorkspaceBundleOptions, ImportWorkspaceBundleResult,
+    PortableEntityBundle, PortableRuntimeRecord, WorkspacePortableBundle, WorkspacePortablePayload,
+};
 
 impl MetadataService {
     /// Creates a new metadata service from a repository implementation.

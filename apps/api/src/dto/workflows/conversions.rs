@@ -1,4 +1,7 @@
-use qryvanta_application::{WorkflowRun, WorkflowRunAttempt, WorkflowRunStepTrace};
+use qryvanta_application::{
+    WorkflowRun, WorkflowRunAttempt, WorkflowRunReplay, WorkflowRunReplayTimelineEvent,
+    WorkflowRunStepTrace,
+};
 use qryvanta_core::AppError;
 use qryvanta_domain::{
     WorkflowAction, WorkflowConditionOperator, WorkflowDefinition, WorkflowStep, WorkflowTrigger,
@@ -8,7 +11,8 @@ use serde_json::Value;
 
 use super::types::{
     SaveWorkflowRequest, WorkflowConditionOperatorDto, WorkflowResponse,
-    WorkflowRunAttemptResponse, WorkflowRunResponse, WorkflowRunStepTraceResponse, WorkflowStepDto,
+    WorkflowRunAttemptResponse, WorkflowRunReplayResponse, WorkflowRunReplayTimelineEventResponse,
+    WorkflowRunResponse, WorkflowRunStepTraceResponse, WorkflowStepDto,
 };
 
 impl TryFrom<SaveWorkflowRequest> for qryvanta_application::SaveWorkflowInput {
@@ -203,6 +207,43 @@ impl From<WorkflowRunStepTrace> for WorkflowRunStepTraceResponse {
             output_payload: value.output_payload,
             error_message: value.error_message,
             duration_ms: value.duration_ms,
+        }
+    }
+}
+
+impl From<WorkflowRunReplayTimelineEvent> for WorkflowRunReplayTimelineEventResponse {
+    fn from(value: WorkflowRunReplayTimelineEvent) -> Self {
+        Self {
+            sequence: value.sequence,
+            attempt_number: value.attempt_number,
+            attempt_status: value.attempt_status.as_str().to_owned(),
+            attempt_executed_at: value.attempt_executed_at.to_rfc3339(),
+            step_path: value.step_path,
+            step_type: value.step_type,
+            status: value.status,
+            input_payload: value.input_payload,
+            output_payload: value.output_payload,
+            error_message: value.error_message,
+            duration_ms: value.duration_ms,
+        }
+    }
+}
+
+impl From<WorkflowRunReplay> for WorkflowRunReplayResponse {
+    fn from(value: WorkflowRunReplay) -> Self {
+        Self {
+            run: WorkflowRunResponse::from(value.run),
+            attempts: value
+                .attempts
+                .into_iter()
+                .map(WorkflowRunAttemptResponse::from)
+                .collect(),
+            timeline: value
+                .timeline
+                .into_iter()
+                .map(WorkflowRunReplayTimelineEventResponse::from)
+                .collect(),
+            checksum_sha256: value.checksum_sha256,
         }
     }
 }

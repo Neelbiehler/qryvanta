@@ -1,0 +1,81 @@
+---
+title: Extension Runtime
+description: WASM extension lifecycle, contracts, capabilities, and isolation model.
+---
+
+Qryvanta extensions are tenant-scoped packages executed inside a WASM runtime boundary.
+
+This foundation enables extensibility without forking core services.
+
+## Runtime Architecture
+
+Runtime contract baseline:
+
+1. Package registration stores an immutable manifest + package fingerprint.
+2. Lifecycle gates execution (`draft` -> `published` -> `disabled`).
+3. Execution requests pass through application-layer policy checks.
+4. Runtime adapters execute only pre-authorized actions.
+
+Current runtime kind:
+
+- `wasm`
+
+## Lifecycle
+
+Extension lifecycle states:
+
+- `draft`: stored but not executable
+- `published`: executable
+- `disabled`: execution blocked
+
+Only published extensions can run actions.
+
+## Stable API Contract Versioning
+
+Every manifest declares `runtime_api_version`.
+
+Platform compatibility checks compare extension runtime API expectations to platform API versions.
+The initial supported baseline is:
+
+- `1.0`
+
+Compatibility checks are available per extension through API and can be run against one or multiple target platform versions.
+
+## Capability Model
+
+Extensions request explicit capabilities in their manifest.
+
+Current capability surface:
+
+- `runtime.record.read`
+- `runtime.record.write`
+- `metadata.read`
+- `metadata.write`
+- `outbound.http`
+- `workflow.dispatch`
+
+Execution requires capability/action alignment.
+Example: `outbound_http` actions require `outbound.http` capability.
+
+## Isolation Controls
+
+Every extension manifest includes isolation policy limits:
+
+- `max_memory_mb`
+- `max_cpu_time_ms`
+- `max_storage_mb`
+- `allow_network`
+- `allowed_hosts`
+
+Policy is enforced before runtime dispatch. Actions above limits or outside host allowlists are rejected.
+
+## Compatibility Harness
+
+Compatibility harness behavior:
+
+1. Load extension definition.
+2. Resolve checked platform API versions.
+3. Execute runtime compatibility validation per version.
+4. Return compatible/incompatible version sets.
+
+Use this harness as a release gate when planning platform upgrades.

@@ -2,6 +2,9 @@
 
 This roadmap turns Qryvanta from a metadata CRUD skeleton into an open-source, self-hostable alternative to closed, proprietary business platform suites.
 
+Execution checklist:
+- `docs/IMPLEMENTATION_TODO.md` is the canonical step-by-step tracker with done/pending checkboxes.
+
 ## Product Objective
 
 Build a metadata-driven platform where teams can define business data models, generate operational apps, automate workflows, and self-host everything.

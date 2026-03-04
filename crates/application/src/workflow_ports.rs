@@ -13,7 +13,8 @@ pub use execution::{
     ClaimedWorkflowJob, CompleteWorkflowRunInput, CreateWorkflowRunInput, SaveWorkflowInput,
     WorkflowClaimPartition, WorkflowExecutionMode, WorkflowQueueStats, WorkflowQueueStatsQuery,
     WorkflowRun, WorkflowRunAttempt, WorkflowRunAttemptStatus, WorkflowRunListQuery,
-    WorkflowRunStatus, WorkflowRunStepTrace, WorkflowWorkerHeartbeatInput, WorkflowWorkerLease,
+    WorkflowRunReplay, WorkflowRunReplayTimelineEvent, WorkflowRunStatus, WorkflowRunStepTrace,
+    WorkflowWorkerHeartbeatInput, WorkflowWorkerLease,
 };
 pub use lease::WorkflowWorkerLeaseCoordinator;
 pub use repository::WorkflowRepository;

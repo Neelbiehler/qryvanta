@@ -147,8 +147,9 @@ impl WorkflowRepository for PostgresWorkflowRepository {
         limit: usize,
         lease_seconds: u32,
         partition: Option<WorkflowClaimPartition>,
+        tenant_filter: Option<TenantId>,
     ) -> AppResult<Vec<ClaimedWorkflowJob>> {
-        self.claim_jobs_impl(worker_id, limit, lease_seconds, partition)
+        self.claim_jobs_impl(worker_id, limit, lease_seconds, partition, tenant_filter)
             .await
     }
 

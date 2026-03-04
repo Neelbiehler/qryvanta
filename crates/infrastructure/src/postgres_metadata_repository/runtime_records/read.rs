@@ -14,7 +14,8 @@ impl PostgresMetadataRepository {
             AppError::Validation(format!("invalid runtime record list offset: {error}"))
         })?;
 
-        let rows = sqlx::query_as::<_, RuntimeRecordRow>(
+        let started_at = std::time::Instant::now();
+        let rows_result = sqlx::query_as::<_, RuntimeRecordRow>(
             r#"
             SELECT id, entity_logical_name, data
             FROM runtime_records
@@ -31,8 +32,16 @@ impl PostgresMetadataRepository {
         .bind(limit)
         .bind(offset)
         .fetch_all(&self.pool)
-        .await
-        .map_err(|error| {
+        .await;
+
+        warn_if_runtime_query_slow(
+            "runtime_records.list",
+            tenant_id,
+            entity_logical_name,
+            started_at,
+        );
+
+        let rows = rows_result.map_err(|error| {
             AppError::Internal(format!(
                 "failed to list runtime records for entity '{}' in tenant '{}': {error}",
                 entity_logical_name, tenant_id

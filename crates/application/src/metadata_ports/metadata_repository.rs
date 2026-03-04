@@ -232,6 +232,17 @@ pub trait MetadataRepository: Send + Sync {
         created_by_subject: &str,
     ) -> AppResult<RuntimeRecord>;
 
+    /// Creates a runtime record with a caller-provided stable identifier.
+    async fn create_runtime_record_with_id(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        record_id: &str,
+        data: Value,
+        unique_values: Vec<UniqueFieldValue>,
+        created_by_subject: &str,
+    ) -> AppResult<RuntimeRecord>;
+
     /// Updates a runtime record and replaces unique field index entries.
     async fn update_runtime_record(
         &self,

@@ -157,6 +157,160 @@ impl MetadataService {
         Ok(())
     }
 
+    async fn collect_schema_compatibility_errors(
+        &self,
+        tenant_id: TenantId,
+        entity_logical_name: &str,
+        fields: &[EntityFieldDefinition],
+        option_sets: &[OptionSetDefinition],
+    ) -> AppResult<Vec<String>> {
+        let Some(published_schema) = self
+            .repository
+            .latest_published_schema(tenant_id, entity_logical_name)
+            .await?
+        else {
+            return Ok(Vec::new());
+        };
+
+        let draft_fields_by_name: BTreeMap<&str, &EntityFieldDefinition> = fields
+            .iter()
+            .map(|field| (field.logical_name().as_str(), field))
+            .collect();
+        let draft_option_sets_by_name: BTreeMap<&str, &OptionSetDefinition> = option_sets
+            .iter()
+            .map(|option_set| (option_set.logical_name().as_str(), option_set))
+            .collect();
+
+        let mut errors = Vec::new();
+
+        for published_field in published_schema.fields() {
+            let field_name = published_field.logical_name().as_str();
+            let Some(draft_field) = draft_fields_by_name.get(field_name).copied() else {
+                errors.push(format!(
+                    "compatibility check failed: published field '{}.{}' cannot be removed",
+                    entity_logical_name, field_name
+                ));
+                continue;
+            };
+
+            if draft_field.field_type() != published_field.field_type() {
+                errors.push(format!(
+                    "compatibility check failed: published field '{}.{}' cannot change type from '{}' to '{}'",
+                    entity_logical_name,
+                    field_name,
+                    published_field.field_type().as_str(),
+                    draft_field.field_type().as_str()
+                ));
+            }
+
+            if draft_field
+                .relation_target_entity()
+                .map(|value| value.as_str())
+                != published_field
+                    .relation_target_entity()
+                    .map(|value| value.as_str())
+            {
+                errors.push(format!(
+                    "compatibility check failed: published field '{}.{}' cannot change relation target",
+                    entity_logical_name, field_name
+                ));
+            }
+
+            if draft_field
+                .option_set_logical_name()
+                .map(|value| value.as_str())
+                != published_field
+                    .option_set_logical_name()
+                    .map(|value| value.as_str())
+            {
+                errors.push(format!(
+                    "compatibility check failed: published field '{}.{}' cannot change option set reference",
+                    entity_logical_name, field_name
+                ));
+            }
+
+            if !published_field.is_required() && draft_field.is_required() {
+                errors.push(format!(
+                    "compatibility check failed: published field '{}.{}' cannot be tightened from optional to required",
+                    entity_logical_name, field_name
+                ));
+            }
+
+            if !published_field.is_unique() && draft_field.is_unique() {
+                errors.push(format!(
+                    "compatibility check failed: published field '{}.{}' cannot be tightened from non-unique to unique",
+                    entity_logical_name, field_name
+                ));
+            }
+
+            match (published_field.max_length(), draft_field.max_length()) {
+                (None, Some(_)) => errors.push(format!(
+                    "compatibility check failed: published field '{}.{}' cannot add a max_length constraint after publish",
+                    entity_logical_name, field_name
+                )),
+                (Some(previous), Some(next)) if next < previous => errors.push(format!(
+                    "compatibility check failed: published field '{}.{}' cannot reduce max_length from {} to {}",
+                    entity_logical_name, field_name, previous, next
+                )),
+                _ => {}
+            }
+
+            match (published_field.min_value(), draft_field.min_value()) {
+                (None, Some(_)) => errors.push(format!(
+                    "compatibility check failed: published field '{}.{}' cannot add a minimum constraint after publish",
+                    entity_logical_name, field_name
+                )),
+                (Some(previous), Some(next)) if next > previous => errors.push(format!(
+                    "compatibility check failed: published field '{}.{}' cannot increase minimum constraint from {} to {}",
+                    entity_logical_name, field_name, previous, next
+                )),
+                _ => {}
+            }
+
+            match (published_field.max_value(), draft_field.max_value()) {
+                (None, Some(_)) => errors.push(format!(
+                    "compatibility check failed: published field '{}.{}' cannot add a maximum constraint after publish",
+                    entity_logical_name, field_name
+                )),
+                (Some(previous), Some(next)) if next < previous => errors.push(format!(
+                    "compatibility check failed: published field '{}.{}' cannot decrease maximum constraint from {} to {}",
+                    entity_logical_name, field_name, previous, next
+                )),
+                _ => {}
+            }
+        }
+
+        for published_option_set in published_schema.option_sets() {
+            let option_set_name = published_option_set.logical_name().as_str();
+            let Some(draft_option_set) = draft_option_sets_by_name.get(option_set_name).copied()
+            else {
+                errors.push(format!(
+                    "compatibility check failed: published option set '{}.{}' cannot be removed",
+                    entity_logical_name, option_set_name
+                ));
+                continue;
+            };
+
+            let draft_values: HashSet<i32> = draft_option_set
+                .options()
+                .iter()
+                .map(|option| option.value())
+                .collect();
+            for published_option in published_option_set.options() {
+                if !draft_values.contains(&published_option.value()) {
+                    errors.push(format!(
+                        "compatibility check failed: published option set '{}.{}' cannot remove option value '{}'",
+                        entity_logical_name,
+                        option_set_name,
+                        published_option.value()
+                    ));
+                }
+            }
+        }
+
+        Ok(errors)
+    }
+
     pub(super) async fn collect_publish_validation_errors(
         &self,
         tenant_id: TenantId,
@@ -169,6 +323,10 @@ impl MetadataService {
             .iter()
             .map(String::as_str)
             .collect();
+        let option_sets = self
+            .repository
+            .list_option_sets(tenant_id, entity_logical_name)
+            .await?;
 
         if fields.is_empty() {
             errors.push(format!(
@@ -177,6 +335,16 @@ impl MetadataService {
             ));
             return Ok(errors);
         }
+
+        errors.extend(
+            self.collect_schema_compatibility_errors(
+                tenant_id,
+                entity_logical_name,
+                fields,
+                &option_sets,
+            )
+            .await?,
+        );
 
         let field_names: HashSet<&str> = fields
             .iter()
