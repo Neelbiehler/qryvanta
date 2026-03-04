@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useCallback, useState } from "react";
 
 import {
   apiFetch,
@@ -31,6 +31,7 @@ export function useWorkflowExecution({
     Record<string, WorkflowRunAttemptResponse[]>
   >({});
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
+  const [loadingAttemptsRunId, setLoadingAttemptsRunId] = useState<string | null>(null);
   const [isExecuting, setIsExecuting] = useState(false);
   const [isRetryingStep, setIsRetryingStep] = useState(false);
 
@@ -71,25 +72,53 @@ export function useWorkflowExecution({
     }
   }
 
-  async function toggleAttempts(runId: string) {
-    if (expandedRunId === runId) {
-      setExpandedRunId(null);
-      return;
-    }
+  const ensureAttemptsLoaded = useCallback(
+    async (runId: string): Promise<boolean> => {
+      if (attemptsByRun[runId]) {
+        return true;
+      }
 
-    if (!attemptsByRun[runId]) {
-      const response = await apiFetch(`/api/workflows/runs/${runId}/attempts`);
-      if (!response.ok) {
-        onErrorMessage("Unable to load workflow run attempts.");
+      setLoadingAttemptsRunId(runId);
+      try {
+        const response = await apiFetch(`/api/workflows/runs/${runId}/attempts`);
+        if (!response.ok) {
+          onErrorMessage("Unable to load workflow run attempts.");
+          return false;
+        }
+
+        const attempts = (await response.json()) as WorkflowRunAttemptResponse[];
+        setAttemptsByRun((current) => ({ ...current, [runId]: attempts }));
+        return true;
+      } finally {
+        setLoadingAttemptsRunId((current) => (current === runId ? null : current));
+      }
+    },
+    [attemptsByRun, onErrorMessage],
+  );
+
+  const selectRun = useCallback(
+    async (runId: string) => {
+      const loaded = await ensureAttemptsLoaded(runId);
+      if (!loaded) {
         return;
       }
 
-      const attempts = (await response.json()) as WorkflowRunAttemptResponse[];
-      setAttemptsByRun((current) => ({ ...current, [runId]: attempts }));
-    }
+      setExpandedRunId(runId);
+    },
+    [ensureAttemptsLoaded],
+  );
 
-    setExpandedRunId(runId);
-  }
+  const toggleAttempts = useCallback(
+    async (runId: string) => {
+      if (expandedRunId === runId) {
+        setExpandedRunId(null);
+        return;
+      }
+
+      await selectRun(runId);
+    },
+    [expandedRunId, selectRun],
+  );
 
   async function retryRunStep(
     workflowLogicalName: string,
@@ -144,10 +173,12 @@ export function useWorkflowExecution({
     setExecutePayload,
     attemptsByRun,
     expandedRunId,
+    loadingAttemptsRunId,
     isExecuting,
     isRetryingStep,
     handleExecuteWorkflow,
     toggleAttempts,
+    selectRun,
     retryRunStep,
   };
 }

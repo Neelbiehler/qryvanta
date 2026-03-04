@@ -136,7 +136,13 @@ function AttemptRow({ attempt }: { attempt: WorkflowRunAttemptResponse }) {
   );
 }
 
-function RunRow({ run }: { run: WorkflowRunResponse }) {
+function RunRow({
+  run,
+  workflowLogicalName,
+}: {
+  run: WorkflowRunResponse;
+  workflowLogicalName: string;
+}) {
   const [expanded, setExpanded] = useState(false);
   const [attempts, setAttempts] = useState<WorkflowRunAttemptResponse[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -164,18 +170,26 @@ function RunRow({ run }: { run: WorkflowRunResponse }) {
 
   return (
     <div className={cn("border-b border-zinc-100 last:border-0")}>
-      <button
-        type="button"
-        className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-zinc-50"
-        onClick={() => void loadAttempts()}
-      >
-        <RunStatusIcon status={run.status} />
-        <span className="font-mono text-xs text-zinc-500">{run.run_id}</span>
-        <StatusBadge tone={statusTone(run.status)}>{run.status}</StatusBadge>
-        <span className="text-xs text-zinc-500">{formatUtcDateTime(run.started_at)}</span>
-        <span className="ml-auto text-xs text-zinc-400">{run.attempts} attempt{run.attempts !== 1 ? "s" : ""}</span>
-        {expanded ? <ChevronDown className="size-3.5 text-zinc-400" /> : <ChevronRight className="size-3.5 text-zinc-400" />}
-      </button>
+      <div className="flex items-center gap-2 pr-3">
+        <button
+          type="button"
+          className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-zinc-50"
+          onClick={() => void loadAttempts()}
+        >
+          <RunStatusIcon status={run.status} />
+          <span className="font-mono text-xs text-zinc-500">{run.run_id}</span>
+          <StatusBadge tone={statusTone(run.status)}>{run.status}</StatusBadge>
+          <span className="text-xs text-zinc-500">{formatUtcDateTime(run.started_at)}</span>
+          <span className="ml-auto text-xs text-zinc-400">{run.attempts} attempt{run.attempts !== 1 ? "s" : ""}</span>
+          {expanded ? <ChevronDown className="size-3.5 text-zinc-400" /> : <ChevronRight className="size-3.5 text-zinc-400" />}
+        </button>
+        <Link
+          href={`/maker/automation/${encodeURIComponent(workflowLogicalName)}/history/steps?run_id=${encodeURIComponent(run.run_id)}`}
+          className={cn(buttonVariants({ size: "sm", variant: "outline" }), "h-7 whitespace-nowrap px-2 text-xs")}
+        >
+          Step history
+        </Link>
+      </div>
       {expanded && (
         <div className="space-y-2 border-t border-zinc-100 px-4 py-3">
           {loading ? (
@@ -284,7 +298,11 @@ export function WorkflowHistoryPanel({ workflow, runs }: WorkflowHistoryPanelPro
             <div className="size-4" />
           </div>
           {runs.map((run) => (
-            <RunRow key={run.run_id} run={run} />
+            <RunRow
+              key={run.run_id}
+              run={run}
+              workflowLogicalName={workflow.logical_name}
+            />
           ))}
         </div>
       ) : (

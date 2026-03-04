@@ -23,17 +23,30 @@ import {
 type WorkflowStudioShellProps = {
   initialSelectedWorkflow?: string;
   initialWorkspaceMode?: WorkflowWorkspaceMode;
+  runsWorkflowLogicalNameFilter?: string;
+  runsLimit?: number;
+  initialHistoryRunId?: string;
 };
 
 export async function WorkflowStudioShell({
   initialSelectedWorkflow,
   initialWorkspaceMode,
+  runsWorkflowLogicalNameFilter,
+  runsLimit,
+  initialHistoryRunId,
 }: WorkflowStudioShellProps) {
   const cookieHeader = (await cookies()).toString();
+  const runsQuery = new URLSearchParams({
+    limit: String(runsLimit ?? 25),
+    offset: "0",
+  });
+  if (runsWorkflowLogicalNameFilter) {
+    runsQuery.set("workflow_logical_name", runsWorkflowLogicalNameFilter);
+  }
 
   const [workflowsResponse, runsResponse] = await Promise.all([
     apiServerFetch("/api/workflows", cookieHeader),
-    apiServerFetch("/api/workflows/runs?limit=25&offset=0", cookieHeader),
+    apiServerFetch(`/api/workflows/runs?${runsQuery.toString()}`, cookieHeader),
   ]);
 
   if (workflowsResponse.status === 401 || runsResponse.status === 401) {
@@ -94,6 +107,7 @@ export async function WorkflowStudioShell({
         runs={runs}
         initialSelectedWorkflow={initialSelectedWorkflow}
         initialWorkspaceMode={initialWorkspaceMode}
+        initialHistoryRunId={initialHistoryRunId}
       />
     </div>
   );
