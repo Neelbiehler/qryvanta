@@ -16,17 +16,15 @@ impl MetadataService {
             let relation_fields = entity_bundle
                 .fields
                 .iter()
+                .filter(|field| field.field_type() == FieldType::Relation)
                 .filter_map(|field| {
-                    (field.field_type() == FieldType::Relation).then(|| {
-                        field.relation_target_entity().map(|target| {
-                            (
-                                field.logical_name().as_str().to_owned(),
-                                target.as_str().to_owned(),
-                            )
-                        })
+                    field.relation_target_entity().map(|target| {
+                        (
+                            field.logical_name().as_str().to_owned(),
+                            target.as_str().to_owned(),
+                        )
                     })
                 })
-                .flatten()
                 .collect::<HashMap<_, _>>();
             entity_fields.insert(entity_bundle.entity_logical_name.clone(), relation_fields);
 

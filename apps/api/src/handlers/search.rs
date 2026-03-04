@@ -194,21 +194,21 @@ pub async fn qrywell_search_click_event_handler(
     .await
     .map_err(|error| AppError::Internal(format!("failed to store search click event: {error}")))?;
 
-    if let Some(search_event_id) = payload.search_event_id.as_deref() {
-        if let Ok(event_uuid) = uuid::Uuid::parse_str(search_event_id) {
-            let _ = sqlx::query(
-                r#"
-                UPDATE qrywell_search_query_events
-                SET clicked_count = clicked_count + 1
-                WHERE id = $1
-                  AND tenant_id = $2::uuid
-                "#,
-            )
-            .bind(event_uuid)
-            .bind(user.tenant_id().to_string())
-            .execute(&state.postgres_pool)
-            .await;
-        }
+    if let Some(search_event_id) = payload.search_event_id.as_deref()
+        && let Ok(event_uuid) = uuid::Uuid::parse_str(search_event_id)
+    {
+        let _ = sqlx::query(
+            r#"
+            UPDATE qrywell_search_query_events
+            SET clicked_count = clicked_count + 1
+            WHERE id = $1
+              AND tenant_id = $2::uuid
+            "#,
+        )
+        .bind(event_uuid)
+        .bind(user.tenant_id().to_string())
+        .execute(&state.postgres_pool)
+        .await;
     }
 
     Ok(Json(GenericMessageResponse {

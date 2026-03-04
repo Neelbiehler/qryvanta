@@ -296,11 +296,13 @@ export function DialogHeader({
 }
 
 export const DialogTitle = React.forwardRef<HTMLHeadingElement, React.HTMLAttributes<HTMLHeadingElement>>(
-  ({ className, ...props }, ref) => {
+  ({ className, children, ...props }, ref) => {
     const { titleId } = useDialogContext();
 
     return (
-      <h2 id={titleId} ref={ref} className={cn("text-lg font-semibold", className)} {...props} />
+      <h2 id={titleId} ref={ref} className={cn("text-lg font-semibold", className)} {...props}>
+        {children}
+      </h2>
     );
   },
 );

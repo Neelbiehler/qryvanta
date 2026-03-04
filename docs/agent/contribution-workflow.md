@@ -63,4 +63,8 @@ pnpm --filter @qryvanta/ui build
 pnpm changeset
 ```
 
-Release automation runs in `.github/workflows/release-packages.yml` and requires `NPM_TOKEN`.
+Release automation runs in `.github/workflows/release-packages.yml` on pushes to `main`
+and via manual dispatch, and requires `NPM_TOKEN`.
+
+CI currently ignores RustSec advisory `RUSTSEC-2023-0071` for `rsa` in
+`.github/workflows/ci.yml` until an upstream patched stable release is available.
