@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use crate::begin_tenant_transaction;
 use async_trait::async_trait;
 use qryvanta_application::ExtensionRepository;
 use qryvanta_core::{AppError, AppResult, TenantId};
@@ -43,6 +44,7 @@ impl ExtensionRepository for PostgresExtensionRepository {
         tenant_id: TenantId,
         definition: ExtensionDefinition,
     ) -> AppResult<()> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let requested_capabilities = definition
             .manifest()
             .requested_capabilities()
@@ -99,13 +101,19 @@ impl ExtensionRepository for PostgresExtensionRepository {
         ))
         .bind(requested_capabilities)
         .bind(isolation_policy_json)
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to save extension '{}' in tenant '{}': {error}",
                 definition.manifest().logical_name().as_str(),
                 tenant_id
+            ))
+        })?;
+
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped extension save transaction: {error}"
             ))
         })?;
 
@@ -117,6 +125,7 @@ impl ExtensionRepository for PostgresExtensionRepository {
         tenant_id: TenantId,
         logical_name: &str,
     ) -> AppResult<Option<ExtensionDefinition>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let row = sqlx::query_as::<_, ExtensionRow>(
             r#"
             SELECT
@@ -135,7 +144,7 @@ impl ExtensionRepository for PostgresExtensionRepository {
         )
         .bind(tenant_id.as_uuid())
         .bind(logical_name)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
@@ -143,11 +152,17 @@ impl ExtensionRepository for PostgresExtensionRepository {
                 logical_name, tenant_id
             ))
         })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped extension lookup transaction: {error}"
+            ))
+        })?;
 
         row.map(extension_definition_from_row).transpose()
     }
 
     async fn list_extensions(&self, tenant_id: TenantId) -> AppResult<Vec<ExtensionDefinition>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let rows = sqlx::query_as::<_, ExtensionRow>(
             r#"
             SELECT
@@ -166,12 +181,17 @@ impl ExtensionRepository for PostgresExtensionRepository {
             "#,
         )
         .bind(tenant_id.as_uuid())
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to list extensions in tenant '{}': {error}",
                 tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped extension list transaction: {error}"
             ))
         })?;
 

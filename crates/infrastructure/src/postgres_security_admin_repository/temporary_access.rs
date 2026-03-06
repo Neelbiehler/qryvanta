@@ -7,10 +7,7 @@ impl PostgresSecurityAdminRepository {
         created_by_subject: &str,
         input: CreateTemporaryAccessGrantInput,
     ) -> AppResult<TemporaryAccessGrant> {
-        let mut transaction =
-            self.pool.begin().await.map_err(|error| {
-                AppError::Internal(format!("failed to begin transaction: {error}"))
-            })?;
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
 
         let grant_row = sqlx::query_as::<_, TemporaryAccessGrantRow>(
             r#"
@@ -88,6 +85,7 @@ impl PostgresSecurityAdminRepository {
         grant_id: &str,
         revoke_reason: Option<&str>,
     ) -> AppResult<()> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let parsed_grant_id = uuid::Uuid::parse_str(grant_id)
             .map_err(|_| AppError::Validation(format!("invalid grant_id '{}'", grant_id)))?;
 
@@ -106,7 +104,7 @@ impl PostgresSecurityAdminRepository {
         .bind(parsed_grant_id)
         .bind(revoked_by_subject)
         .bind(revoke_reason)
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!("failed to revoke temporary access grant: {error}"))
@@ -120,6 +118,12 @@ impl PostgresSecurityAdminRepository {
             )));
         }
 
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped temporary access revoke transaction: {error}"
+            ))
+        })?;
+
         Ok(())
     }
 
@@ -128,6 +132,7 @@ impl PostgresSecurityAdminRepository {
         tenant_id: TenantId,
         query: TemporaryAccessGrantQuery,
     ) -> AppResult<Vec<TemporaryAccessGrant>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let capped_limit = query.limit.clamp(1, 200) as i64;
         let capped_offset = query.offset.min(5_000) as i64;
 
@@ -163,10 +168,15 @@ impl PostgresSecurityAdminRepository {
         .bind(query.active_only)
         .bind(capped_limit)
         .bind(capped_offset)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!("failed to list temporary access grants: {error}"))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped temporary access list transaction: {error}"
+            ))
         })?;
 
         aggregate_temporary_access_grants(rows, tenant_id)

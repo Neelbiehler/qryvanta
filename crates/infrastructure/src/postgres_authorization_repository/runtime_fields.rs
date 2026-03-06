@@ -9,6 +9,7 @@ impl PostgresAuthorizationRepository {
         subject: &str,
         entity_logical_name: &str,
     ) -> AppResult<Vec<RuntimeFieldGrant>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let rows = sqlx::query_as::<_, RuntimeFieldGrantRow>(
             r#"
             SELECT field_logical_name, can_read, can_write
@@ -22,12 +23,17 @@ impl PostgresAuthorizationRepository {
         .bind(tenant_id.as_uuid())
         .bind(subject)
         .bind(entity_logical_name)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to load runtime field grants for subject '{}' in tenant '{}': {error}",
                 subject, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped runtime field grant lookup transaction: {error}"
             ))
         })?;
 

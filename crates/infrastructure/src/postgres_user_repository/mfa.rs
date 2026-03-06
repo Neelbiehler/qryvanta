@@ -12,6 +12,8 @@ impl PostgresUserRepository {
             UPDATE users
             SET totp_secret_enc = $2,
                 recovery_codes_hash = $3,
+                totp_pending_secret_enc = NULL,
+                recovery_codes_pending_hash = NULL,
                 totp_enabled = TRUE,
                 updated_at = now()
             WHERE id = $1
@@ -27,12 +29,63 @@ impl PostgresUserRepository {
         Ok(())
     }
 
+    pub(super) async fn begin_totp_enrollment_impl(
+        &self,
+        user_id: UserId,
+        totp_secret_enc: &[u8],
+        recovery_codes_hash: &serde_json::Value,
+    ) -> AppResult<()> {
+        sqlx::query(
+            r#"
+            UPDATE users
+            SET totp_pending_secret_enc = $2,
+                recovery_codes_pending_hash = $3,
+                updated_at = now()
+            WHERE id = $1
+            "#,
+        )
+        .bind(user_id.as_uuid())
+        .bind(totp_secret_enc)
+        .bind(recovery_codes_hash)
+        .execute(&self.pool)
+        .await
+        .map_err(|error| AppError::Internal(format!("failed to begin TOTP enrollment: {error}")))?;
+
+        Ok(())
+    }
+
+    pub(super) async fn confirm_totp_enrollment_impl(&self, user_id: UserId) -> AppResult<()> {
+        sqlx::query(
+            r#"
+            UPDATE users
+            SET totp_secret_enc = totp_pending_secret_enc,
+                recovery_codes_hash = recovery_codes_pending_hash,
+                totp_pending_secret_enc = NULL,
+                recovery_codes_pending_hash = NULL,
+                totp_enabled = TRUE,
+                updated_at = now()
+            WHERE id = $1
+            "#,
+        )
+        .bind(user_id.as_uuid())
+        .execute(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!("failed to confirm TOTP enrollment: {error}"))
+        })?;
+
+        Ok(())
+    }
+
     pub(super) async fn disable_totp_impl(&self, user_id: UserId) -> AppResult<()> {
         sqlx::query(
             r#"
             UPDATE users
             SET totp_enabled = FALSE, totp_secret_enc = NULL,
-                recovery_codes_hash = NULL, updated_at = now()
+                recovery_codes_hash = NULL,
+                totp_pending_secret_enc = NULL,
+                recovery_codes_pending_hash = NULL,
+                updated_at = now()
             WHERE id = $1
             "#,
         )

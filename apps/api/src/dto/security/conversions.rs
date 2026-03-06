@@ -1,9 +1,9 @@
 use qryvanta_domain::RegistrationMode;
 
 use super::types::{
-    AuditLogEntryResponse, AuditPurgeResultResponse, AuditRetentionPolicyResponse,
-    RoleAssignmentResponse, RoleResponse, RuntimeFieldPermissionResponse,
-    TemporaryAccessGrantResponse, TenantRegistrationModeResponse,
+    AuditIntegrityStatusResponse, AuditLogEntryResponse, AuditPurgeResultResponse,
+    AuditRetentionPolicyResponse, RoleAssignmentResponse, RoleResponse,
+    RuntimeFieldPermissionResponse, TemporaryAccessGrantResponse, TenantRegistrationModeResponse,
 };
 
 impl From<qryvanta_application::RoleDefinition> for RoleResponse {
@@ -31,6 +31,21 @@ impl From<qryvanta_application::AuditLogEntry> for AuditLogEntryResponse {
             resource_id: value.resource_id,
             detail: value.detail,
             created_at: value.created_at,
+            chain_position: value.chain_position,
+            previous_entry_hash: value.previous_entry_hash,
+            entry_hash: value.entry_hash,
+        }
+    }
+}
+
+impl From<qryvanta_application::AuditIntegrityStatus> for AuditIntegrityStatusResponse {
+    fn from(value: qryvanta_application::AuditIntegrityStatus) -> Self {
+        Self {
+            is_valid: value.is_valid,
+            verified_entries: value.verified_entries,
+            latest_chain_position: value.latest_chain_position,
+            latest_entry_hash: value.latest_entry_hash,
+            failures: value.failures,
         }
     }
 }

@@ -9,8 +9,11 @@ pub struct RuntimeFieldPermissionQuery {
 pub async fn save_runtime_field_permissions_handler(
     State(state): State<AppState>,
     Extension(user): Extension<UserIdentity>,
+    session: Session,
     Json(payload): Json<SaveRuntimeFieldPermissionsRequest>,
 ) -> ApiResult<Json<Vec<RuntimeFieldPermissionResponse>>> {
+    require_recent_step_up(&session).await?;
+
     let entries = state
         .security_admin_service
         .save_runtime_field_permissions(

@@ -1,8 +1,9 @@
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 
+use ipnet::IpNet;
 use qryvanta_application::WorkflowExecutionMode;
-use qryvanta_core::{AppError, TenantId};
+use qryvanta_core::{AppError, SecretFingerprintRecord, TenantId};
 
 #[derive(Debug, Clone)]
 pub struct SmtpRuntimeConfig {
@@ -56,6 +57,17 @@ impl PhysicalIsolationMode {
 }
 
 #[derive(Debug, Clone)]
+pub enum TotpEncryptionConfig {
+    StaticKey {
+        key_hex: String,
+    },
+    AwsKmsEnvelope {
+        kms_key_id: String,
+        legacy_static_key_hex: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone)]
 pub struct ApiConfig {
     pub migrate_only: bool,
     pub database_url: String,
@@ -68,8 +80,10 @@ pub struct ApiConfig {
     pub webauthn_rp_id: String,
     pub webauthn_rp_origin: String,
     pub cookie_secure: bool,
+    pub trust_proxy_headers: bool,
+    pub trusted_proxy_cidrs: Vec<IpNet>,
     pub bootstrap_tenant_id: Option<TenantId>,
-    pub totp_encryption_key: String,
+    pub totp_encryption: TotpEncryptionConfig,
     pub email_provider: EmailProviderConfig,
     pub workflow_execution_mode: WorkflowExecutionMode,
     pub worker_shared_secret: Option<String>,
@@ -113,6 +127,56 @@ impl ApiConfig {
             AppError::Internal(format!("invalid API_HOST '{}': {error}", self.api_host))
         })?;
         Ok(SocketAddr::from((host, self.api_port)))
+    }
+
+    #[must_use]
+    pub fn secret_fingerprint_records(&self, environment: &str) -> Vec<SecretFingerprintRecord> {
+        let mut records = vec![
+            SecretFingerprintRecord::from_secret(
+                environment,
+                "AUTH_BOOTSTRAP_TOKEN",
+                &self.bootstrap_token,
+            ),
+            SecretFingerprintRecord::from_secret(
+                environment,
+                "SESSION_SECRET",
+                &self._session_secret,
+            ),
+        ];
+
+        match &self.totp_encryption {
+            TotpEncryptionConfig::StaticKey { key_hex } => {
+                records.push(SecretFingerprintRecord::from_secret(
+                    environment,
+                    "TOTP_ENCRYPTION_KEY",
+                    key_hex,
+                ));
+            }
+            TotpEncryptionConfig::AwsKmsEnvelope {
+                legacy_static_key_hex: Some(key_hex),
+                ..
+            } => {
+                records.push(SecretFingerprintRecord::from_secret(
+                    environment,
+                    "TOTP_ENCRYPTION_KEY",
+                    key_hex,
+                ));
+            }
+            TotpEncryptionConfig::AwsKmsEnvelope {
+                legacy_static_key_hex: None,
+                ..
+            } => {}
+        }
+
+        if let Some(worker_shared_secret) = &self.worker_shared_secret {
+            records.push(SecretFingerprintRecord::from_secret(
+                environment,
+                "WORKER_SHARED_SECRET",
+                worker_shared_secret,
+            ));
+        }
+
+        records
     }
 }
 

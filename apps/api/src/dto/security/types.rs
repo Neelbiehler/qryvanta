@@ -128,6 +128,23 @@ pub struct AuditLogEntryResponse {
     pub resource_id: String,
     pub detail: Option<String>,
     pub created_at: String,
+    pub chain_position: i64,
+    pub previous_entry_hash: Option<String>,
+    pub entry_hash: String,
+}
+
+/// API representation of tenant audit-chain verification status.
+#[derive(Debug, Serialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/audit-integrity-status-response.ts"
+)]
+pub struct AuditIntegrityStatusResponse {
+    pub is_valid: bool,
+    pub verified_entries: usize,
+    pub latest_chain_position: Option<i64>,
+    pub latest_entry_hash: Option<String>,
+    pub failures: Vec<String>,
 }
 
 /// API representation of a role assignment.

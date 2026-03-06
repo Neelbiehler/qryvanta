@@ -5,6 +5,7 @@ impl PostgresSecurityAdminRepository {
         &self,
         tenant_id: TenantId,
     ) -> AppResult<Vec<RoleDefinition>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let rows = sqlx::query_as::<_, RoleRow>(
             r#"
             SELECT
@@ -20,9 +21,14 @@ impl PostgresSecurityAdminRepository {
             "#,
         )
         .bind(tenant_id.as_uuid())
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| AppError::Internal(format!("failed to list roles: {error}")))?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped role list transaction: {error}"
+            ))
+        })?;
 
         aggregate_roles(rows, tenant_id)
     }
@@ -32,10 +38,7 @@ impl PostgresSecurityAdminRepository {
         tenant_id: TenantId,
         input: CreateRoleInput,
     ) -> AppResult<RoleDefinition> {
-        let mut transaction =
-            self.pool.begin().await.map_err(|error| {
-                AppError::Internal(format!("failed to begin transaction: {error}"))
-            })?;
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
 
         let role_id = sqlx::query_scalar::<_, uuid::Uuid>(
             r#"
@@ -85,10 +88,7 @@ impl PostgresSecurityAdminRepository {
         subject: &str,
         role_name: &str,
     ) -> AppResult<()> {
-        let mut transaction =
-            self.pool.begin().await.map_err(|error| {
-                AppError::Internal(format!("failed to begin transaction: {error}"))
-            })?;
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
 
         let role_id = sqlx::query_scalar::<_, uuid::Uuid>(
             r#"
@@ -152,6 +152,7 @@ impl PostgresSecurityAdminRepository {
         subject: &str,
         role_name: &str,
     ) -> AppResult<()> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let rows_affected = sqlx::query(
             r#"
             DELETE FROM rbac_subject_roles AS subject_roles
@@ -165,7 +166,7 @@ impl PostgresSecurityAdminRepository {
         .bind(tenant_id.as_uuid())
         .bind(subject)
         .bind(role_name)
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|error| AppError::Internal(format!("failed to remove role assignment: {error}")))?
         .rows_affected();
@@ -176,6 +177,12 @@ impl PostgresSecurityAdminRepository {
             )));
         }
 
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped role removal transaction: {error}"
+            ))
+        })?;
+
         Ok(())
     }
 
@@ -183,6 +190,7 @@ impl PostgresSecurityAdminRepository {
         &self,
         tenant_id: TenantId,
     ) -> AppResult<Vec<RoleAssignment>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let rows = sqlx::query_as::<_, RoleAssignmentRow>(
             r#"
             SELECT
@@ -198,9 +206,14 @@ impl PostgresSecurityAdminRepository {
             "#,
         )
         .bind(tenant_id.as_uuid())
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| AppError::Internal(format!("failed to list role assignments: {error}")))?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped role assignment list transaction: {error}"
+            ))
+        })?;
 
         Ok(rows
             .into_iter()

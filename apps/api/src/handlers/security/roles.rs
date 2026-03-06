@@ -18,8 +18,11 @@ pub async fn list_roles_handler(
 pub async fn create_role_handler(
     State(state): State<AppState>,
     Extension(user): Extension<UserIdentity>,
+    session: Session,
     Json(payload): Json<CreateRoleRequest>,
 ) -> ApiResult<(StatusCode, Json<RoleResponse>)> {
+    require_recent_step_up(&session).await?;
+
     let permissions = payload
         .permissions
         .iter()
@@ -43,8 +46,11 @@ pub async fn create_role_handler(
 pub async fn assign_role_handler(
     State(state): State<AppState>,
     Extension(user): Extension<UserIdentity>,
+    session: Session,
     Json(payload): Json<AssignRoleRequest>,
 ) -> ApiResult<StatusCode> {
+    require_recent_step_up(&session).await?;
+
     state
         .security_admin_service
         .assign_role(&user, payload.subject.as_str(), payload.role_name.as_str())
@@ -56,8 +62,11 @@ pub async fn assign_role_handler(
 pub async fn unassign_role_handler(
     State(state): State<AppState>,
     Extension(user): Extension<UserIdentity>,
+    session: Session,
     Json(payload): Json<RemoveRoleAssignmentRequest>,
 ) -> ApiResult<StatusCode> {
+    require_recent_step_up(&session).await?;
+
     state
         .security_admin_service
         .unassign_role(&user, payload.subject.as_str(), payload.role_name.as_str())

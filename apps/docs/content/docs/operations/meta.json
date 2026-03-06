@@ -3,6 +3,10 @@
   "pages": [
     "index",
     "self-hosting",
+    "security-hardening",
+    "security-event-taxonomy",
+    "ingress-conformance",
+    "identity-and-secret-rotation",
     "scaling-profiles",
     "configuration",
     "tenant-isolation-profiles",

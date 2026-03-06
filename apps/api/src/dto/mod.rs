@@ -18,10 +18,12 @@ pub use apps::{
 };
 pub use auth::{
     AcceptInviteRequest, AuthLoginRequest, AuthLoginResponse, AuthMfaVerifyRequest,
-    AuthRegisterRequest, InviteRequest,
+    AuthRegisterRequest, AuthStepUpRequest, AuthSwitchTenantRequest, InviteRequest,
 };
+#[allow(unused_imports)]
 pub use common::{
-    GenericMessageResponse, HealthDependencyStatus, HealthResponse, UserIdentityResponse,
+    GenericMessageResponse, HealthDependencyStatus, HealthResponse, TenantOptionResponse,
+    UserIdentityResponse,
 };
 pub use entities::{
     BusinessRuleResponse, CreateBusinessRuleRequest, CreateEntityRequest, CreateFieldRequest,
@@ -59,10 +61,11 @@ pub use search::{
     QrywellSyncRequest, QrywellSyncResponse,
 };
 pub use security::{
-    AssignRoleRequest, AuditLogEntryResponse, AuditPurgeResultResponse,
-    AuditRetentionPolicyResponse, CreateRoleRequest, CreateTemporaryAccessGrantRequest,
-    RemoveRoleAssignmentRequest, RevokeTemporaryAccessGrantRequest, RoleAssignmentResponse,
-    RoleResponse, RuntimeFieldPermissionResponse, SaveRuntimeFieldPermissionsRequest,
+    AssignRoleRequest, AuditIntegrityStatusResponse, AuditLogEntryResponse,
+    AuditPurgeResultResponse, AuditRetentionPolicyResponse, CreateRoleRequest,
+    CreateTemporaryAccessGrantRequest, RemoveRoleAssignmentRequest,
+    RevokeTemporaryAccessGrantRequest, RoleAssignmentResponse, RoleResponse,
+    RuntimeFieldPermissionResponse, SaveRuntimeFieldPermissionsRequest,
     TemporaryAccessGrantResponse, TenantRegistrationModeResponse,
     UpdateAuditRetentionPolicyRequest, UpdateTenantRegistrationModeRequest,
 };
@@ -86,9 +89,10 @@ mod tests {
         AcceptInviteRequest, AppEntityBindingResponse, AppEntityCapabilitiesResponse,
         AppPublishChecksResponse, AppResponse, AppRoleEntityPermissionResponse, AppSitemapAreaDto,
         AppSitemapGroupDto, AppSitemapResponse, AppSitemapSubAreaDto, AppSitemapTargetDto,
-        AssignRoleRequest, AuditLogEntryResponse, AuditPurgeResultResponse,
-        AuditRetentionPolicyResponse, AuthLoginRequest, AuthLoginResponse, AuthMfaVerifyRequest,
-        AuthRegisterRequest, BindAppEntityRequest, BusinessRuleResponse, CreateAppRequest,
+        AssignRoleRequest, AuditIntegrityStatusResponse, AuditLogEntryResponse,
+        AuditPurgeResultResponse, AuditRetentionPolicyResponse, AuthLoginRequest,
+        AuthLoginResponse, AuthMfaVerifyRequest, AuthRegisterRequest, AuthStepUpRequest,
+        AuthSwitchTenantRequest, BindAppEntityRequest, BusinessRuleResponse, CreateAppRequest,
         CreateBusinessRuleRequest, CreateEntityRequest, CreateExtensionRequest, CreateFieldRequest,
         CreateFormRequest, CreateOptionSetRequest, CreateRoleRequest, CreateRuntimeRecordRequest,
         CreateTemporaryAccessGrantRequest, CreateViewRequest, DispatchScheduleTriggerRequest,
@@ -109,12 +113,13 @@ mod tests {
         RunWorkspacePublishRequest, RunWorkspacePublishResponse, RuntimeFieldPermissionResponse,
         RuntimeRecordResponse, SaveAppRoleEntityPermissionRequest, SaveAppSitemapRequest,
         SaveRuntimeFieldPermissionsRequest, SaveWorkflowRequest, TemporaryAccessGrantResponse,
-        TenantRegistrationModeResponse, UpdateAuditRetentionPolicyRequest, UpdateEntityRequest,
-        UpdateFieldRequest, UpdateRuntimeRecordRequest, UpdateTenantRegistrationModeRequest,
-        UserIdentityResponse, ViewResponse, WorkflowResponse, WorkflowRunAttemptResponse,
-        WorkflowRunReplayResponse, WorkflowRunReplayTimelineEventResponse, WorkflowRunResponse,
-        WorkspaceDashboardResponse, WorkspacePortableBundleResponse,
-        WorkspacePublishChecksResponse, WorkspacePublishDiffRequest, WorkspacePublishDiffResponse,
+        TenantOptionResponse, TenantRegistrationModeResponse, UpdateAuditRetentionPolicyRequest,
+        UpdateEntityRequest, UpdateFieldRequest, UpdateRuntimeRecordRequest,
+        UpdateTenantRegistrationModeRequest, UserIdentityResponse, ViewResponse, WorkflowResponse,
+        WorkflowRunAttemptResponse, WorkflowRunReplayResponse,
+        WorkflowRunReplayTimelineEventResponse, WorkflowRunResponse, WorkspaceDashboardResponse,
+        WorkspacePortableBundleResponse, WorkspacePublishChecksResponse,
+        WorkspacePublishDiffRequest, WorkspacePublishDiffResponse,
         WorkspacePublishHistoryEntryResponse,
     };
 
@@ -158,12 +163,14 @@ mod tests {
         CreateTemporaryAccessGrantRequest::export(&config)?;
         RevokeTemporaryAccessGrantRequest::export(&config)?;
         UpdateAuditRetentionPolicyRequest::export(&config)?;
+        AuditIntegrityStatusResponse::export(&config)?;
         UpdateRuntimeRecordRequest::export(&config)?;
         super::runtime::RuntimeRecordQueryFilterRequest::export(&config)?;
         super::runtime::RuntimeRecordQueryGroupRequest::export(&config)?;
         super::runtime::RuntimeRecordQueryLinkEntityRequest::export(&config)?;
         super::runtime::RuntimeRecordQuerySortRequest::export(&config)?;
         QueryRuntimeRecordsRequest::export(&config)?;
+        AuthStepUpRequest::export(&config)?;
         CreateExtensionRequest::export(&config)?;
         ExtensionIsolationPolicyDto::export(&config)?;
         ExtensionResponse::export(&config)?;
@@ -246,9 +253,11 @@ mod tests {
         AuthLoginRequest::export(&config)?;
         AuthLoginResponse::export(&config)?;
         AuthMfaVerifyRequest::export(&config)?;
+        AuthSwitchTenantRequest::export(&config)?;
         GenericMessageResponse::export(&config)?;
         InviteRequest::export(&config)?;
         AcceptInviteRequest::export(&config)?;
+        TenantOptionResponse::export(&config)?;
 
         Ok(())
     }

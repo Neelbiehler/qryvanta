@@ -9,6 +9,7 @@ impl PostgresAuthorizationRepository {
         subject: &str,
         permission: Permission,
     ) -> AppResult<Option<TemporaryPermissionGrant>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let row = sqlx::query_as::<_, TemporaryPermissionGrantRow>(
             r#"
             SELECT
@@ -30,12 +31,17 @@ impl PostgresAuthorizationRepository {
         .bind(tenant_id.as_uuid())
         .bind(subject)
         .bind(permission.as_str())
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to resolve temporary permission grant for subject '{}' in tenant '{}': {error}",
                 subject, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped temporary grant lookup transaction: {error}"
             ))
         })?;
 

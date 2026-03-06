@@ -10,6 +10,7 @@ impl PostgresAuthorizationRepository {
         tenant_id: TenantId,
         subject: &str,
     ) -> AppResult<Vec<Permission>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let rows = sqlx::query_as::<_, PermissionRow>(
             r#"
             SELECT DISTINCT grants.permission
@@ -22,9 +23,14 @@ impl PostgresAuthorizationRepository {
         )
         .bind(tenant_id.as_uuid())
         .bind(subject)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| AppError::Internal(format!("failed to load permissions: {error}")))?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped permission lookup transaction: {error}"
+            ))
+        })?;
 
         rows.into_iter()
             .map(|row| {

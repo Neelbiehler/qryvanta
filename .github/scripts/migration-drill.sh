@@ -17,6 +17,7 @@ run_migrate() {
   DATABASE_URL="$db_url" \
   AUTH_BOOTSTRAP_TOKEN="ci-bootstrap-token" \
   SESSION_SECRET="ci-session-secret-ci-session-secret-32" \
+  TOTP_ENCRYPTION_KEY="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" \
   cargo run -p qryvanta-api -- migrate
 }
 

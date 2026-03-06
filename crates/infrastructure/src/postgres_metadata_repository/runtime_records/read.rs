@@ -7,6 +7,7 @@ impl PostgresMetadataRepository {
         entity_logical_name: &str,
         query: RecordListQuery,
     ) -> AppResult<Vec<RuntimeRecord>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let limit = i64::try_from(query.limit).map_err(|error| {
             AppError::Validation(format!("invalid runtime record list limit: {error}"))
         })?;
@@ -31,7 +32,7 @@ impl PostgresMetadataRepository {
         .bind(query.owner_subject.as_deref())
         .bind(limit)
         .bind(offset)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await;
 
         warn_if_runtime_query_slow(
@@ -47,6 +48,11 @@ impl PostgresMetadataRepository {
                 entity_logical_name, tenant_id
             ))
         })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit runtime record list transaction: {error}"
+            ))
+        })?;
 
         rows.into_iter().map(runtime_record_from_row).collect()
     }
@@ -57,6 +63,7 @@ impl PostgresMetadataRepository {
         entity_logical_name: &str,
         record_id: &str,
     ) -> AppResult<Option<RuntimeRecord>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let record_uuid = parse_runtime_record_uuid(record_id)?;
 
         let row = sqlx::query_as::<_, RuntimeRecordRow>(
@@ -69,12 +76,17 @@ impl PostgresMetadataRepository {
         .bind(tenant_id.as_uuid())
         .bind(entity_logical_name)
         .bind(record_uuid)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to find runtime record '{}' for entity '{}' in tenant '{}': {error}",
                 record_id, entity_logical_name, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit runtime record lookup transaction: {error}"
             ))
         })?;
 
@@ -87,6 +99,7 @@ impl PostgresMetadataRepository {
         entity_logical_name: &str,
         record_id: &str,
     ) -> AppResult<()> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let record_uuid = parse_runtime_record_uuid(record_id)?;
 
         let deleted = sqlx::query(
@@ -98,7 +111,7 @@ impl PostgresMetadataRepository {
         .bind(tenant_id.as_uuid())
         .bind(entity_logical_name)
         .bind(record_uuid)
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
@@ -114,6 +127,12 @@ impl PostgresMetadataRepository {
             )));
         }
 
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit runtime record delete transaction: {error}"
+            ))
+        })?;
+
         Ok(())
     }
 
@@ -123,9 +142,10 @@ impl PostgresMetadataRepository {
         entity_logical_name: &str,
         record_id: &str,
     ) -> AppResult<bool> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let record_uuid = parse_runtime_record_uuid(record_id)?;
 
-        sqlx::query_scalar(
+        let exists = sqlx::query_scalar(
             r#"
             SELECT EXISTS (
                 SELECT 1
@@ -137,14 +157,21 @@ impl PostgresMetadataRepository {
         .bind(tenant_id.as_uuid())
         .bind(entity_logical_name)
         .bind(record_uuid)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to check runtime record existence for entity '{}' in tenant '{}': {error}",
                 entity_logical_name, tenant_id
             ))
-        })
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit runtime record existence transaction: {error}"
+            ))
+        })?;
+
+        Ok(exists)
     }
 
     pub(in super::super) async fn runtime_record_owned_by_subject_impl(
@@ -154,9 +181,10 @@ impl PostgresMetadataRepository {
         record_id: &str,
         subject: &str,
     ) -> AppResult<bool> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let record_uuid = parse_runtime_record_uuid(record_id)?;
 
-        sqlx::query_scalar(
+        let is_owned = sqlx::query_scalar(
             r#"
             SELECT EXISTS (
                 SELECT 1
@@ -172,13 +200,20 @@ impl PostgresMetadataRepository {
         .bind(entity_logical_name)
         .bind(record_uuid)
         .bind(subject)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to evaluate runtime record ownership for entity '{}' in tenant '{}': {error}",
                 entity_logical_name, tenant_id
             ))
-        })
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit runtime record ownership transaction: {error}"
+            ))
+        })?;
+
+        Ok(is_owned)
     }
 }

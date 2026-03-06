@@ -30,6 +30,10 @@ async fn main() -> Result<(), AppError> {
     let command = args.get(1).map(String::as_str);
 
     let config = api_config::ApiConfig::load()?;
+    if command == Some("print-secret-fingerprints") {
+        print_secret_fingerprints(&config)?;
+        return Ok(());
+    }
     info!(
         physical_isolation_mode = %config.physical_isolation_mode.as_str(),
         physical_isolation_tenant_id = config.physical_isolation_tenant_id.map(|value| value.to_string()),
@@ -86,9 +90,12 @@ async fn main() -> Result<(), AppError> {
 
     info!(%address, "qryvanta-api listening");
 
-    axum::serve(listener, app)
-        .await
-        .map_err(|error| AppError::Internal(format!("api server error: {error}")))
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .await
+    .map_err(|error| AppError::Internal(format!("api server error: {error}")))
 }
 
 async fn run_portability_export(
@@ -224,4 +231,22 @@ fn parse_tenant_id(value: String) -> Result<qryvanta_core::TenantId, AppError> {
     let uuid = Uuid::parse_str(value.as_str())
         .map_err(|error| AppError::Validation(format!("invalid tenant id '{}': {error}", value)))?;
     Ok(qryvanta_core::TenantId::from_uuid(uuid))
+}
+
+fn print_secret_fingerprints(config: &api_config::ApiConfig) -> Result<(), AppError> {
+    let deployment_environment = std::env::var("DEPLOYMENT_ENVIRONMENT")
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            AppError::Validation(
+                "DEPLOYMENT_ENVIRONMENT is required for print-secret-fingerprints".to_owned(),
+            )
+        })?;
+    let fingerprints = config.secret_fingerprint_records(deployment_environment.as_str());
+    let output = serde_json::to_string_pretty(&fingerprints).map_err(|error| {
+        AppError::Internal(format!("failed to serialize fingerprints: {error}"))
+    })?;
+    println!("{output}");
+    Ok(())
 }

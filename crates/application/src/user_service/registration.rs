@@ -1,5 +1,7 @@
 use qryvanta_core::AppError;
-use qryvanta_domain::{EmailAddress, RegistrationMode, validate_password};
+use qryvanta_domain::{
+    AuthEventOutcome, AuthEventType, EmailAddress, RegistrationMode, validate_password,
+};
 
 use crate::AuthEvent;
 
@@ -61,8 +63,8 @@ impl UserService {
         self.auth_event_service
             .record_event(AuthEvent {
                 subject: Some(user_id.to_string()),
-                event_type: "registration".to_owned(),
-                outcome: "success".to_owned(),
+                event_type: AuthEventType::RegistrationCompleted,
+                outcome: AuthEventOutcome::Success,
                 ip_address: params.ip_address,
                 user_agent: params.user_agent,
             })

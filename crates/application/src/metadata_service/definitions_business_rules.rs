@@ -168,6 +168,24 @@ impl MetadataService {
             )
             .await?;
 
+        let rule_exists = self
+            .repository
+            .find_business_rule(
+                actor.tenant_id(),
+                entity_logical_name,
+                business_rule_logical_name,
+            )
+            .await?
+            .is_some();
+        if !rule_exists {
+            return Err(AppError::NotFound(format!(
+                "business rule '{}.{}' does not exist for tenant '{}'",
+                entity_logical_name,
+                business_rule_logical_name,
+                actor.tenant_id()
+            )));
+        }
+
         self.repository
             .delete_business_rule(
                 actor.tenant_id(),
