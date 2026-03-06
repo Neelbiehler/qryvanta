@@ -122,7 +122,7 @@ jobs:
 
       - name: Upload signed release artifacts
         if: steps.token_check.outputs.has_token == 'true' && steps.changesets.outputs.published == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: signed-release-artifacts-${{ github.sha }}
           path: |
