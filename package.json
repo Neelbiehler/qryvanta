@@ -39,7 +39,7 @@
     "ui:publish": "pnpm ui:build && pnpm --filter @qryvanta/ui publish --access public"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.29.7",
+    "@changesets/cli": "^2.30.0",
     "tsup": "^8.5.0",
     "turbo": "^2.8.13"
   }
