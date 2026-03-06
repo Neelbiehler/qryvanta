@@ -15,8 +15,11 @@ pub async fn audit_retention_policy_handler(
 pub async fn update_audit_retention_policy_handler(
     State(state): State<AppState>,
     Extension(user): Extension<UserIdentity>,
+    session: Session,
     Json(payload): Json<UpdateAuditRetentionPolicyRequest>,
 ) -> ApiResult<Json<AuditRetentionPolicyResponse>> {
+    require_recent_step_up(&session).await?;
+
     let policy = state
         .security_admin_service
         .update_audit_retention_policy(&user, payload.retention_days)
@@ -42,8 +45,11 @@ pub async fn registration_mode_handler(
 pub async fn update_registration_mode_handler(
     State(state): State<AppState>,
     Extension(user): Extension<UserIdentity>,
+    session: Session,
     Json(payload): Json<UpdateTenantRegistrationModeRequest>,
 ) -> ApiResult<Json<TenantRegistrationModeResponse>> {
+    require_recent_step_up(&session).await?;
+
     let registration_mode = RegistrationMode::parse(payload.registration_mode.as_str())?;
 
     let updated_mode = state

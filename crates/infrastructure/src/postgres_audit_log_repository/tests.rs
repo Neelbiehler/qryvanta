@@ -5,6 +5,7 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::PgPoolOptions;
 
 use super::PostgresAuditLogRepository;
+use crate::audit_chain::{AuditChainInput, compute_audit_entry_hash};
 
 static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
 
@@ -45,6 +46,69 @@ async fn ensure_tenant(pool: &PgPool, tenant_id: TenantId, name: &str) {
     assert!(insert.is_ok());
 }
 
+async fn insert_audit_entry(
+    pool: &PgPool,
+    tenant_id: TenantId,
+    subject: &str,
+    action: &str,
+    resource_id: &str,
+    detail: Option<&str>,
+    created_at_sql: &str,
+    chain_position: i64,
+    previous_entry_hash: Option<&str>,
+) -> String {
+    let created_at_utc = sqlx::query_scalar::<_, String>(&format!(
+        "SELECT to_char(({}) AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"')",
+        created_at_sql
+    ))
+    .fetch_one(pool)
+    .await
+    .unwrap_or_else(|error| panic!("failed to resolve created_at for test audit entry: {error}"));
+    let entry_hash = compute_audit_entry_hash(&AuditChainInput {
+        tenant_id,
+        chain_position,
+        previous_entry_hash,
+        subject,
+        action,
+        resource_type: "runtime_record",
+        resource_id,
+        detail,
+        created_at_utc: created_at_utc.as_str(),
+    });
+    let insert_sql = r#"
+            INSERT INTO audit_log_entries (
+                tenant_id,
+                subject,
+                action,
+                resource_type,
+                resource_id,
+                detail,
+                created_at,
+                chain_position,
+                previous_entry_hash,
+                entry_hash
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, (#CREATED_AT#), $7, $8, $9)
+            "#
+    .replace("(#CREATED_AT#)", created_at_sql);
+
+    let insert = sqlx::query(insert_sql.as_str())
+        .bind(tenant_id.as_uuid())
+        .bind(subject)
+        .bind(action)
+        .bind("runtime_record")
+        .bind(resource_id)
+        .bind(detail)
+        .bind(chain_position)
+        .bind(previous_entry_hash)
+        .bind(entry_hash.as_str())
+        .execute(pool)
+        .await;
+
+    assert!(insert.is_ok());
+    entry_hash
+}
+
 #[tokio::test]
 async fn export_and_purge_entries_follow_retention_window() {
     let Some(pool) = test_pool().await else {
@@ -55,53 +119,30 @@ async fn export_and_purge_entries_follow_retention_window() {
     let tenant_id = TenantId::new();
     ensure_tenant(&pool, tenant_id, "Audit Tenant").await;
 
-    let old_insert = sqlx::query(
-        r#"
-            INSERT INTO audit_log_entries (
-                tenant_id,
-                subject,
-                action,
-                resource_type,
-                resource_id,
-                detail,
-                created_at
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, now() - interval '45 days')
-            "#,
+    let old_hash = insert_audit_entry(
+        &pool,
+        tenant_id,
+        "alice",
+        "runtime.record.created",
+        "record-old",
+        Some("old entry"),
+        "now() - interval '45 days'",
+        1,
+        None,
     )
-    .bind(tenant_id.as_uuid())
-    .bind("alice")
-    .bind("runtime.record.created")
-    .bind("runtime_record")
-    .bind("record-old")
-    .bind(Some("old entry"))
-    .execute(&pool)
     .await;
-    assert!(old_insert.is_ok());
-
-    let recent_insert = sqlx::query(
-        r#"
-            INSERT INTO audit_log_entries (
-                tenant_id,
-                subject,
-                action,
-                resource_type,
-                resource_id,
-                detail,
-                created_at
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, now() - interval '1 day')
-            "#,
+    let _recent_hash = insert_audit_entry(
+        &pool,
+        tenant_id,
+        "alice",
+        "runtime.record.updated",
+        "record-new",
+        Some("recent entry"),
+        "now() - interval '1 day'",
+        2,
+        Some(old_hash.as_str()),
     )
-    .bind(tenant_id.as_uuid())
-    .bind("alice")
-    .bind("runtime.record.updated")
-    .bind("runtime_record")
-    .bind("record-new")
-    .bind(Some("recent entry"))
-    .execute(&pool)
     .await;
-    assert!(recent_insert.is_ok());
 
     let exported = repository
         .export_entries(
@@ -136,6 +177,7 @@ async fn export_and_purge_entries_follow_retention_window() {
     let listed = listed.unwrap_or_default();
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].resource_id, "record-new");
+    assert_eq!(listed[0].chain_position, 2);
 }
 
 #[tokio::test]
@@ -150,77 +192,42 @@ async fn audit_log_queries_and_purge_are_tenant_scoped() {
     ensure_tenant(&pool, left_tenant, "Audit Left Tenant").await;
     ensure_tenant(&pool, right_tenant, "Audit Right Tenant").await;
 
-    let insert_left_old = sqlx::query(
-        r#"
-            INSERT INTO audit_log_entries (
-                tenant_id,
-                subject,
-                action,
-                resource_type,
-                resource_id,
-                detail,
-                created_at
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, now() - interval '45 days')
-            "#,
+    let left_old_hash = insert_audit_entry(
+        &pool,
+        left_tenant,
+        "alice",
+        "runtime.record.created",
+        "left-old",
+        Some("left old entry"),
+        "now() - interval '45 days'",
+        1,
+        None,
     )
-    .bind(left_tenant.as_uuid())
-    .bind("alice")
-    .bind("runtime.record.created")
-    .bind("runtime_record")
-    .bind("left-old")
-    .bind(Some("left old entry"))
-    .execute(&pool)
     .await;
-    assert!(insert_left_old.is_ok());
-
-    let insert_left_recent = sqlx::query(
-        r#"
-            INSERT INTO audit_log_entries (
-                tenant_id,
-                subject,
-                action,
-                resource_type,
-                resource_id,
-                detail,
-                created_at
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, now() - interval '1 day')
-            "#,
+    let _left_recent_hash = insert_audit_entry(
+        &pool,
+        left_tenant,
+        "alice",
+        "runtime.record.updated",
+        "left-new",
+        Some("left recent entry"),
+        "now() - interval '1 day'",
+        2,
+        Some(left_old_hash.as_str()),
     )
-    .bind(left_tenant.as_uuid())
-    .bind("alice")
-    .bind("runtime.record.updated")
-    .bind("runtime_record")
-    .bind("left-new")
-    .bind(Some("left recent entry"))
-    .execute(&pool)
     .await;
-    assert!(insert_left_recent.is_ok());
-
-    let insert_right_old = sqlx::query(
-        r#"
-            INSERT INTO audit_log_entries (
-                tenant_id,
-                subject,
-                action,
-                resource_type,
-                resource_id,
-                detail,
-                created_at
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, now() - interval '45 days')
-            "#,
+    let _right_old_hash = insert_audit_entry(
+        &pool,
+        right_tenant,
+        "alice",
+        "runtime.record.created",
+        "right-old",
+        Some("right old entry"),
+        "now() - interval '45 days'",
+        1,
+        None,
     )
-    .bind(right_tenant.as_uuid())
-    .bind("alice")
-    .bind("runtime.record.created")
-    .bind("runtime_record")
-    .bind("right-old")
-    .bind(Some("right old entry"))
-    .execute(&pool)
     .await;
-    assert!(insert_right_old.is_ok());
 
     let listed_left = repository
         .list_recent_entries(
@@ -293,4 +300,72 @@ async fn audit_log_queries_and_purge_are_tenant_scoped() {
     let after_right_purge = after_right_purge.unwrap_or_default();
     assert_eq!(after_right_purge.len(), 1);
     assert_eq!(after_right_purge[0].resource_id, "right-old");
+}
+
+#[tokio::test]
+async fn verify_integrity_reports_valid_and_tampered_chains() {
+    let Some(pool) = test_pool().await else {
+        return;
+    };
+
+    let repository = PostgresAuditLogRepository::new(pool.clone());
+    let tenant_id = TenantId::new();
+    ensure_tenant(&pool, tenant_id, "Audit Integrity Tenant").await;
+
+    let first_hash = insert_audit_entry(
+        &pool,
+        tenant_id,
+        "alice",
+        "runtime.record.created",
+        "record-1",
+        Some("first entry"),
+        "TIMESTAMPTZ '2026-03-01T00:00:00Z'",
+        1,
+        None,
+    )
+    .await;
+    let _second_hash = insert_audit_entry(
+        &pool,
+        tenant_id,
+        "alice",
+        "runtime.record.updated",
+        "record-2",
+        Some("second entry"),
+        "TIMESTAMPTZ '2026-03-02T00:00:00Z'",
+        2,
+        Some(first_hash.as_str()),
+    )
+    .await;
+
+    let valid = repository.verify_integrity(tenant_id).await;
+    assert!(valid.is_ok());
+    let valid = valid.unwrap_or_else(|_| unreachable!());
+    assert!(valid.is_valid);
+    assert_eq!(valid.verified_entries, 2);
+    assert_eq!(valid.latest_chain_position, Some(2));
+    assert!(valid.failures.is_empty());
+
+    let tamper = sqlx::query(
+        r#"
+            UPDATE audit_log_entries
+            SET detail = 'tampered entry'
+            WHERE tenant_id = $1 AND chain_position = 2
+            "#,
+    )
+    .bind(tenant_id.as_uuid())
+    .execute(&pool)
+    .await;
+    assert!(tamper.is_ok());
+
+    let invalid = repository.verify_integrity(tenant_id).await;
+    assert!(invalid.is_ok());
+    let invalid = invalid.unwrap_or_else(|_| unreachable!());
+    assert!(!invalid.is_valid);
+    assert_eq!(invalid.verified_entries, 2);
+    assert!(
+        invalid
+            .failures
+            .iter()
+            .any(|failure| failure.contains("entry_hash mismatch"))
+    );
 }

@@ -1,4 +1,5 @@
 use crate::AuthEvent;
+use qryvanta_domain::{AuthEventOutcome, AuthEventType};
 
 use super::*;
 
@@ -32,8 +33,8 @@ impl UserService {
             self.auth_event_service
                 .record_event(AuthEvent {
                     subject: Some(user.id.to_string()),
-                    event_type: "login_attempt".to_owned(),
-                    outcome: "account_locked".to_owned(),
+                    event_type: AuthEventType::PasswordLogin,
+                    outcome: AuthEventOutcome::AccountLocked,
                     ip_address,
                     user_agent,
                 })
@@ -58,8 +59,8 @@ impl UserService {
             self.auth_event_service
                 .record_event(AuthEvent {
                     subject: Some(user.id.to_string()),
-                    event_type: "login_attempt".to_owned(),
-                    outcome: "invalid_password".to_owned(),
+                    event_type: AuthEventType::PasswordLogin,
+                    outcome: AuthEventOutcome::InvalidPassword,
                     ip_address,
                     user_agent,
                 })
@@ -76,8 +77,8 @@ impl UserService {
             self.auth_event_service
                 .record_event(AuthEvent {
                     subject: Some(user.id.to_string()),
-                    event_type: "login_attempt".to_owned(),
-                    outcome: "mfa_required".to_owned(),
+                    event_type: AuthEventType::PasswordLogin,
+                    outcome: AuthEventOutcome::MfaRequired,
                     ip_address,
                     user_agent,
                 })
@@ -89,8 +90,8 @@ impl UserService {
         self.auth_event_service
             .record_event(AuthEvent {
                 subject: Some(user.id.to_string()),
-                event_type: "login_attempt".to_owned(),
-                outcome: "success".to_owned(),
+                event_type: AuthEventType::PasswordLogin,
+                outcome: AuthEventOutcome::Success,
                 ip_address,
                 user_agent,
             })

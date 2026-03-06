@@ -1,0 +1,72 @@
+---
+title: Ingress Conformance
+description: Validate staging and production ingress/CDN behavior before opening traffic.
+---
+
+Use this runbook after every ingress, CDN, TLS termination, or reverse-proxy change.
+
+Qryvanta depends on correct edge behavior for:
+
+- HTTPS-only browser entrypoints
+- preserved security response headers
+- preserved request headers such as `Origin` and `x-trace-id`
+- correct CORS behavior between the public web origin and API origin
+
+## What The Check Covers
+
+The ingress conformance probe validates:
+
+- public API and web URLs are `https://`
+- plaintext `http://` requests redirect to the corresponding `https://` URL
+- API `GET /health` still returns the expected security headers
+- API echoes a caller-supplied `x-trace-id`, proving the ingress/CDN does not strip that request header
+- API CORS preflight for `POST /auth/login` still allows the configured web origin with credentials and `content-type`
+- web root responses still include the expected browser security headers
+
+This probe does not prove internal proxy trust settings by itself.
+Keep `TRUST_PROXY_HEADERS=false` unless the API is behind a trusted ingress, and limit `TRUSTED_PROXY_CIDRS` to that direct ingress tier.
+
+## Local Or Operator Run
+
+Run the probe against staging before production cutover:
+
+```bash
+API_URL=https://api.example.com \
+WEB_URL=https://app.example.com \
+.github/scripts/check-ingress-conformance.sh
+```
+
+If your edge intentionally leaves plaintext HTTP closed instead of redirecting, disable that single assertion:
+
+```bash
+API_URL=https://api.example.com \
+WEB_URL=https://app.example.com \
+EXPECT_HTTP_REDIRECT=false \
+.github/scripts/check-ingress-conformance.sh
+```
+
+## GitHub Workflow
+
+Qryvanta ships a manual workflow at `.github/workflows/ingress-conformance.yml`.
+
+Run it with:
+
+1. `api_url`: public HTTPS API base URL
+2. `web_url`: public HTTPS web base URL
+3. `expect_http_redirect`: keep `true` unless your edge intentionally drops plaintext HTTP instead of redirecting
+
+Use it after:
+
+1. CDN rule changes
+2. reverse-proxy or load-balancer replacements
+3. TLS certificate or termination changes
+4. web/API hostname changes
+
+## Failure Interpretation
+
+- Missing `x-trace-id` echo usually means the ingress/CDN is stripping non-hop-by-hop request headers.
+- Missing security headers usually means the edge is replacing or caching responses without preserving upstream headers.
+- Failed CORS preflight usually means the ingress/CDN is blocking or normalizing `Origin`, `OPTIONS`, or `Access-Control-Request-*` headers.
+- Failed HTTP-to-HTTPS redirect usually means plaintext traffic is still reachable without the required edge redirect policy.
+
+Fix the edge configuration first, then rerun the probe before reopening traffic.

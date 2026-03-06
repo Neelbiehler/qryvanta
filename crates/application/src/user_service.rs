@@ -30,10 +30,20 @@ pub struct UserRecord {
     pub totp_secret_enc: Option<Vec<u8>>,
     /// Hashed recovery codes as JSON array, if enrolled.
     pub recovery_codes_hash: Option<serde_json::Value>,
+    /// Pending encrypted TOTP secret awaiting confirmation.
+    pub totp_pending_secret_enc: Option<Vec<u8>>,
+    /// Pending hashed recovery codes awaiting confirmation.
+    pub recovery_codes_pending_hash: Option<serde_json::Value>,
     /// Number of consecutive failed login attempts.
     pub failed_login_count: i32,
     /// Account is locked until this time, if set.
     pub locked_until: Option<chrono::DateTime<chrono::Utc>>,
+    /// Last password rotation/change timestamp, if set.
+    pub password_changed_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// Session revocation timestamp for MFA/security recovery events, if set.
+    pub auth_sessions_revoked_after: Option<chrono::DateTime<chrono::Utc>>,
+    /// Preferred tenant selected for future authenticated sessions, if set.
+    pub default_tenant_id: Option<TenantId>,
 }
 
 /// Repository port for user persistence.
@@ -55,6 +65,15 @@ pub trait UserRepository: Send + Sync {
 
     /// Updates the password hash for a user.
     async fn update_password(&self, user_id: UserId, password_hash: &str) -> AppResult<()>;
+
+    /// Revokes all authenticated sessions for the user from this point forward.
+    async fn revoke_sessions(&self, user_id: UserId) -> AppResult<()>;
+
+    /// Loads the stored default tenant selection for a user, if present.
+    async fn default_tenant_id(&self, user_id: UserId) -> AppResult<Option<TenantId>>;
+
+    /// Persists the preferred default tenant for a user.
+    async fn set_default_tenant_id(&self, user_id: UserId, tenant_id: TenantId) -> AppResult<()>;
 
     /// Increments the failed login counter and optionally locks the account.
     async fn record_failed_login(&self, user_id: UserId) -> AppResult<()>;
@@ -83,6 +102,17 @@ pub trait UserRepository: Send + Sync {
         totp_secret_enc: &[u8],
         recovery_codes_hash: &serde_json::Value,
     ) -> AppResult<()>;
+
+    /// Stores pending TOTP enrollment material without enabling MFA.
+    async fn begin_totp_enrollment(
+        &self,
+        user_id: UserId,
+        totp_secret_enc: &[u8],
+        recovery_codes_hash: &serde_json::Value,
+    ) -> AppResult<()>;
+
+    /// Promotes pending TOTP enrollment material into the active MFA state.
+    async fn confirm_totp_enrollment(&self, user_id: UserId) -> AppResult<()>;
 
     /// Disables TOTP and clears recovery codes.
     async fn disable_totp(&self, user_id: UserId) -> AppResult<()>;

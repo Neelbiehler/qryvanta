@@ -736,6 +736,13 @@ impl TenantRepository for FakeTenantRepository {
         Ok(preferred_tenant_id.unwrap_or_default())
     }
 
+    async fn list_memberships_for_subject(
+        &self,
+        _subject: &str,
+    ) -> AppResult<Vec<crate::TenantMembership>> {
+        Ok(Vec::new())
+    }
+
     async fn contact_record_for_subject(
         &self,
         tenant_id: TenantId,

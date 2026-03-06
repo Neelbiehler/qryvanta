@@ -6,12 +6,7 @@ impl PostgresAppRepository {
         tenant_id: TenantId,
         permission: AppEntityRolePermission,
     ) -> AppResult<()> {
-        let mut transaction = self.pool.begin().await.map_err(|error| {
-            AppError::Internal(format!(
-                "failed to start app role permission transaction for tenant '{}': {error}",
-                tenant_id
-            ))
-        })?;
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
 
         let role_id = sqlx::query_scalar::<_, uuid::Uuid>(
             r#"
@@ -118,6 +113,7 @@ impl PostgresAppRepository {
         tenant_id: TenantId,
         app_logical_name: &str,
     ) -> AppResult<Vec<AppEntityRolePermission>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let rows = sqlx::query_as::<_, AppRoleEntityPermissionRow>(
             r#"
             SELECT
@@ -137,12 +133,17 @@ impl PostgresAppRepository {
         )
         .bind(tenant_id.as_uuid())
         .bind(app_logical_name)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to list app role entity permissions for app '{}' in tenant '{}': {error}",
                 app_logical_name, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped app role permission list transaction: {error}"
             ))
         })?;
 
@@ -166,6 +167,7 @@ impl PostgresAppRepository {
         tenant_id: TenantId,
         subject: &str,
     ) -> AppResult<Vec<AppDefinition>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let rows = sqlx::query_as::<_, AppRow>(
             r#"
             SELECT DISTINCT app.logical_name, app.display_name, app.description
@@ -182,12 +184,17 @@ impl PostgresAppRepository {
         )
         .bind(tenant_id.as_uuid())
         .bind(subject)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to list accessible apps for subject '{}' in tenant '{}': {error}",
                 subject, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped accessible app list transaction: {error}"
             ))
         })?;
 
@@ -202,7 +209,8 @@ impl PostgresAppRepository {
         subject: &str,
         app_logical_name: &str,
     ) -> AppResult<bool> {
-        sqlx::query_scalar::<_, bool>(
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
+        let can_access = sqlx::query_scalar::<_, bool>(
             r#"
             SELECT EXISTS (
                 SELECT 1
@@ -219,14 +227,21 @@ impl PostgresAppRepository {
         .bind(tenant_id.as_uuid())
         .bind(app_logical_name)
         .bind(subject)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to evaluate app access for subject '{}' app '{}' tenant '{}': {error}",
                 subject, app_logical_name, tenant_id
             ))
-        })
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped app access transaction: {error}"
+            ))
+        })?;
+
+        Ok(can_access)
     }
 
     pub(super) async fn subject_entity_permission_impl(
@@ -236,6 +251,7 @@ impl PostgresAppRepository {
         app_logical_name: &str,
         entity_logical_name: &str,
     ) -> AppResult<Option<SubjectEntityPermission>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let row = sqlx::query_as::<_, SubjectEntityPermissionSummaryRow>(
             r#"
             SELECT
@@ -258,12 +274,17 @@ impl PostgresAppRepository {
         .bind(app_logical_name)
         .bind(entity_logical_name)
         .bind(subject)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to evaluate entity permissions for subject '{}' app '{}' entity '{}' tenant '{}': {error}",
                 subject, app_logical_name, entity_logical_name, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped subject entity permission transaction: {error}"
             ))
         })?;
 
@@ -286,6 +307,7 @@ impl PostgresAppRepository {
         subject: &str,
         app_logical_name: &str,
     ) -> AppResult<Vec<SubjectEntityPermission>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let rows = sqlx::query_as::<_, SubjectEntityPermissionRow>(
             r#"
             SELECT
@@ -308,12 +330,17 @@ impl PostgresAppRepository {
         .bind(tenant_id.as_uuid())
         .bind(app_logical_name)
         .bind(subject)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to list entity permissions for subject '{}' app '{}' tenant '{}': {error}",
                 subject, app_logical_name, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped subject entity permission list transaction: {error}"
             ))
         })?;
 

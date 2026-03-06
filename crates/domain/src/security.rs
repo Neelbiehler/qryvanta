@@ -261,11 +261,119 @@ impl AuditAction {
     }
 }
 
+/// Stable authentication/security event identifiers emitted outside the tenant audit log.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthEventType {
+    /// Emitted when open or invite-driven registration completes.
+    RegistrationCompleted,
+    /// Emitted for password login attempts and outcomes.
+    PasswordLogin,
+    /// Emitted when an MFA verification challenge is processed.
+    MfaVerification,
+    /// Emitted when TOTP enrollment starts.
+    MfaEnrollmentStarted,
+    /// Emitted when TOTP enrollment confirmation is processed.
+    MfaEnrollmentConfirmed,
+    /// Emitted when TOTP is disabled.
+    MfaDisabled,
+    /// Emitted when recovery codes are regenerated.
+    MfaRecoveryCodesRegenerated,
+    /// Emitted when the authenticated user changes password.
+    PasswordChanged,
+    /// Emitted when a password reset email is requested.
+    PasswordResetRequested,
+    /// Emitted when a password reset token successfully resets the password.
+    PasswordResetCompleted,
+    /// Emitted when a verification email is sent or resent.
+    EmailVerificationSent,
+    /// Emitted when email verification completes.
+    EmailVerificationCompleted,
+    /// Emitted when a tenant invite email is sent.
+    InviteSent,
+    /// Emitted when an invite token is accepted.
+    InviteAccepted,
+    /// Emitted when a passkey registration ceremony completes.
+    PasskeyRegistrationCompleted,
+    /// Emitted when a passkey login succeeds.
+    PasskeyLogin,
+    /// Emitted when bootstrap token login succeeds.
+    BootstrapLogin,
+    /// Emitted when an authenticated session logs out.
+    SessionLogout,
+    /// Emitted when an authenticated user switches tenant context.
+    SessionTenantSwitched,
+    /// Emitted when a step-up verification challenge is processed.
+    SessionStepUpVerification,
+}
+
+impl AuthEventType {
+    /// Returns a stable storage value for this event type.
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::RegistrationCompleted => "auth.registration.completed",
+            Self::PasswordLogin => "auth.password.login",
+            Self::MfaVerification => "auth.mfa.verification",
+            Self::MfaEnrollmentStarted => "auth.mfa.enrollment.started",
+            Self::MfaEnrollmentConfirmed => "auth.mfa.enrollment.confirmed",
+            Self::MfaDisabled => "auth.mfa.disabled",
+            Self::MfaRecoveryCodesRegenerated => "auth.mfa.recovery_codes.regenerated",
+            Self::PasswordChanged => "auth.password.changed",
+            Self::PasswordResetRequested => "auth.password.reset.requested",
+            Self::PasswordResetCompleted => "auth.password.reset.completed",
+            Self::EmailVerificationSent => "auth.email.verification.sent",
+            Self::EmailVerificationCompleted => "auth.email.verification.completed",
+            Self::InviteSent => "auth.invite.sent",
+            Self::InviteAccepted => "auth.invite.accepted",
+            Self::PasskeyRegistrationCompleted => "auth.passkey.registration.completed",
+            Self::PasskeyLogin => "auth.passkey.login",
+            Self::BootstrapLogin => "auth.bootstrap.login",
+            Self::SessionLogout => "auth.session.logout",
+            Self::SessionTenantSwitched => "auth.session.tenant_switched",
+            Self::SessionStepUpVerification => "auth.session.step_up.verification",
+        }
+    }
+}
+
+/// Stable authentication/security event outcomes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthEventOutcome {
+    /// The operation succeeded.
+    Success,
+    /// The operation failed generically.
+    Failed,
+    /// The subject is currently locked.
+    AccountLocked,
+    /// The supplied password was invalid.
+    InvalidPassword,
+    /// The login is paused pending MFA verification.
+    MfaRequired,
+    /// The requested operation was a no-op because state was already satisfied.
+    AlreadyVerified,
+}
+
+impl AuthEventOutcome {
+    /// Returns a stable storage value for this outcome.
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Success => "success",
+            Self::Failed => "failed",
+            Self::AccountLocked => "account_locked",
+            Self::InvalidPassword => "invalid_password",
+            Self::MfaRequired => "mfa_required",
+            Self::AlreadyVerified => "already_verified",
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
 
-    use super::{Permission, Surface};
+    use super::{AuthEventOutcome, AuthEventType, Permission, Surface};
 
     #[test]
     fn permission_roundtrip_storage_value() {
@@ -308,5 +416,31 @@ mod tests {
                 surface
             );
         }
+    }
+
+    #[test]
+    fn auth_event_type_storage_values_are_stable() {
+        assert_eq!(AuthEventType::PasswordLogin.as_str(), "auth.password.login");
+        assert_eq!(
+            AuthEventType::MfaRecoveryCodesRegenerated.as_str(),
+            "auth.mfa.recovery_codes.regenerated"
+        );
+        assert_eq!(
+            AuthEventType::SessionStepUpVerification.as_str(),
+            "auth.session.step_up.verification"
+        );
+    }
+
+    #[test]
+    fn auth_event_outcome_storage_values_are_stable() {
+        assert_eq!(AuthEventOutcome::Success.as_str(), "success");
+        assert_eq!(
+            AuthEventOutcome::InvalidPassword.as_str(),
+            "invalid_password"
+        );
+        assert_eq!(
+            AuthEventOutcome::AlreadyVerified.as_str(),
+            "already_verified"
+        );
     }
 }

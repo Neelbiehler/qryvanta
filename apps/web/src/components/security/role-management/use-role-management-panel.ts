@@ -12,6 +12,11 @@ import {
   type UpdateTenantRegistrationModeRequest,
 } from "@/lib/api";
 import {
+  apiErrorMessage,
+  isStepUpRequiredError,
+  readApiError,
+} from "@/lib/api-error";
+import {
   type EditableFieldPermission,
   type SecurityAdminSection,
 } from "@/components/security/role-management/constants";
@@ -41,6 +46,8 @@ export function useRoleManagementPanel({
   const [assignSubject, setAssignSubject] = useState("");
   const [assignRoleName, setAssignRoleName] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [isStepUpOpen, setIsStepUpOpen] = useState(false);
   const [isSubmittingRole, setIsSubmittingRole] = useState(false);
   const [isAssigning, setIsAssigning] = useState(false);
   const [isUpdatingRegistrationMode, setIsUpdatingRegistrationMode] =
@@ -72,6 +79,29 @@ export function useRoleManagementPanel({
     useState(false);
   const [activeSection, setActiveSection] =
     useState<SecurityAdminSection>("roles");
+
+  async function handleProtectedActionFailure(
+    response: Response,
+    fallback: string,
+  ) {
+    const error = await readApiError(response);
+
+    if (isStepUpRequiredError(error)) {
+      setIsStepUpOpen(true);
+      setErrorMessage(null);
+      setStatusMessage(null);
+      return;
+    }
+
+    setErrorMessage(apiErrorMessage(error, fallback));
+  }
+
+  function handleStepUpVerified() {
+    setErrorMessage(null);
+    setStatusMessage(
+      "Verification confirmed. Retry the blocked security action.",
+    );
+  }
 
   function togglePermission(permission: string) {
     setSelectedPermissions((current) =>
@@ -125,6 +155,7 @@ export function useRoleManagementPanel({
   async function handleRoleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setErrorMessage(null);
+    setStatusMessage(null);
     setIsSubmittingRole(true);
 
     try {
@@ -137,8 +168,7 @@ export function useRoleManagementPanel({
       });
 
       if (!response.ok) {
-        const payload = (await response.json()) as { message?: string };
-        setErrorMessage(payload.message ?? "Unable to create role.");
+        await handleProtectedActionFailure(response, "Unable to create role.");
         return;
       }
 
@@ -154,6 +184,7 @@ export function useRoleManagementPanel({
   async function handleAssignSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setErrorMessage(null);
+    setStatusMessage(null);
     setIsAssigning(true);
 
     try {
@@ -166,8 +197,7 @@ export function useRoleManagementPanel({
       });
 
       if (!response.ok) {
-        const payload = (await response.json()) as { message?: string };
-        setErrorMessage(payload.message ?? "Unable to assign role.");
+        await handleProtectedActionFailure(response, "Unable to assign role.");
         return;
       }
 
@@ -183,6 +213,7 @@ export function useRoleManagementPanel({
 
   async function handleUnassign(subject: string, roleNameValue: string) {
     setErrorMessage(null);
+    setStatusMessage(null);
 
     try {
       const response = await apiFetch("/api/security/role-unassignments", {
@@ -194,8 +225,10 @@ export function useRoleManagementPanel({
       });
 
       if (!response.ok) {
-        const payload = (await response.json()) as { message?: string };
-        setErrorMessage(payload.message ?? "Unable to remove role assignment.");
+        await handleProtectedActionFailure(
+          response,
+          "Unable to remove role assignment.",
+        );
         return;
       }
 
@@ -210,6 +243,7 @@ export function useRoleManagementPanel({
   ) {
     event.preventDefault();
     setErrorMessage(null);
+    setStatusMessage(null);
     setIsUpdatingRegistrationMode(true);
 
     try {
@@ -226,8 +260,10 @@ export function useRoleManagementPanel({
       });
 
       if (!response.ok) {
-        const payload = (await response.json()) as { message?: string };
-        setErrorMessage(payload.message ?? "Unable to update registration mode.");
+        await handleProtectedActionFailure(
+          response,
+          "Unable to update registration mode.",
+        );
         return;
       }
       router.refresh();
@@ -241,6 +277,7 @@ export function useRoleManagementPanel({
   async function handleSaveFieldPermissions(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setErrorMessage(null);
+    setStatusMessage(null);
 
     if (!fieldPermissionSubject.trim() || !fieldPermissionEntity.trim()) {
       setErrorMessage("Subject and entity logical name are required.");
@@ -273,8 +310,10 @@ export function useRoleManagementPanel({
       );
 
       if (!response.ok) {
-        const payload = (await response.json()) as { message?: string };
-        setErrorMessage(payload.message ?? "Unable to save field permissions.");
+        await handleProtectedActionFailure(
+          response,
+          "Unable to save field permissions.",
+        );
         return;
       }
 
@@ -291,6 +330,7 @@ export function useRoleManagementPanel({
   async function handleCreateTemporaryGrant(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setErrorMessage(null);
+    setStatusMessage(null);
 
     if (temporaryPermissions.length === 0) {
       setErrorMessage("Select at least one permission for temporary access.");
@@ -318,9 +358,9 @@ export function useRoleManagementPanel({
       });
 
       if (!response.ok) {
-        const payload = (await response.json()) as { message?: string };
-        setErrorMessage(
-          payload.message ?? "Unable to create temporary access grant.",
+        await handleProtectedActionFailure(
+          response,
+          "Unable to create temporary access grant.",
         );
         return;
       }
@@ -348,6 +388,7 @@ export function useRoleManagementPanel({
 
   async function handleRevokeTemporaryGrant() {
     setErrorMessage(null);
+    setStatusMessage(null);
     if (!grantToRevokeId) {
       setErrorMessage("Select a temporary grant before revoking.");
       return;
@@ -367,9 +408,9 @@ export function useRoleManagementPanel({
       );
 
       if (!response.ok) {
-        const payload = (await response.json()) as { message?: string };
-        setErrorMessage(
-          payload.message ?? "Unable to revoke temporary access grant.",
+        await handleProtectedActionFailure(
+          response,
+          "Unable to revoke temporary access grant.",
         );
         return;
       }
@@ -392,6 +433,7 @@ export function useRoleManagementPanel({
     assignSubject,
     cancelRevokeTemporaryGrant,
     errorMessage,
+    handleStepUpVerified,
     fieldPermissionCanRead,
     fieldPermissionCanWrite,
     fieldPermissionEntity,
@@ -406,6 +448,7 @@ export function useRoleManagementPanel({
     handleRoleSubmit,
     handleSaveFieldPermissions,
     handleUnassign,
+    isStepUpOpen,
     isAssigning,
     isCreatingTemporaryGrant,
     isRevokingTemporaryGrant,
@@ -430,6 +473,8 @@ export function useRoleManagementPanel({
     setFieldPermissionSubject,
     setRevokeReason,
     setRoleName,
+    setIsStepUpOpen,
+    statusMessage,
     setTemporaryDurationMinutes,
     setTemporaryReason,
     setTemporarySubject,

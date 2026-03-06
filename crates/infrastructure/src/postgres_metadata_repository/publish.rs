@@ -9,12 +9,7 @@ impl PostgresMetadataRepository {
         option_sets: Vec<OptionSetDefinition>,
         published_by: &str,
     ) -> AppResult<PublishedEntitySchema> {
-        let mut transaction = self.pool.begin().await.map_err(|error| {
-            AppError::Internal(format!(
-                "failed to start metadata publish transaction for tenant '{}': {error}",
-                tenant_id
-            ))
-        })?;
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
 
         let next_version: i32 = sqlx::query_scalar(
             r#"
@@ -87,6 +82,7 @@ impl PostgresMetadataRepository {
         tenant_id: TenantId,
         entity_logical_name: &str,
     ) -> AppResult<Option<PublishedEntitySchema>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let row = sqlx::query_as::<_, PublishedSchemaRow>(
             r#"
             SELECT version, schema_json
@@ -98,7 +94,7 @@ impl PostgresMetadataRepository {
         )
         .bind(tenant_id.as_uuid())
         .bind(entity_logical_name)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
@@ -108,6 +104,11 @@ impl PostgresMetadataRepository {
         })?;
 
         let Some(row) = row else {
+            transaction.commit().await.map_err(|error| {
+                AppError::Internal(format!(
+                    "failed to commit published schema lookup transaction: {error}"
+                ))
+            })?;
             return Ok(None);
         };
 
@@ -126,6 +127,12 @@ impl PostgresMetadataRepository {
             )));
         }
 
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit published schema lookup transaction: {error}"
+            ))
+        })?;
+
         Ok(Some(schema))
     }
 
@@ -136,12 +143,7 @@ impl PostgresMetadataRepository {
         published_schema_version: i32,
         forms: &[FormDefinition],
     ) -> AppResult<()> {
-        let mut transaction = self.pool.begin().await.map_err(|error| {
-            AppError::Internal(format!(
-                "failed to start form snapshot transaction for entity '{}' in tenant '{}': {error}",
-                entity_logical_name, tenant_id
-            ))
-        })?;
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
 
         sqlx::query(
             r#"
@@ -218,12 +220,7 @@ impl PostgresMetadataRepository {
         published_schema_version: i32,
         views: &[ViewDefinition],
     ) -> AppResult<()> {
-        let mut transaction = self.pool.begin().await.map_err(|error| {
-            AppError::Internal(format!(
-                "failed to start view snapshot transaction for entity '{}' in tenant '{}': {error}",
-                entity_logical_name, tenant_id
-            ))
-        })?;
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
 
         sqlx::query(
             r#"
@@ -298,6 +295,7 @@ impl PostgresMetadataRepository {
         tenant_id: TenantId,
         entity_logical_name: &str,
     ) -> AppResult<Vec<FormDefinition>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let rows = sqlx::query_as::<_, FormRow>(
             r#"
             SELECT definition_json
@@ -314,12 +312,17 @@ impl PostgresMetadataRepository {
         )
         .bind(tenant_id.as_uuid())
         .bind(entity_logical_name)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to list latest published form snapshots for entity '{}' in tenant '{}': {error}",
                 entity_logical_name, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit published form snapshot lookup transaction: {error}"
             ))
         })?;
 
@@ -340,6 +343,7 @@ impl PostgresMetadataRepository {
         tenant_id: TenantId,
         entity_logical_name: &str,
     ) -> AppResult<Vec<ViewDefinition>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let rows = sqlx::query_as::<_, ViewRow>(
             r#"
             SELECT definition_json
@@ -356,12 +360,17 @@ impl PostgresMetadataRepository {
         )
         .bind(tenant_id.as_uuid())
         .bind(entity_logical_name)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to list latest published view snapshots for entity '{}' in tenant '{}': {error}",
                 entity_logical_name, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit published view snapshot lookup transaction: {error}"
             ))
         })?;
 

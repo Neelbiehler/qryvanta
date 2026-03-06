@@ -16,6 +16,7 @@ mod mfa_service;
 mod rate_limit_service;
 mod security_admin_ports;
 mod security_admin_service;
+mod tenant_access_service;
 mod user_service;
 mod workflow_ports;
 mod workflow_service;
@@ -49,8 +50,8 @@ pub use metadata_ports::{
     RuntimeRecordConditionNode, RuntimeRecordFilter, RuntimeRecordJoinType, RuntimeRecordLink,
     RuntimeRecordLogicalMode, RuntimeRecordOperator, RuntimeRecordQuery, RuntimeRecordSort,
     RuntimeRecordSortDirection, SaveBusinessRuleInput, SaveFieldInput, SaveFormInput,
-    SaveOptionSetInput, SaveViewInput, TenantRepository, UniqueFieldValue, UpdateEntityInput,
-    UpdateFieldInput,
+    SaveOptionSetInput, SaveViewInput, TenantMembership, TenantRepository, UniqueFieldValue,
+    UpdateEntityInput, UpdateFieldInput,
 };
 pub use metadata_service::{
     ExportWorkspaceBundleOptions, ImportWorkspaceBundleOptions, ImportWorkspaceBundleResult,
@@ -58,15 +59,17 @@ pub use metadata_service::{
     WorkspacePortablePayload,
 };
 pub use mfa_service::{MfaService, SecretEncryptor, TotpEnrollment, TotpProvider};
+pub use qryvanta_domain::{AuthEventOutcome, AuthEventType};
 pub use rate_limit_service::{AttemptInfo, RateLimitRepository, RateLimitRule, RateLimitService};
 pub use security_admin_ports::{
-    AuditLogEntry, AuditLogQuery, AuditLogRepository, AuditPurgeResult, AuditRetentionPolicy,
-    CreateRoleInput, CreateTemporaryAccessGrantInput, RoleAssignment, RoleDefinition,
-    RuntimeFieldPermissionEntry, RuntimeFieldPermissionInput, SaveRuntimeFieldPermissionsInput,
-    SecurityAdminRepository, TemporaryAccessGrant, TemporaryAccessGrantQuery,
-    WorkspacePublishRunAuditInput,
+    AuditIntegrityStatus, AuditLogEntry, AuditLogQuery, AuditLogRepository, AuditPurgeResult,
+    AuditRetentionPolicy, CreateRoleInput, CreateTemporaryAccessGrantInput, RoleAssignment,
+    RoleDefinition, RuntimeFieldPermissionEntry, RuntimeFieldPermissionInput,
+    SaveRuntimeFieldPermissionsInput, SecurityAdminRepository, TemporaryAccessGrant,
+    TemporaryAccessGrantQuery, WorkspacePublishRunAuditInput,
 };
 pub use security_admin_service::SecurityAdminService;
+pub use tenant_access_service::{TenantAccessService, TenantSelection};
 pub use user_service::{
     AuthOutcome, PasswordHasher, RegisterParams, UserRecord, UserRepository, UserService,
 };

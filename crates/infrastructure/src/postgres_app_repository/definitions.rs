@@ -6,6 +6,7 @@ impl PostgresAppRepository {
         tenant_id: TenantId,
         app: AppDefinition,
     ) -> AppResult<()> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let result = sqlx::query(
             r#"
             INSERT INTO app_definitions (tenant_id, logical_name, display_name, description)
@@ -16,11 +17,18 @@ impl PostgresAppRepository {
         .bind(app.logical_name().as_str())
         .bind(app.display_name().as_str())
         .bind(app.description())
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await;
 
         match result {
-            Ok(_) => Ok(()),
+            Ok(_) => {
+                transaction.commit().await.map_err(|error| {
+                    AppError::Internal(format!(
+                        "failed to commit tenant-scoped app create transaction: {error}"
+                    ))
+                })?;
+                Ok(())
+            }
             Err(error) => {
                 if let sqlx::Error::Database(database_error) = &error
                     && database_error.code().as_deref() == Some("23505")
@@ -45,6 +53,7 @@ impl PostgresAppRepository {
         &self,
         tenant_id: TenantId,
     ) -> AppResult<Vec<AppDefinition>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let rows = sqlx::query_as::<_, AppRow>(
             r#"
             SELECT logical_name, display_name, description
@@ -54,12 +63,17 @@ impl PostgresAppRepository {
             "#,
         )
         .bind(tenant_id.as_uuid())
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to list apps for tenant '{}': {error}",
                 tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped app list transaction: {error}"
             ))
         })?;
 
@@ -73,6 +87,7 @@ impl PostgresAppRepository {
         tenant_id: TenantId,
         app_logical_name: &str,
     ) -> AppResult<Option<AppDefinition>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let row = sqlx::query_as::<_, AppRow>(
             r#"
             SELECT logical_name, display_name, description
@@ -82,12 +97,17 @@ impl PostgresAppRepository {
         )
         .bind(tenant_id.as_uuid())
         .bind(app_logical_name)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to find app '{}' for tenant '{}': {error}",
                 app_logical_name, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped app lookup transaction: {error}"
             ))
         })?;
 

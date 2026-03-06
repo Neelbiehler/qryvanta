@@ -202,6 +202,10 @@ contracts-check:
 migration-zdt-check:
     .github/scripts/verify-zero-downtime-migrations.sh
 
+# Run ingress/CDN conformance checks against deployed API/web URLs
+ingress-conformance api_url web_url expect_http_redirect='true':
+    API_URL={{api_url}} WEB_URL={{web_url}} EXPECT_HTTP_REDIRECT={{expect_http_redirect}} .github/scripts/check-ingress-conformance.sh
+
 # Run reproducible k6 load benchmarks (PERF-04)
 perf-benchmark profile='mixed' duration='90s':
     ./scripts/perf/run-benchmarks.sh --profile {{profile}} --duration {{duration}}

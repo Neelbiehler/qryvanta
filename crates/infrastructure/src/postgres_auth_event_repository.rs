@@ -34,8 +34,8 @@ impl AuthEventRepository for PostgresAuthEventRepository {
             "#,
         )
         .bind(event.subject)
-        .bind(event.event_type)
-        .bind(event.outcome)
+        .bind(event.event_type.as_str())
+        .bind(event.outcome.as_str())
         .bind(event.ip_address)
         .bind(event.user_agent)
         .execute(&self.pool)

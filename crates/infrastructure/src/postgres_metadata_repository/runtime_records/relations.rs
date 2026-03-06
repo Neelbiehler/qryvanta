@@ -7,6 +7,7 @@ impl PostgresMetadataRepository {
         target_entity_logical_name: &str,
         target_record_id: &str,
     ) -> AppResult<bool> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let latest_schemas = sqlx::query_as::<_, LatestSchemaRow>(
             r#"
             SELECT DISTINCT ON (entity_logical_name) schema_json
@@ -16,7 +17,7 @@ impl PostgresMetadataRepository {
             "#,
         )
         .bind(tenant_id.as_uuid())
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
@@ -67,7 +68,7 @@ impl PostgresMetadataRepository {
                 .bind(schema.entity().logical_name().as_str())
                 .bind(field_name.as_str())
                 .bind(target_record_id)
-                .fetch_one(&self.pool)
+                .fetch_one(&mut *transaction)
                 .await
                 .map_err(|error| {
                     AppError::Internal(format!(
@@ -79,10 +80,21 @@ impl PostgresMetadataRepository {
                 })?;
 
                 if exists {
+                    transaction.commit().await.map_err(|error| {
+                        AppError::Internal(format!(
+                            "failed to commit relation reference transaction: {error}"
+                        ))
+                    })?;
                     return Ok(true);
                 }
             }
         }
+
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit relation reference transaction: {error}"
+            ))
+        })?;
 
         Ok(false)
     }

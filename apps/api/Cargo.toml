@@ -10,6 +10,7 @@ axum.workspace = true
 chrono.workspace = true
 dotenvy.workspace = true
 async-trait.workspace = true
+ipnet.workspace = true
 qryvanta-application = { path = "../../crates/application" }
 qryvanta-core = { path = "../../crates/core" }
 qryvanta-domain = { path = "../../crates/domain" }

@@ -1,3 +1,4 @@
+use crate::{begin_tenant_transaction, begin_workflow_worker_transaction};
 use async_trait::async_trait;
 use qryvanta_application::{
     ClaimedWorkflowJob, CompleteWorkflowRunInput, CreateWorkflowRunInput, WorkflowClaimPartition,
@@ -97,6 +98,9 @@ struct WorkflowQueueStatsRow {
 mod definitions;
 mod queue;
 mod runs;
+
+#[cfg(test)]
+mod tests;
 
 #[async_trait]
 impl WorkflowRepository for PostgresWorkflowRepository {

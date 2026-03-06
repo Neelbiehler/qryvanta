@@ -1,7 +1,10 @@
 use std::env;
 
 use qryvanta_application::WorkflowClaimPartition;
-use qryvanta_core::{AppError, AppResult, TenantId};
+use qryvanta_core::{
+    AppError, AppResult, SecretFingerprintRecord, TenantId, detect_reused_secret_fingerprints,
+    optional_secret, required_secret,
+};
 
 #[derive(Debug, Clone)]
 pub(crate) struct WorkerConfig {
@@ -50,15 +53,24 @@ impl WorkerConfig {
             .trim_end_matches('/')
             .to_owned();
         let worker_shared_secret = required_env("WORKER_SHARED_SECRET")?;
+        let deployment_environment =
+            optional_secret("DEPLOYMENT_ENVIRONMENT")?.map(|value| value.trim().to_owned());
+        let secret_reuse_guard_records = parse_secret_reuse_guard_records()?;
+        validate_secret_reuse_guard(
+            deployment_environment.as_deref(),
+            secret_reuse_guard_records.as_slice(),
+            build_worker_secret_fingerprint_records(
+                deployment_environment.as_deref(),
+                worker_shared_secret.as_str(),
+            )
+            .as_slice(),
+        )?;
         let worker_id = env::var("WORKER_ID")
             .ok()
             .map(|value| value.trim().to_owned())
             .filter(|value| !value.is_empty())
             .unwrap_or_else(|| format!("worker-{}", std::process::id()));
-        let redis_url = env::var("REDIS_URL")
-            .ok()
-            .map(|value| value.trim().to_owned())
-            .filter(|value| !value.is_empty());
+        let redis_url = optional_secret("REDIS_URL")?;
         let coordination_backend = WorkerCoordinationBackend::parse(
             env::var("WORKER_COORDINATION_BACKEND")
                 .unwrap_or_else(|_| "none".to_owned())
@@ -164,6 +176,17 @@ impl WorkerConfig {
             physical_isolation_mode,
             physical_isolation_tenant_id,
         })
+    }
+
+    pub(crate) fn secret_fingerprint_records(
+        &self,
+        environment: &str,
+    ) -> Vec<SecretFingerprintRecord> {
+        vec![SecretFingerprintRecord::from_secret(
+            environment,
+            "WORKER_SHARED_SECRET",
+            &self.worker_shared_secret,
+        )]
     }
 }
 
@@ -274,7 +297,53 @@ fn default_coordination_scope_key(
 }
 
 fn required_env(name: &str) -> AppResult<String> {
-    env::var(name).map_err(|_| AppError::Validation(format!("{name} is required")))
+    required_secret(name)
+}
+
+fn parse_secret_reuse_guard_records() -> AppResult<Vec<SecretFingerprintRecord>> {
+    let Some(raw_value) = optional_secret("SECRET_REUSE_GUARD_FINGERPRINTS")? else {
+        return Ok(Vec::new());
+    };
+
+    serde_json::from_str::<Vec<SecretFingerprintRecord>>(raw_value.as_str()).map_err(|error| {
+        AppError::Validation(format!(
+            "invalid SECRET_REUSE_GUARD_FINGERPRINTS JSON: {error}"
+        ))
+    })
+}
+
+fn validate_secret_reuse_guard(
+    deployment_environment: Option<&str>,
+    guard_records: &[SecretFingerprintRecord],
+    current_records: &[SecretFingerprintRecord],
+) -> AppResult<()> {
+    if guard_records.is_empty() {
+        return Ok(());
+    }
+
+    let deployment_environment = deployment_environment.ok_or_else(|| {
+        AppError::Validation(
+            "DEPLOYMENT_ENVIRONMENT is required when SECRET_REUSE_GUARD_FINGERPRINTS is configured"
+                .to_owned(),
+        )
+    })?;
+
+    detect_reused_secret_fingerprints(deployment_environment, current_records, guard_records)
+}
+
+fn build_worker_secret_fingerprint_records(
+    deployment_environment: Option<&str>,
+    worker_shared_secret: &str,
+) -> Vec<SecretFingerprintRecord> {
+    let Some(deployment_environment) = deployment_environment else {
+        return Vec::new();
+    };
+
+    vec![SecretFingerprintRecord::from_secret(
+        deployment_environment,
+        "WORKER_SHARED_SECRET",
+        worker_shared_secret,
+    )]
 }
 
 fn parse_env_usize(name: &str, default: usize) -> AppResult<usize> {

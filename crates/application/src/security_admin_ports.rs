@@ -5,7 +5,9 @@ mod roles;
 mod runtime_permissions;
 mod temporary_access;
 
-pub use audit::{AuditLogEntry, AuditLogQuery, WorkspacePublishRunAuditInput};
+pub use audit::{
+    AuditIntegrityStatus, AuditLogEntry, AuditLogQuery, WorkspacePublishRunAuditInput,
+};
 pub use governance::{AuditPurgeResult, AuditRetentionPolicy};
 pub use repositories::{AuditLogRepository, SecurityAdminRepository};
 pub use roles::{CreateRoleInput, RoleAssignment, RoleDefinition};

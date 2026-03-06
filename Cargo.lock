@@ -1912,6 +1912,7 @@ dependencies = [
  "axum",
  "chrono",
  "dotenvy",
+ "ipnet",
  "proptest",
  "qryvanta-application",
  "qryvanta-core",
@@ -1955,6 +1956,7 @@ name = "qryvanta-core"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "sha2",
  "thiserror 2.0.18",
  "uuid",
 ]
@@ -1977,6 +1979,7 @@ dependencies = [
  "aes-gcm",
  "argon2",
  "async-trait",
+ "base64 0.22.1",
  "chrono",
  "hex",
  "lettre",
@@ -1987,6 +1990,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "sha2",
  "sqlx",
  "tokio",
  "totp-rs",

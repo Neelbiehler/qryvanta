@@ -1,7 +1,12 @@
 use axum::Json;
-use axum::extract::{Extension, State};
+use axum::extract::{ConnectInfo, Extension, State};
+use axum::http::HeaderMap;
+use qryvanta_application::AuthEvent;
 use qryvanta_core::{AppError, UserIdentity};
-use qryvanta_domain::{AuthTokenType, EmailAddress, Permission, RegistrationMode};
+use qryvanta_domain::{
+    AuthEventOutcome, AuthEventType, AuthTokenType, EmailAddress, Permission, RegistrationMode,
+};
+use std::net::SocketAddr;
 use tower_sessions::Session;
 
 use crate::dto::{
@@ -10,14 +15,17 @@ use crate::dto::{
 use crate::error::ApiResult;
 use crate::state::AppState;
 
-use super::session_helpers::{default_display_name, tenant_id_from_invite_metadata};
-use super::{
-    SESSION_CREATED_AT_KEY, SESSION_USER_KEY, invite_recipient_rate_rule, invite_sender_rate_rule,
+use super::session_helpers::{
+    default_display_name, extract_request_context, mark_step_up_verified,
+    persist_authenticated_identity, switch_identity_for_subject, tenant_id_from_invite_metadata,
 };
+use super::{invite_recipient_rate_rule, invite_sender_rate_rule};
 
 /// POST /auth/invite - Send a tenant invite email (requires auth).
 pub async fn send_invite_handler(
     State(state): State<AppState>,
+    headers: HeaderMap,
+    ConnectInfo(connect_info): ConnectInfo<SocketAddr>,
     Extension(user): Extension<UserIdentity>,
     Json(payload): Json<InviteRequest>,
 ) -> ApiResult<Json<GenericMessageResponse>> {
@@ -55,7 +63,7 @@ pub async fn send_invite_handler(
         "invited_by": user.subject(),
     });
 
-    state
+    let send_result = state
         .auth_token_service
         .send_invite(
             canonical_email.as_str(),
@@ -63,7 +71,30 @@ pub async fn send_invite_handler(
             tenant_name,
             &metadata,
         )
+        .await;
+
+    let (ip_address, user_agent) = extract_request_context(
+        &headers,
+        Some(connect_info),
+        state.trust_proxy_headers,
+        &state.trusted_proxy_cidrs,
+    );
+    state
+        .auth_event_service
+        .record_event(AuthEvent {
+            subject: Some(user.subject().to_owned()),
+            event_type: AuthEventType::InviteSent,
+            outcome: if send_result.is_ok() {
+                AuthEventOutcome::Success
+            } else {
+                AuthEventOutcome::Failed
+            },
+            ip_address,
+            user_agent,
+        })
         .await?;
+
+    send_result?;
 
     // OWASP: generic response to avoid enumeration.
     Ok(Json(GenericMessageResponse {
@@ -74,99 +105,107 @@ pub async fn send_invite_handler(
 /// POST /auth/invite/accept - Accept an invite token.
 pub async fn accept_invite_handler(
     State(state): State<AppState>,
+    headers: HeaderMap,
+    ConnectInfo(connect_info): ConnectInfo<SocketAddr>,
     session: Session,
     Json(payload): Json<AcceptInviteRequest>,
 ) -> ApiResult<Json<LoginResponse>> {
-    let token_record = state
-        .auth_token_service
-        .consume_valid_token(&payload.token, AuthTokenType::Invite)
-        .await?;
+    let accept_result = async {
+        let token_record = state
+            .auth_token_service
+            .consume_valid_token(&payload.token, AuthTokenType::Invite)
+            .await?;
 
-    let tenant_id = tenant_id_from_invite_metadata(token_record.metadata.as_ref())?;
-    let invited_email = token_record.email.clone();
-    let display_name = payload
-        .display_name
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| default_display_name(&invited_email))
-        .to_owned();
+        let tenant_id = tenant_id_from_invite_metadata(token_record.metadata.as_ref())?;
+        let invited_email = token_record.email.clone();
+        let display_name = payload
+            .display_name
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| default_display_name(&invited_email))
+            .to_owned();
 
-    let user_id =
-        if let Some(existing_user) = state.user_service.find_by_email(&invited_email).await? {
-            state
-                .tenant_repository
-                .create_membership(
-                    tenant_id,
-                    &existing_user.id.to_string(),
-                    display_name.as_str(),
-                    Some(invited_email.as_str()),
-                )
-                .await?;
+        let user_id =
+            if let Some(existing_user) = state.user_service.find_by_email(&invited_email).await? {
+                state
+                    .tenant_repository
+                    .create_membership(
+                        tenant_id,
+                        &existing_user.id.to_string(),
+                        display_name.as_str(),
+                        Some(invited_email.as_str()),
+                    )
+                    .await?;
 
-            existing_user.id
-        } else {
-            let password = payload.password.as_deref().ok_or_else(|| {
-                AppError::Validation("password is required for new invited users".to_owned())
-            })?;
+                existing_user.id
+            } else {
+                let password = payload.password.as_deref().ok_or_else(|| {
+                    AppError::Validation("password is required for new invited users".to_owned())
+                })?;
 
-            state
-                .user_service
-                .register(qryvanta_application::RegisterParams {
-                    email: invited_email.clone(),
-                    password: password.to_owned(),
-                    display_name: display_name.clone(),
-                    registration_mode: RegistrationMode::Open,
-                    preferred_tenant_id: Some(tenant_id),
-                    ip_address: None,
-                    user_agent: None,
-                })
-                .await?
-        };
+                state
+                    .user_service
+                    .register(qryvanta_application::RegisterParams {
+                        email: invited_email.clone(),
+                        password: password.to_owned(),
+                        display_name: display_name.clone(),
+                        registration_mode: RegistrationMode::Open,
+                        preferred_tenant_id: Some(tenant_id),
+                        ip_address: None,
+                        user_agent: None,
+                    })
+                    .await?
+            };
 
-    let user_subject = user_id.to_string();
+        let user_subject = user_id.to_string();
 
-    state
-        .contact_bootstrap_service
-        .ensure_subject_contact(
-            tenant_id,
-            user_subject.as_str(),
-            display_name.as_str(),
-            Some(invited_email.as_str()),
-        )
-        .await?;
+        state
+            .contact_bootstrap_service
+            .ensure_subject_contact(
+                tenant_id,
+                user_subject.as_str(),
+                display_name.as_str(),
+                Some(invited_email.as_str()),
+            )
+            .await?;
 
-    state
-        .user_service
-        .user_repository()
-        .mark_email_verified(user_id)
-        .await?;
+        state
+            .user_service
+            .user_repository()
+            .mark_email_verified(user_id)
+            .await?;
 
-    // Establish authenticated session for the invited user.
-    session
-        .cycle_id()
-        .await
-        .map_err(|error| AppError::Internal(format!("failed to cycle session id: {error}")))?;
+        let identity =
+            switch_identity_for_subject(&state, user_id.to_string().as_str(), tenant_id).await?;
+        persist_authenticated_identity(&session, &identity).await?;
+        mark_step_up_verified(&session).await?;
 
-    let identity = UserIdentity::new(
-        user_id.to_string(),
-        invited_email.clone(),
-        Some(invited_email),
-        tenant_id,
+        Ok::<String, AppError>(user_id.to_string())
+    }
+    .await;
+
+    let (ip_address, user_agent) = extract_request_context(
+        &headers,
+        Some(connect_info),
+        state.trust_proxy_headers,
+        &state.trusted_proxy_cidrs,
     );
+    state
+        .auth_event_service
+        .record_event(AuthEvent {
+            subject: accept_result.as_ref().ok().cloned(),
+            event_type: AuthEventType::InviteAccepted,
+            outcome: if accept_result.is_ok() {
+                AuthEventOutcome::Success
+            } else {
+                AuthEventOutcome::Failed
+            },
+            ip_address,
+            user_agent,
+        })
+        .await?;
 
-    session
-        .insert(SESSION_USER_KEY, &identity)
-        .await
-        .map_err(|error| {
-            AppError::Internal(format!("failed to persist session identity: {error}"))
-        })?;
-
-    session
-        .insert(SESSION_CREATED_AT_KEY, chrono::Utc::now().timestamp())
-        .await
-        .map_err(|error| {
-            AppError::Internal(format!("failed to persist session creation time: {error}"))
-        })?;
+    accept_result?;
 
     Ok(Json(LoginResponse {
         status: "authenticated".to_owned(),

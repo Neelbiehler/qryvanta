@@ -30,8 +30,13 @@ struct UserRow {
     totp_enabled: bool,
     totp_secret_enc: Option<Vec<u8>>,
     recovery_codes_hash: Option<serde_json::Value>,
+    totp_pending_secret_enc: Option<Vec<u8>>,
+    recovery_codes_pending_hash: Option<serde_json::Value>,
     failed_login_count: i32,
     locked_until: Option<chrono::DateTime<chrono::Utc>>,
+    password_changed_at: Option<chrono::DateTime<chrono::Utc>>,
+    auth_sessions_revoked_after: Option<chrono::DateTime<chrono::Utc>>,
+    default_tenant_id: Option<uuid::Uuid>,
 }
 
 impl From<UserRow> for UserRecord {
@@ -44,8 +49,13 @@ impl From<UserRow> for UserRecord {
             totp_enabled: row.totp_enabled,
             totp_secret_enc: row.totp_secret_enc,
             recovery_codes_hash: row.recovery_codes_hash,
+            totp_pending_secret_enc: row.totp_pending_secret_enc,
+            recovery_codes_pending_hash: row.recovery_codes_pending_hash,
             failed_login_count: row.failed_login_count,
             locked_until: row.locked_until,
+            password_changed_at: row.password_changed_at,
+            auth_sessions_revoked_after: row.auth_sessions_revoked_after,
+            default_tenant_id: row.default_tenant_id.map(TenantId::from_uuid),
         }
     }
 }
@@ -75,6 +85,18 @@ impl UserRepository for PostgresUserRepository {
 
     async fn update_password(&self, user_id: UserId, password_hash: &str) -> AppResult<()> {
         self.update_password_impl(user_id, password_hash).await
+    }
+
+    async fn revoke_sessions(&self, user_id: UserId) -> AppResult<()> {
+        self.revoke_sessions_impl(user_id).await
+    }
+
+    async fn default_tenant_id(&self, user_id: UserId) -> AppResult<Option<TenantId>> {
+        self.default_tenant_id_impl(user_id).await
+    }
+
+    async fn set_default_tenant_id(&self, user_id: UserId, tenant_id: TenantId) -> AppResult<()> {
+        self.set_default_tenant_id_impl(user_id, tenant_id).await
     }
 
     async fn record_failed_login(&self, user_id: UserId) -> AppResult<()> {
@@ -111,6 +133,20 @@ impl UserRepository for PostgresUserRepository {
     ) -> AppResult<()> {
         self.enable_totp_impl(user_id, totp_secret_enc, recovery_codes_hash)
             .await
+    }
+
+    async fn begin_totp_enrollment(
+        &self,
+        user_id: UserId,
+        totp_secret_enc: &[u8],
+        recovery_codes_hash: &serde_json::Value,
+    ) -> AppResult<()> {
+        self.begin_totp_enrollment_impl(user_id, totp_secret_enc, recovery_codes_hash)
+            .await
+    }
+
+    async fn confirm_totp_enrollment(&self, user_id: UserId) -> AppResult<()> {
+        self.confirm_totp_enrollment_impl(user_id).await
     }
 
     async fn disable_totp(&self, user_id: UserId) -> AppResult<()> {

@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 
+use crate::begin_tenant_transaction;
 use qryvanta_application::{AppRepository, SubjectEntityPermission};
 use qryvanta_core::{AppError, AppResult, TenantId};
 use qryvanta_domain::{

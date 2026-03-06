@@ -336,6 +336,18 @@ impl MetadataService {
         self.published_schema_for_runtime(actor.tenant_id(), entity_logical_name)
             .await?;
 
+        let record_exists = self
+            .repository
+            .find_runtime_record(actor.tenant_id(), entity_logical_name, record_id)
+            .await?
+            .is_some();
+        if !record_exists {
+            return Err(AppError::NotFound(format!(
+                "runtime record '{}' does not exist for entity '{}'",
+                record_id, entity_logical_name
+            )));
+        }
+
         if self
             .repository
             .has_relation_reference(actor.tenant_id(), entity_logical_name, record_id)
@@ -400,6 +412,18 @@ impl MetadataService {
 
         self.published_schema_for_runtime(actor.tenant_id(), entity_logical_name)
             .await?;
+
+        let record_exists = self
+            .repository
+            .find_runtime_record(actor.tenant_id(), entity_logical_name, record_id)
+            .await?
+            .is_some();
+        if !record_exists {
+            return Err(AppError::NotFound(format!(
+                "runtime record '{}' does not exist for entity '{}'",
+                record_id, entity_logical_name
+            )));
+        }
 
         if self
             .repository
