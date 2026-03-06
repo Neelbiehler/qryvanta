@@ -11,6 +11,7 @@ impl PostgresMetadataRepository {
         entity_logical_name: &str,
         query: RuntimeRecordQuery,
     ) -> AppResult<Vec<RuntimeRecord>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let limit = i64::try_from(query.limit).map_err(|error| {
             AppError::Validation(format!("invalid runtime record query limit: {error}"))
         })?;
@@ -135,7 +136,7 @@ impl PostgresMetadataRepository {
         let started_at = std::time::Instant::now();
         let rows_result = builder
             .build_query_as::<RuntimeRecordRow>()
-            .fetch_all(&self.pool)
+            .fetch_all(&mut *transaction)
             .await;
 
         warn_if_runtime_query_slow(
@@ -149,6 +150,11 @@ impl PostgresMetadataRepository {
             AppError::Internal(format!(
                 "failed to query runtime records for entity '{}' in tenant '{}': {error}",
                 entity_logical_name, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit runtime record query transaction: {error}"
             ))
         })?;
 

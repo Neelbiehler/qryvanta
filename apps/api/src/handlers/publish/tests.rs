@@ -5,11 +5,12 @@ use async_trait::async_trait;
 use axum::Json;
 use axum::extract::{Extension, Query, State};
 use qryvanta_application::{
-    AppEntityFormInput, AppEntityViewInput, AppRepository, AppService, AuditEvent, AuditLogEntry,
-    AuditLogQuery, AuditLogRepository, AuditRepository, AuthorizationRepository,
-    AuthorizationService, BindAppEntityInput, CreateAppInput, MetadataService, RuntimeFieldGrant,
-    RuntimeRecordService, SaveFieldInput, SaveFormInput, SaveViewInput, SecurityAdminService,
-    SubjectEntityPermission, TemporaryPermissionGrant, WorkspacePublishRunAuditInput,
+    AppEntityFormInput, AppEntityViewInput, AppRepository, AppService, AuditEvent,
+    AuditIntegrityStatus, AuditLogEntry, AuditLogQuery, AuditLogRepository, AuditRepository,
+    AuthorizationRepository, AuthorizationService, BindAppEntityInput, CreateAppInput,
+    MetadataService, RuntimeFieldGrant, RuntimeRecordService, SaveFieldInput, SaveFormInput,
+    SaveViewInput, SecurityAdminService, SubjectEntityPermission, TemporaryPermissionGrant,
+    WorkspacePublishRunAuditInput,
 };
 use qryvanta_core::{AppResult, TenantId, UserIdentity};
 use qryvanta_domain::{
@@ -130,6 +131,9 @@ impl AuditLogRepository for FakeAuditLogRepository {
                 resource_id: event.resource_id.clone(),
                 detail: event.detail.clone(),
                 created_at: format!("2026-02-24T00:00:{index:02}Z"),
+                chain_position: i64::try_from(index + 1).unwrap_or(i64::MAX),
+                previous_entry_hash: (index > 0).then(|| format!("hash-{}", index - 1)),
+                entry_hash: format!("hash-{index}"),
             })
             .collect::<Vec<_>>();
 
@@ -153,6 +157,19 @@ impl AuditLogRepository for FakeAuditLogRepository {
         _retention_days: u16,
     ) -> AppResult<u64> {
         Ok(0)
+    }
+
+    async fn verify_integrity(&self, _tenant_id: TenantId) -> AppResult<AuditIntegrityStatus> {
+        let verified_entries = self.sink.events.lock().await.len();
+        Ok(AuditIntegrityStatus {
+            is_valid: true,
+            verified_entries,
+            latest_chain_position: i64::try_from(verified_entries).ok(),
+            latest_entry_hash: verified_entries
+                .checked_sub(1)
+                .map(|index| format!("hash-{index}")),
+            failures: Vec::new(),
+        })
     }
 }
 
@@ -495,6 +512,9 @@ fn map_workspace_publish_history_entries_skips_invalid_payloads_and_preserves_or
             resource_id: "maker-b-2".to_owned(),
             detail: Some(valid_detail.clone()),
             created_at: "2026-02-24T15:00:00Z".to_owned(),
+            chain_position: 3,
+            previous_entry_hash: Some("hash-1".to_owned()),
+            entry_hash: "hash-2".to_owned(),
         },
         AuditLogEntry {
             event_id: "run-invalid".to_owned(),
@@ -504,6 +524,9 @@ fn map_workspace_publish_history_entries_skips_invalid_payloads_and_preserves_or
             resource_id: "maker-x-9".to_owned(),
             detail: Some("not-json".to_owned()),
             created_at: "2026-02-24T14:00:00Z".to_owned(),
+            chain_position: 2,
+            previous_entry_hash: Some("hash-0".to_owned()),
+            entry_hash: "hash-1".to_owned(),
         },
         AuditLogEntry {
             event_id: "run-1".to_owned(),
@@ -513,6 +536,9 @@ fn map_workspace_publish_history_entries_skips_invalid_payloads_and_preserves_or
             resource_id: "maker-a-1".to_owned(),
             detail: Some(valid_detail),
             created_at: "2026-02-24T13:00:00Z".to_owned(),
+            chain_position: 1,
+            previous_entry_hash: None,
+            entry_hash: "hash-0".to_owned(),
         },
     ]);
 

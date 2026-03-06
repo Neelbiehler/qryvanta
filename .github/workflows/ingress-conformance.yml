@@ -1,0 +1,32 @@
+name: ingress-conformance
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: "Public HTTPS API base URL"
+        required: true
+        type: string
+      web_url:
+        description: "Public HTTPS web base URL"
+        required: true
+        type: string
+      expect_http_redirect:
+        description: "Require plaintext HTTP to redirect to HTTPS"
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  ingress-conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run ingress/CDN conformance checks
+        env:
+          API_URL: ${{ inputs.api_url }}
+          WEB_URL: ${{ inputs.web_url }}
+          EXPECT_HTTP_REDIRECT: ${{ inputs.expect_http_redirect }}
+        run: .github/scripts/check-ingress-conformance.sh

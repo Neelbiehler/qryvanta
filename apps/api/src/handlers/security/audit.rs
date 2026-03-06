@@ -56,10 +56,25 @@ pub async fn export_audit_log_handler(
     Ok(Json(entries))
 }
 
+pub async fn verify_audit_log_integrity_handler(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserIdentity>,
+) -> ApiResult<Json<AuditIntegrityStatusResponse>> {
+    let status = state
+        .security_admin_service
+        .verify_audit_integrity(&user)
+        .await?;
+
+    Ok(Json(AuditIntegrityStatusResponse::from(status)))
+}
+
 pub async fn purge_audit_log_handler(
     State(state): State<AppState>,
     Extension(user): Extension<UserIdentity>,
+    session: Session,
 ) -> ApiResult<Json<AuditPurgeResultResponse>> {
+    require_recent_step_up(&session).await?;
+
     let result = state
         .security_admin_service
         .purge_audit_log_entries(&user)

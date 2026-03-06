@@ -37,6 +37,7 @@ jobs:
       NEXT_PUBLIC_API_BASE_URL: http://127.0.0.1:3001
       AUTH_BOOTSTRAP_TOKEN: ci-bootstrap-token
       SESSION_SECRET: ci-session-secret-ci-session-secret-32
+      TOTP_ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
       WORKER_SHARED_SECRET: ci-worker-shared-secret
       BENCHMARK_RESULTS_DIR: benchmarks/results/ci
     steps:

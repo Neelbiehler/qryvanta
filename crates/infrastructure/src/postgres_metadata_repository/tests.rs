@@ -4,7 +4,12 @@ use qryvanta_application::{
     RuntimeRecordOperator, RuntimeRecordQuery,
 };
 use qryvanta_core::{AppError, TenantId};
-use qryvanta_domain::{EntityDefinition, EntityFieldDefinition, FieldType};
+use qryvanta_domain::{
+    BusinessRuleAction, BusinessRuleActionType, BusinessRuleCondition, BusinessRuleDefinition,
+    BusinessRuleDefinitionInput, BusinessRuleOperator, BusinessRuleScope, EntityDefinition,
+    EntityFieldDefinition, FieldType, FormDefinition, FormFieldPlacement, FormSection, FormTab,
+    FormType, OptionSetDefinition, OptionSetItem, ViewColumn, ViewDefinition, ViewType,
+};
 use serde_json::json;
 use sqlx::PgPool;
 use sqlx::migrate::Migrator;
@@ -49,6 +54,90 @@ async fn ensure_tenant(pool: &PgPool, tenant_id: TenantId, name: &str) {
     .await;
 
     assert!(insert.is_ok());
+}
+
+fn minimal_option_set(entity_logical_name: &str, logical_name: &str) -> OptionSetDefinition {
+    OptionSetDefinition::new(
+        entity_logical_name,
+        logical_name,
+        "Status",
+        vec![
+            OptionSetItem::new(1, "Open", Some("#0f766e".to_owned()), 0)
+                .unwrap_or_else(|_| unreachable!()),
+            OptionSetItem::new(2, "Closed", Some("#b91c1c".to_owned()), 1)
+                .unwrap_or_else(|_| unreachable!()),
+        ],
+    )
+    .unwrap_or_else(|_| unreachable!())
+}
+
+fn minimal_form(entity_logical_name: &str, logical_name: &str) -> FormDefinition {
+    let field = FormFieldPlacement::new("name", 0, 0, true, false, None, None)
+        .unwrap_or_else(|_| unreachable!());
+    let section = FormSection::new(
+        "main_section",
+        "Main Section",
+        0,
+        true,
+        1,
+        vec![field],
+        vec![],
+    )
+    .unwrap_or_else(|_| unreachable!());
+    let tab = FormTab::new("main_tab", "Main Tab", 0, true, vec![section])
+        .unwrap_or_else(|_| unreachable!());
+
+    FormDefinition::new(
+        entity_logical_name,
+        logical_name,
+        "Main Form",
+        FormType::Main,
+        vec![tab],
+        vec![],
+    )
+    .unwrap_or_else(|_| unreachable!())
+}
+
+fn minimal_view(entity_logical_name: &str, logical_name: &str) -> ViewDefinition {
+    let column = ViewColumn::new("name", 0, None, None).unwrap_or_else(|_| unreachable!());
+    ViewDefinition::new(
+        entity_logical_name,
+        logical_name,
+        "Main View",
+        ViewType::Grid,
+        vec![column],
+        None,
+        None,
+        true,
+    )
+    .unwrap_or_else(|_| unreachable!())
+}
+
+fn minimal_business_rule(entity_logical_name: &str, logical_name: &str) -> BusinessRuleDefinition {
+    BusinessRuleDefinition::new(
+        entity_logical_name,
+        logical_name,
+        "Require Name",
+        BusinessRuleDefinitionInput {
+            scope: BusinessRuleScope::Entity,
+            form_logical_name: None,
+            conditions: vec![
+                BusinessRuleCondition::new("name", BusinessRuleOperator::Eq, json!("Alice"))
+                    .unwrap_or_else(|_| unreachable!()),
+            ],
+            actions: vec![
+                BusinessRuleAction::new(
+                    BusinessRuleActionType::SetRequired,
+                    Some("name".to_owned()),
+                    None,
+                    None,
+                )
+                .unwrap_or_else(|_| unreachable!()),
+            ],
+            is_active: true,
+        },
+    )
+    .unwrap_or_else(|_| unreachable!())
 }
 
 #[tokio::test]
@@ -152,6 +241,82 @@ async fn runtime_record_queries_are_tenant_scoped() {
         .delete_runtime_record(right_tenant, "contact", left_record.record_id().as_str())
         .await;
     assert!(matches!(right_delete, Err(AppError::NotFound(_))));
+}
+
+#[tokio::test]
+async fn metadata_components_are_tenant_scoped() {
+    let Some(pool) = test_pool().await else {
+        return;
+    };
+
+    let repository = PostgresMetadataRepository::new(pool.clone());
+    let left_tenant = TenantId::new();
+    let right_tenant = TenantId::new();
+
+    ensure_tenant(&pool, left_tenant, "Components Left Tenant").await;
+    ensure_tenant(&pool, right_tenant, "Components Right Tenant").await;
+
+    assert!(
+        repository
+            .save_entity(
+                left_tenant,
+                EntityDefinition::new("contact", "Contact").unwrap_or_else(|_| unreachable!()),
+            )
+            .await
+            .is_ok()
+    );
+    assert!(
+        repository
+            .save_entity(
+                right_tenant,
+                EntityDefinition::new("contact", "Contact").unwrap_or_else(|_| unreachable!()),
+            )
+            .await
+            .is_ok()
+    );
+
+    assert!(
+        repository
+            .save_option_set(left_tenant, minimal_option_set("contact", "status"))
+            .await
+            .is_ok()
+    );
+    assert!(
+        repository
+            .save_form(left_tenant, minimal_form("contact", "main_form"))
+            .await
+            .is_ok()
+    );
+    assert!(
+        repository
+            .save_view(left_tenant, minimal_view("contact", "main_view"))
+            .await
+            .is_ok()
+    );
+    assert!(
+        repository
+            .save_business_rule(left_tenant, minimal_business_rule("contact", "name_rule"))
+            .await
+            .is_ok()
+    );
+
+    let right_option_sets = repository.list_option_sets(right_tenant, "contact").await;
+    assert!(right_option_sets.is_ok());
+    assert!(right_option_sets.unwrap_or_default().is_empty());
+
+    let right_forms = repository.list_forms(right_tenant, "contact").await;
+    assert!(right_forms.is_ok());
+    assert!(right_forms.unwrap_or_default().is_empty());
+
+    let right_views = repository.list_views(right_tenant, "contact").await;
+    assert!(right_views.is_ok());
+    assert!(right_views.unwrap_or_default().is_empty());
+
+    let right_rules = repository
+        .list_business_rules(right_tenant, "contact")
+        .await;
+    assert!(right_rules.is_ok());
+    assert!(right_rules.unwrap_or_default().is_empty());
 }
 
 #[tokio::test]

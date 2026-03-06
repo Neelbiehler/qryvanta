@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use qryvanta_core::{AppError, TenantId};
+use qryvanta_infrastructure::{begin_qrywell_sync_transaction, begin_tenant_transaction};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::PgPool;
@@ -162,6 +163,8 @@ async fn enqueue_job(
     max_attempts: i32,
     log_message: &str,
 ) -> Result<(), AppError> {
+    let tenant_id = parse_tenant_id(payload.tenant_id.as_str())?;
+    let mut transaction = begin_tenant_transaction(pool, tenant_id).await?;
     let payload_json = serde_json::to_value(&payload).map_err(|error| {
         AppError::Internal(format!("failed to serialize sync payload: {error}"))
     })?;
@@ -215,9 +218,14 @@ async fn enqueue_job(
     .bind(operation.as_str())
     .bind(payload_json)
     .bind(max_attempts)
-    .execute(pool)
+    .execute(&mut *transaction)
     .await
     .map_err(|error| AppError::Internal(format!("failed to enqueue qrywell sync job: {error}")))?;
+    transaction.commit().await.map_err(|error| {
+        AppError::Internal(format!(
+            "failed to commit tenant-scoped qrywell sync enqueue transaction: {error}"
+        ))
+    })?;
 
     info!(
         operation = operation.as_str(),
@@ -259,6 +267,7 @@ async fn process_sync_batch(state: &AppState) -> Result<(), AppError> {
 }
 
 async fn claim_jobs(pool: &PgPool, batch_size: usize) -> Result<Vec<SyncJob>, AppError> {
+    let mut transaction = begin_qrywell_sync_transaction(pool).await?;
     let rows = sqlx::query_as::<_, ClaimedJobRow>(
         r#"
         WITH candidates AS (
@@ -284,9 +293,14 @@ async fn claim_jobs(pool: &PgPool, batch_size: usize) -> Result<Vec<SyncJob>, Ap
             "invalid qrywell sync batch size conversion: {error}"
         ))
     })?)
-    .fetch_all(pool)
+    .fetch_all(&mut *transaction)
     .await
     .map_err(|error| AppError::Internal(format!("failed to claim qrywell sync jobs: {error}")))?;
+    transaction.commit().await.map_err(|error| {
+        AppError::Internal(format!(
+            "failed to commit qrywell sync claim transaction: {error}"
+        ))
+    })?;
 
     rows.into_iter()
         .map(|row| {
@@ -402,9 +416,12 @@ async fn mark_job_complete(
     job_id: uuid::Uuid,
     tenant_id: &str,
 ) -> Result<(), AppError> {
+    let tenant_id = parse_tenant_id(tenant_id)?;
+    let mut transaction = begin_tenant_transaction(pool, tenant_id).await?;
+
     sqlx::query("DELETE FROM qrywell_sync_jobs WHERE id = $1")
         .bind(job_id)
-        .execute(pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!("failed to delete completed sync job: {error}"))
@@ -430,12 +447,18 @@ async fn mark_job_complete(
             updated_at = now()
         "#,
     )
-    .bind(tenant_id)
-    .execute(pool)
+    .bind(tenant_id.to_string())
+    .execute(&mut *transaction)
     .await
     .map_err(|error| {
         AppError::Internal(format!(
             "failed to update qrywell sync success stats: {error}"
+        ))
+    })?;
+
+    transaction.commit().await.map_err(|error| {
+        AppError::Internal(format!(
+            "failed to commit qrywell sync success transaction: {error}"
         ))
     })?;
 
@@ -447,6 +470,8 @@ async fn mark_job_failed(
     job: &SyncJob,
     error_message: &str,
 ) -> Result<(), AppError> {
+    let tenant_id = parse_tenant_id(job.payload.tenant_id.as_str())?;
+    let mut transaction = begin_tenant_transaction(pool, tenant_id).await?;
     let attempt_count = job.attempt_count + 1;
     let capped_step = attempt_count.min(10);
     let backoff_seconds = 2_i64
@@ -481,7 +506,7 @@ async fn mark_job_failed(
         })?,
     )
     .bind(error_message)
-    .execute(pool)
+    .execute(&mut *transaction)
     .await
     .map_err(|error| AppError::Internal(format!("failed to update sync retry state: {error}")))?;
 
@@ -506,7 +531,7 @@ async fn mark_job_failed(
         "#,
     )
     .bind(job.payload.tenant_id.clone())
-    .execute(pool)
+    .execute(&mut *transaction)
     .await
     .map_err(|error| {
         AppError::Internal(format!(
@@ -514,7 +539,19 @@ async fn mark_job_failed(
         ))
     })?;
 
+    transaction.commit().await.map_err(|error| {
+        AppError::Internal(format!(
+            "failed to commit qrywell sync failure transaction: {error}"
+        ))
+    })?;
+
     Ok(())
+}
+
+fn parse_tenant_id(value: &str) -> Result<TenantId, AppError> {
+    let uuid = uuid::Uuid::parse_str(value)
+        .map_err(|error| AppError::Validation(format!("invalid tenant id '{}': {error}", value)))?;
+    Ok(TenantId::from_uuid(uuid))
 }
 
 fn derive_record_title(entity_logical_name: &str, record: &RuntimeRecordResponse) -> String {

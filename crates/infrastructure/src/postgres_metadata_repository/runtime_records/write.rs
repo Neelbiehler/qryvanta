@@ -51,12 +51,7 @@ impl PostgresMetadataRepository {
         unique_values: Vec<UniqueFieldValue>,
         created_by_subject: &str,
     ) -> AppResult<RuntimeRecord> {
-        let mut transaction = self.pool.begin().await.map_err(|error| {
-            AppError::Internal(format!(
-                "failed to start runtime record create transaction for entity '{}' in tenant '{}': {error}",
-                entity_logical_name, tenant_id
-            ))
-        })?;
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
 
         let created = sqlx::query_as::<_, RuntimeRecordRow>(
             r#"
@@ -116,12 +111,7 @@ impl PostgresMetadataRepository {
     ) -> AppResult<RuntimeRecord> {
         let record_uuid = parse_runtime_record_uuid(record_id)?;
 
-        let mut transaction = self.pool.begin().await.map_err(|error| {
-            AppError::Internal(format!(
-                "failed to start runtime record update transaction for entity '{}' in tenant '{}': {error}",
-                entity_logical_name, tenant_id
-            ))
-        })?;
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
 
         let updated = sqlx::query_as::<_, RuntimeRecordRow>(
             r#"

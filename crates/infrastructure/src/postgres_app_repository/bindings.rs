@@ -6,6 +6,7 @@ impl PostgresAppRepository {
         tenant_id: TenantId,
         binding: AppEntityBinding,
     ) -> AppResult<()> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let forms = Json(
             binding
                 .forms()
@@ -68,7 +69,7 @@ impl PostgresAppRepository {
         .bind(binding.default_form_logical_name().as_str())
         .bind(binding.default_list_view_logical_name().as_str())
         .bind(default_view_mode)
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
@@ -76,6 +77,12 @@ impl PostgresAppRepository {
                 binding.app_logical_name().as_str(),
                 binding.entity_logical_name().as_str(),
                 tenant_id
+            ))
+        })?;
+
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped app binding save transaction: {error}"
             ))
         })?;
 
@@ -87,6 +94,7 @@ impl PostgresAppRepository {
         tenant_id: TenantId,
         app_logical_name: &str,
     ) -> AppResult<Vec<AppEntityBinding>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let rows = sqlx::query_as::<_, AppEntityBindingRow>(
             r#"
             SELECT
@@ -124,12 +132,17 @@ impl PostgresAppRepository {
         )
         .bind(tenant_id.as_uuid())
         .bind(app_logical_name)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to list app entity bindings for app '{}' and tenant '{}': {error}",
                 app_logical_name, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped app binding list transaction: {error}"
             ))
         })?;
 

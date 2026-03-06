@@ -1,29 +1,23 @@
 use std::env;
 
-use qryvanta_core::{AppError, TenantId};
+use qryvanta_core::{
+    AppError, TenantId, optional_secret, required_non_empty_secret, required_secret,
+};
 
 pub(super) fn required_env(name: &str) -> Result<String, AppError> {
-    env::var(name).map_err(|_| AppError::Validation(format!("{name} is required")))
+    required_secret(name)
 }
 
 pub(super) fn required_non_empty_env(name: &str) -> Result<String, AppError> {
-    let value = required_env(name)?;
-    if value.trim().is_empty() {
-        return Err(AppError::Validation(format!("{name} must not be empty")));
-    }
-
-    Ok(value)
+    required_non_empty_secret(name)
 }
 
-pub(super) fn parse_optional_non_empty_env(name: &str) -> Option<String> {
-    env::var(name)
-        .ok()
-        .map(|value| value.trim().to_owned())
-        .filter(|value| !value.is_empty())
+pub(super) fn parse_optional_non_empty_env(name: &str) -> Result<Option<String>, AppError> {
+    optional_secret(name)
 }
 
 pub(super) fn parse_optional_tenant_id_env(name: &str) -> Result<Option<TenantId>, AppError> {
-    parse_optional_non_empty_env(name)
+    parse_optional_non_empty_env(name)?
         .map(|value| {
             uuid::Uuid::parse_str(value.as_str())
                 .map(TenantId::from_uuid)

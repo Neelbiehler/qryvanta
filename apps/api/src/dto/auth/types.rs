@@ -46,6 +46,28 @@ pub struct AuthMfaVerifyRequest {
     pub method: Option<String>,
 }
 
+/// Incoming payload for authenticated tenant switching.
+#[derive(Debug, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/auth-switch-tenant-request.ts"
+)]
+pub struct AuthSwitchTenantRequest {
+    pub tenant_id: String,
+}
+
+/// Incoming payload for high-risk authenticated step-up verification.
+#[derive(Debug, Deserialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/auth-step-up-request.ts"
+)]
+pub struct AuthStepUpRequest {
+    pub password: Option<String>,
+    pub code: Option<String>,
+    pub method: Option<String>,
+}
+
 /// Incoming payload for invite creation.
 #[derive(Debug, Deserialize, TS)]
 #[ts(

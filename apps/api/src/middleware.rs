@@ -1,16 +1,20 @@
 use std::time::Instant;
 
-use axum::extract::{Request, State};
+use std::net::SocketAddr;
+
+use axum::extract::{ConnectInfo, Request, State};
 use axum::http::{HeaderValue, Method, header};
 use axum::middleware::Next;
 use axum::response::Response;
-use qryvanta_application::RateLimitRule;
+use ipnet::IpNet;
+use qryvanta_application::{RateLimitRule, UserRecord};
 use qryvanta_core::{AppError, UserIdentity};
 use tower_sessions::Session;
 use tracing::warn;
 use uuid::Uuid;
 
-use crate::auth::SESSION_USER_KEY;
+use crate::auth::session_helpers::constant_time_eq;
+use crate::auth::{SESSION_CREATED_AT_KEY, SESSION_USER_KEY};
 use crate::error::ApiResult;
 use crate::state::AppState;
 
@@ -100,7 +104,40 @@ pub async fn trace_and_observe(
     response
 }
 
+pub async fn apply_security_headers(request: Request, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    write_security_headers(response.headers_mut());
+
+    response
+}
+
+fn write_security_headers(headers: &mut axum::http::HeaderMap) {
+    headers.insert(
+        header::HeaderName::from_static("x-content-type-options"),
+        HeaderValue::from_static("nosniff"),
+    );
+    headers.insert(
+        header::HeaderName::from_static("x-frame-options"),
+        HeaderValue::from_static("DENY"),
+    );
+    headers.insert(
+        header::HeaderName::from_static("referrer-policy"),
+        HeaderValue::from_static("strict-origin-when-cross-origin"),
+    );
+    headers.insert(
+        header::HeaderName::from_static("content-security-policy"),
+        HeaderValue::from_static("default-src 'none'; frame-ancestors 'none'; base-uri 'none'"),
+    );
+    headers.insert(
+        header::HeaderName::from_static("permissions-policy"),
+        HeaderValue::from_static(
+            "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()",
+        ),
+    );
+}
+
 pub async fn require_auth(
+    State(state): State<AppState>,
     session: Session,
     mut request: Request,
     next: Next,
@@ -112,20 +149,34 @@ pub async fn require_auth(
         .ok_or_else(|| AppError::Unauthorized("authentication required".to_owned()))?;
 
     // OWASP Session Management: enforce absolute session timeout.
-    if let Some(created_at) = session
-        .get::<i64>(crate::auth::SESSION_CREATED_AT_KEY)
+    let created_at = session
+        .get::<i64>(SESSION_CREATED_AT_KEY)
         .await
         .map_err(|error| {
             AppError::Internal(format!("failed to read session creation time: {error}"))
-        })?
-    {
-        let elapsed = chrono::Utc::now().timestamp() - created_at;
-        if elapsed > ABSOLUTE_SESSION_TIMEOUT_SECONDS {
-            session.delete().await.map_err(|error| {
-                AppError::Internal(format!("failed to delete expired session: {error}"))
-            })?;
-            return Err(AppError::Unauthorized("session expired".to_owned()).into());
-        }
+        })?;
+
+    let created_at = match created_at {
+        Some(created_at) => created_at,
+        None => return delete_session_and_reject(&session, "session expired").await,
+    };
+
+    let elapsed = chrono::Utc::now().timestamp() - created_at;
+    if elapsed > ABSOLUTE_SESSION_TIMEOUT_SECONDS {
+        return delete_session_and_reject(&session, "session expired").await;
+    }
+
+    let user = state
+        .user_service
+        .find_by_subject(identity.subject())
+        .await?
+        .ok_or_else(|| AppError::Unauthorized("authentication required".to_owned()))?;
+
+    if session_is_revoked(
+        session_created_at(created_at),
+        session_revocation_cutoff(&user),
+    ) {
+        return delete_session_and_reject(&session, "session revoked").await;
     }
 
     request.extensions_mut().insert(identity);
@@ -141,7 +192,10 @@ pub async fn require_same_origin_for_mutations(
         return Ok(next.run(request).await);
     }
 
-    if is_state_changing_method(request.method()) {
+    let requires_same_origin = is_state_changing_method(request.method())
+        || request.uri().path() == "/auth/webauthn/login/start";
+
+    if requires_same_origin {
         let headers = request.headers();
 
         if let Some(fetch_site) = headers.get("sec-fetch-site")
@@ -192,7 +246,7 @@ pub async fn require_worker_auth(
         .map(str::trim)
         .ok_or_else(|| AppError::Unauthorized("worker auth scheme must be Bearer".to_owned()))?;
 
-    if provided_secret != configured_secret {
+    if !constant_time_eq(provided_secret, configured_secret) {
         return Err(AppError::Unauthorized("worker auth token is invalid".to_owned()).into());
     }
 
@@ -244,7 +298,11 @@ pub async fn rate_limit(
             )
         })?;
 
-    let ip = extract_client_ip(&request);
+    let ip = extract_client_ip(
+        &request,
+        state.trust_proxy_headers,
+        &state.trusted_proxy_cidrs,
+    );
     state
         .rate_limit_service
         .check_rate_limit(&rule, &ip)
@@ -257,23 +315,249 @@ pub async fn rate_limit(
 ///
 /// Prefers `X-Forwarded-For` (first entry) for reverse-proxy setups,
 /// falls back to `X-Real-Ip`, then to `"unknown"`.
-fn extract_client_ip(request: &Request) -> String {
-    request
-        .headers()
+fn extract_client_ip<T>(
+    request: &axum::http::Request<T>,
+    trust_proxy_headers: bool,
+    trusted_proxy_cidrs: &[IpNet],
+) -> String {
+    let socket_addr = request
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|connect_info| connect_info.0);
+
+    extract_client_ip_from_parts(
+        request.headers(),
+        socket_addr,
+        trust_proxy_headers,
+        trusted_proxy_cidrs,
+    )
+}
+
+pub(crate) fn extract_client_ip_from_parts(
+    headers: &axum::http::HeaderMap,
+    socket_addr: Option<SocketAddr>,
+    trust_proxy_headers: bool,
+    trusted_proxy_cidrs: &[IpNet],
+) -> String {
+    if proxy_headers_are_trusted(socket_addr, trust_proxy_headers, trusted_proxy_cidrs) {
+        extract_forwarded_ip(headers).unwrap_or_else(|| "proxy-unknown".to_owned())
+    } else {
+        socket_addr
+            .map(|socket_addr| socket_addr.ip().to_string())
+            .unwrap_or_else(|| "direct-unknown".to_owned())
+    }
+}
+
+fn proxy_headers_are_trusted(
+    socket_addr: Option<SocketAddr>,
+    trust_proxy_headers: bool,
+    trusted_proxy_cidrs: &[IpNet],
+) -> bool {
+    trust_proxy_headers
+        && socket_addr
+            .map(|socket_addr| {
+                trusted_proxy_cidrs
+                    .iter()
+                    .any(|cidr| cidr.contains(&socket_addr.ip()))
+            })
+            .unwrap_or(false)
+}
+
+fn extract_forwarded_ip(headers: &axum::http::HeaderMap) -> Option<String> {
+    headers
         .get("x-forwarded-for")
         .and_then(|value| value.to_str().ok())
         .and_then(|forwarded| forwarded.split(',').next())
-        .map(|ip| ip.trim().to_owned())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
         .or_else(|| {
-            request
-                .headers()
+            headers
                 .get("x-real-ip")
                 .and_then(|value| value.to_str().ok())
-                .map(|ip| ip.trim().to_owned())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
         })
-        .unwrap_or_else(|| "unknown".to_owned())
 }
 
 fn generate_trace_id() -> String {
     format!("api-{}", Uuid::new_v4())
+}
+
+fn session_created_at(timestamp: i64) -> Option<chrono::DateTime<chrono::Utc>> {
+    chrono::DateTime::<chrono::Utc>::from_timestamp(timestamp, 0)
+}
+
+fn session_revocation_cutoff(user: &UserRecord) -> Option<chrono::DateTime<chrono::Utc>> {
+    user.password_changed_at
+        .iter()
+        .chain(user.auth_sessions_revoked_after.iter())
+        .max()
+        .cloned()
+}
+
+fn session_is_revoked(
+    session_created_at: Option<chrono::DateTime<chrono::Utc>>,
+    revocation_cutoff: Option<chrono::DateTime<chrono::Utc>>,
+) -> bool {
+    match revocation_cutoff {
+        Some(revocation_cutoff) => match session_created_at {
+            Some(session_created_at) => session_created_at < revocation_cutoff,
+            None => true,
+        },
+        None => false,
+    }
+}
+
+async fn delete_session_and_reject(session: &Session, message: &str) -> ApiResult<Response> {
+    session.delete().await.map_err(|error| {
+        AppError::Internal(format!("failed to delete expired session: {error}"))
+    })?;
+
+    Err(AppError::Unauthorized(message.to_owned()).into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::extract::ConnectInfo;
+    use axum::http::HeaderMap;
+    use qryvanta_domain::UserId;
+
+    #[test]
+    fn extract_client_ip_prefers_socket_addr_when_proxy_headers_are_disabled() {
+        let mut request = Request::new(axum::body::Body::empty());
+        request
+            .headers_mut()
+            .insert("x-forwarded-for", HeaderValue::from_static("203.0.113.10"));
+        request.extensions_mut().insert(ConnectInfo(
+            "198.51.100.4:443"
+                .parse::<SocketAddr>()
+                .unwrap_or_else(|_| unreachable!()),
+        ));
+
+        let client_ip = extract_client_ip(&request, false, &[]);
+        assert_eq!(client_ip, "198.51.100.4");
+    }
+
+    #[test]
+    fn extract_client_ip_uses_forwarded_headers_when_proxy_is_trusted() {
+        let mut request = Request::new(axum::body::Body::empty());
+        request.headers_mut().insert(
+            "x-forwarded-for",
+            HeaderValue::from_static("203.0.113.10, 198.51.100.2"),
+        );
+
+        request.extensions_mut().insert(ConnectInfo(
+            "10.0.0.5:443"
+                .parse::<SocketAddr>()
+                .unwrap_or_else(|_| unreachable!()),
+        ));
+
+        let trusted_proxy_cidrs = vec![
+            "10.0.0.0/24"
+                .parse::<IpNet>()
+                .unwrap_or_else(|_| unreachable!()),
+        ];
+        let client_ip = extract_client_ip(&request, true, &trusted_proxy_cidrs);
+        assert_eq!(client_ip, "203.0.113.10");
+    }
+
+    #[test]
+    fn extract_client_ip_ignores_forwarded_headers_from_untrusted_peer() {
+        let mut request = Request::new(axum::body::Body::empty());
+        request.headers_mut().insert(
+            "x-forwarded-for",
+            HeaderValue::from_static("203.0.113.10, 198.51.100.2"),
+        );
+        request.extensions_mut().insert(ConnectInfo(
+            "198.51.100.4:443"
+                .parse::<SocketAddr>()
+                .unwrap_or_else(|_| unreachable!()),
+        ));
+
+        let trusted_proxy_cidrs = vec![
+            "10.0.0.0/24"
+                .parse::<IpNet>()
+                .unwrap_or_else(|_| unreachable!()),
+        ];
+        let client_ip = extract_client_ip(&request, true, &trusted_proxy_cidrs);
+        assert_eq!(client_ip, "198.51.100.4");
+    }
+
+    #[test]
+    fn write_security_headers_sets_hardening_defaults() {
+        let mut headers = HeaderMap::new();
+        write_security_headers(&mut headers);
+
+        assert_eq!(
+            headers.get("x-content-type-options"),
+            Some(&HeaderValue::from_static("nosniff"))
+        );
+        assert_eq!(
+            headers.get("x-frame-options"),
+            Some(&HeaderValue::from_static("DENY"))
+        );
+        assert_eq!(
+            headers.get("referrer-policy"),
+            Some(&HeaderValue::from_static("strict-origin-when-cross-origin"))
+        );
+        assert_eq!(
+            headers.get("content-security-policy"),
+            Some(&HeaderValue::from_static(
+                "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+            ))
+        );
+        assert!(headers.contains_key("permissions-policy"));
+    }
+
+    #[test]
+    fn session_revocation_cutoff_prefers_latest_security_event() {
+        let password_changed_at = chrono::Utc::now();
+        let auth_sessions_revoked_after = password_changed_at + chrono::Duration::minutes(5);
+        let user = sample_user(Some(password_changed_at), Some(auth_sessions_revoked_after));
+
+        assert_eq!(
+            session_revocation_cutoff(&user),
+            Some(auth_sessions_revoked_after)
+        );
+    }
+
+    #[test]
+    fn session_is_revoked_when_created_before_cutoff() {
+        let created_at = chrono::Utc::now();
+        let cutoff = created_at + chrono::Duration::seconds(1);
+
+        assert!(session_is_revoked(Some(created_at), Some(cutoff)));
+        assert!(!session_is_revoked(Some(cutoff), Some(cutoff)));
+    }
+
+    #[test]
+    fn session_without_creation_timestamp_is_rejected_when_cutoff_exists() {
+        let cutoff = chrono::Utc::now();
+        assert!(session_is_revoked(None, Some(cutoff)));
+    }
+
+    fn sample_user(
+        password_changed_at: Option<chrono::DateTime<chrono::Utc>>,
+        auth_sessions_revoked_after: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> UserRecord {
+        UserRecord {
+            id: UserId::new(),
+            email: "user@example.com".to_owned(),
+            email_verified: true,
+            password_hash: Some("hash".to_owned()),
+            totp_enabled: false,
+            totp_secret_enc: None,
+            recovery_codes_hash: None,
+            totp_pending_secret_enc: None,
+            recovery_codes_pending_hash: None,
+            failed_login_count: 0,
+            locked_until: None,
+            password_changed_at,
+            auth_sessions_revoked_after,
+            default_tenant_id: None,
+        }
+    }
 }

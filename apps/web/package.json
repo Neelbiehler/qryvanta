@@ -9,7 +9,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "tsc --noEmit",
-    "test": "echo \"no web tests yet\""
+    "test": "echo \"no web tests yet\"",
+    "test:security-config": "node ./scripts/assert-security-headers.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

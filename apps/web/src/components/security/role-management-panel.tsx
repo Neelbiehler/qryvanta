@@ -10,6 +10,7 @@ import {
   TemporaryAccessSection,
 } from "@/components/security/role-management/sections";
 import { useRoleManagementPanel } from "@/components/security/role-management/use-role-management-panel";
+import { StepUpDialog } from "@/components/security/step-up-dialog";
 import type {
   RoleAssignmentResponse,
   RoleResponse,
@@ -124,6 +125,19 @@ export function RoleManagementPanel({
           {panel.errorMessage}
         </Notice>
       ) : null}
+
+      {panel.statusMessage ? (
+        <Notice tone="success" className="md:col-span-2">
+          {panel.statusMessage}
+        </Notice>
+      ) : null}
+
+      <StepUpDialog
+        open={panel.isStepUpOpen}
+        onOpenChange={panel.setIsStepUpOpen}
+        onVerified={panel.handleStepUpVerified}
+        description="Recent password or MFA verification is required before changing tenant roles, registration controls, field permissions, or temporary access."
+      />
     </div>
   );
 }

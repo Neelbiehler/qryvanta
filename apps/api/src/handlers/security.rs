@@ -4,12 +4,15 @@ use axum::http::StatusCode;
 
 use qryvanta_core::UserIdentity;
 use qryvanta_domain::{Permission, RegistrationMode};
+use tower_sessions::Session;
 
+use crate::auth::session_helpers::require_recent_step_up;
 use crate::dto::{
-    AssignRoleRequest, AuditLogEntryResponse, AuditPurgeResultResponse,
-    AuditRetentionPolicyResponse, CreateRoleRequest, CreateTemporaryAccessGrantRequest,
-    RemoveRoleAssignmentRequest, RevokeTemporaryAccessGrantRequest, RoleAssignmentResponse,
-    RoleResponse, RuntimeFieldPermissionResponse, SaveRuntimeFieldPermissionsRequest,
+    AssignRoleRequest, AuditIntegrityStatusResponse, AuditLogEntryResponse,
+    AuditPurgeResultResponse, AuditRetentionPolicyResponse, CreateRoleRequest,
+    CreateTemporaryAccessGrantRequest, RemoveRoleAssignmentRequest,
+    RevokeTemporaryAccessGrantRequest, RoleAssignmentResponse, RoleResponse,
+    RuntimeFieldPermissionResponse, SaveRuntimeFieldPermissionsRequest,
     TemporaryAccessGrantResponse, TenantRegistrationModeResponse,
     UpdateAuditRetentionPolicyRequest, UpdateTenantRegistrationModeRequest,
 };
@@ -22,7 +25,10 @@ mod roles;
 mod runtime_permissions;
 mod temporary_access;
 
-pub use audit::{export_audit_log_handler, list_audit_log_handler, purge_audit_log_handler};
+pub use audit::{
+    export_audit_log_handler, list_audit_log_handler, purge_audit_log_handler,
+    verify_audit_log_integrity_handler,
+};
 pub use governance::{
     audit_retention_policy_handler, registration_mode_handler,
     update_audit_retention_policy_handler, update_registration_mode_handler,

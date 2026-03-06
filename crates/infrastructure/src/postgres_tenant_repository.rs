@@ -1,10 +1,12 @@
 use async_trait::async_trait;
-use qryvanta_application::TenantRepository;
+use qryvanta_application::{TenantMembership, TenantRepository};
 use qryvanta_core::{AppResult, TenantId};
 use qryvanta_domain::RegistrationMode;
 use sqlx::PgPool;
 
+use crate::begin_tenant_transaction;
 use crate::postgres_security_admin_repository::assign_owner_role_grants;
+use crate::postgres_tenant_rls::stamp_tenant_context;
 
 /// PostgreSQL-backed tenant membership repository.
 #[derive(Clone)]
@@ -23,6 +25,9 @@ impl PostgresTenantRepository {
 mod contacts;
 mod lookup;
 mod membership;
+
+#[cfg(test)]
+mod tests;
 
 #[async_trait]
 impl TenantRepository for PostgresTenantRepository {
@@ -57,6 +62,13 @@ impl TenantRepository for PostgresTenantRepository {
     ) -> AppResult<TenantId> {
         self.ensure_membership_for_subject_impl(subject, display_name, email, preferred_tenant_id)
             .await
+    }
+
+    async fn list_memberships_for_subject(
+        &self,
+        subject: &str,
+    ) -> AppResult<Vec<TenantMembership>> {
+        self.list_memberships_for_subject_impl(subject).await
     }
 
     async fn contact_record_for_subject(

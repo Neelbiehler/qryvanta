@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
+use ipnet::IpNet;
 use qryvanta_application::{
     AppService, AuthEventService, AuthTokenService, AuthorizationService, ContactBootstrapService,
     ExtensionService, MetadataService, MfaService, RateLimitService, SecurityAdminService,
-    TenantRepository, UserService, WorkflowService,
+    TenantAccessService, TenantRepository, UserService, WorkflowService,
 };
 use qryvanta_core::{AppError, TenantId};
 use qryvanta_infrastructure::PostgresPasskeyRepository;
@@ -25,6 +26,7 @@ pub struct AppState {
     pub authorization_service: AuthorizationService,
     pub auth_event_service: AuthEventService,
     pub user_service: UserService,
+    pub tenant_access_service: TenantAccessService,
     pub auth_token_service: AuthTokenService,
     pub workflow_service: WorkflowService,
     pub mfa_service: MfaService,
@@ -33,6 +35,8 @@ pub struct AppState {
     pub passkey_repository: PostgresPasskeyRepository,
     pub webauthn: Arc<Webauthn>,
     pub frontend_url: String,
+    pub trust_proxy_headers: bool,
+    pub trusted_proxy_cidrs: Vec<IpNet>,
     pub physical_isolation_mode: PhysicalIsolationMode,
     pub physical_isolation_tenant_id: Option<TenantId>,
     pub bootstrap_token: String,

@@ -2,6 +2,7 @@ use qryvanta_core::AppError;
 use uuid::Uuid;
 
 use super::*;
+use crate::begin_tenant_transaction;
 
 impl PostgresTenantRepository {
     pub(super) async fn contact_record_for_subject_impl(
@@ -9,6 +10,7 @@ impl PostgresTenantRepository {
         tenant_id: TenantId,
         subject: &str,
     ) -> AppResult<Option<String>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let record_id = sqlx::query_scalar::<_, Uuid>(
             r#"
             SELECT contact_record_id
@@ -18,12 +20,18 @@ impl PostgresTenantRepository {
         )
         .bind(tenant_id.as_uuid())
         .bind(subject)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to resolve contact mapping for tenant '{}' and subject '{}': {error}",
                 tenant_id, subject
+            ))
+        })?;
+
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped contact lookup transaction: {error}"
             ))
         })?;
 
@@ -36,6 +44,7 @@ impl PostgresTenantRepository {
         subject: &str,
         contact_record_id: &str,
     ) -> AppResult<()> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let contact_record_uuid = parse_contact_record_uuid(contact_record_id)?;
 
         let is_tenant_contact_record = sqlx::query_scalar::<_, bool>(
@@ -51,7 +60,7 @@ impl PostgresTenantRepository {
         )
         .bind(tenant_id.as_uuid())
         .bind(contact_record_uuid)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
@@ -80,12 +89,18 @@ impl PostgresTenantRepository {
         .bind(tenant_id.as_uuid())
         .bind(subject)
         .bind(contact_record_uuid)
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to persist contact mapping for tenant '{}' and subject '{}': {error}",
                 tenant_id, subject
+            ))
+        })?;
+
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped contact save transaction: {error}"
             ))
         })?;
 

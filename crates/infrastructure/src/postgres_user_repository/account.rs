@@ -1,4 +1,5 @@
 use super::*;
+use crate::begin_tenant_transaction;
 
 impl PostgresUserRepository {
     pub(super) async fn create_impl(
@@ -41,6 +42,69 @@ impl PostgresUserRepository {
         .execute(&self.pool)
         .await
         .map_err(|error| AppError::Internal(format!("failed to update password: {error}")))?;
+
+        Ok(())
+    }
+
+    pub(super) async fn revoke_sessions_impl(&self, user_id: UserId) -> AppResult<()> {
+        sqlx::query(
+            r#"
+            UPDATE users
+            SET auth_sessions_revoked_after = now(), updated_at = now()
+            WHERE id = $1
+            "#,
+        )
+        .bind(user_id.as_uuid())
+        .execute(&self.pool)
+        .await
+        .map_err(|error| AppError::Internal(format!("failed to revoke sessions: {error}")))?;
+
+        Ok(())
+    }
+
+    pub(super) async fn default_tenant_id_impl(
+        &self,
+        user_id: UserId,
+    ) -> AppResult<Option<TenantId>> {
+        let tenant_id = sqlx::query_scalar::<_, Option<uuid::Uuid>>(
+            r#"
+            SELECT default_tenant_id
+            FROM users
+            WHERE id = $1
+            "#,
+        )
+        .bind(user_id.as_uuid())
+        .fetch_one(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!("failed to load default tenant selection: {error}"))
+        })?
+        .map(TenantId::from_uuid);
+
+        Ok(tenant_id)
+    }
+
+    pub(super) async fn set_default_tenant_id_impl(
+        &self,
+        user_id: UserId,
+        tenant_id: TenantId,
+    ) -> AppResult<()> {
+        sqlx::query(
+            r#"
+            UPDATE users
+            SET default_tenant_id = $2, updated_at = now()
+            WHERE id = $1
+            "#,
+        )
+        .bind(user_id.as_uuid())
+        .bind(tenant_id.as_uuid())
+        .execute(&self.pool)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to persist default tenant selection: {error}"
+            ))
+        })?;
 
         Ok(())
     }
@@ -109,6 +173,7 @@ impl PostgresUserRepository {
         tenant_id: TenantId,
         display_name: &str,
     ) -> AppResult<()> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         sqlx::query(
             r#"
             UPDATE tenant_memberships
@@ -119,9 +184,14 @@ impl PostgresUserRepository {
         .bind(user_id.as_uuid())
         .bind(tenant_id.as_uuid())
         .bind(display_name)
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|error| AppError::Internal(format!("failed to update display name: {error}")))?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped display name update transaction: {error}"
+            ))
+        })?;
 
         Ok(())
     }

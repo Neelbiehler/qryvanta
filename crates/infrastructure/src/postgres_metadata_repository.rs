@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use crate::begin_tenant_transaction;
 use async_trait::async_trait;
 use qryvanta_application::{
     MetadataRepository, RecordListQuery, RuntimeRecordConditionGroup, RuntimeRecordConditionNode,

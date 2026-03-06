@@ -8,6 +8,7 @@ use tracing::{debug, warn};
 
 use qryvanta_application::RecordListQuery;
 use qryvanta_core::{AppError, UserIdentity};
+use qryvanta_infrastructure::begin_tenant_transaction;
 
 use self::filters::{QrywellSearchFilters, plan_filters_for_query};
 use self::ingest::push_records_to_qrywell;
@@ -79,8 +80,10 @@ pub async fn qrywell_search_handler(
         .await
         .map_err(|error| AppError::Internal(format!("invalid qrywell search response: {error}")))?;
 
-    let search_event_id =
-        match sqlx::query_scalar::<_, uuid::Uuid>(
+    let search_event_id = match async {
+        let mut transaction =
+            begin_tenant_transaction(&state.postgres_pool, user.tenant_id()).await?;
+        let event_id = sqlx::query_scalar::<_, uuid::Uuid>(
             r#"
         INSERT INTO qrywell_search_query_events (
             tenant_id,
@@ -116,15 +119,29 @@ pub async fn qrywell_search_handler(
                 AppError::Internal(format!("invalid negated filter conversion: {error}"))
             })?,
         )
-        .fetch_one(&state.postgres_pool)
+        .fetch_one(&mut *transaction)
         .await
-        {
-            Ok(event_id) => Some(event_id.to_string()),
-            Err(error) => {
-                warn!(error = %error, "failed to persist qrywell search query event");
-                None
-            }
-        };
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to persist qrywell search query event: {error}"
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit qrywell search query event transaction: {error}"
+            ))
+        })?;
+
+        Ok::<String, AppError>(event_id.to_string())
+    }
+    .await
+    {
+        Ok(event_id) => Some(event_id),
+        Err(error) => {
+            warn!(error = %error, "failed to persist qrywell search query event");
+            None
+        }
+    };
 
     Ok(Json(QrywellSearchResponse {
         search_event_id,
@@ -161,6 +178,7 @@ pub async fn qrywell_search_click_event_handler(
         return Err(AppError::Validation("query and result_id are required".to_owned()).into());
     }
 
+    let mut transaction = begin_tenant_transaction(&state.postgres_pool, user.tenant_id()).await?;
     sqlx::query(
         r#"
         INSERT INTO qrywell_search_click_events (
@@ -190,24 +208,46 @@ pub async fn qrywell_search_click_event_handler(
     )
     .bind(f64::from(payload.score))
     .bind(payload.group_label)
-    .execute(&state.postgres_pool)
+    .execute(&mut *transaction)
     .await
     .map_err(|error| AppError::Internal(format!("failed to store search click event: {error}")))?;
+
+    transaction.commit().await.map_err(|error| {
+        AppError::Internal(format!(
+            "failed to commit qrywell search click event transaction: {error}"
+        ))
+    })?;
 
     if let Some(search_event_id) = payload.search_event_id.as_deref()
         && let Ok(event_uuid) = uuid::Uuid::parse_str(search_event_id)
     {
-        let _ = sqlx::query(
-            r#"
+        let _ = async {
+            let mut transaction =
+                begin_tenant_transaction(&state.postgres_pool, user.tenant_id()).await?;
+            sqlx::query(
+                r#"
             UPDATE qrywell_search_query_events
             SET clicked_count = clicked_count + 1
             WHERE id = $1
               AND tenant_id = $2::uuid
             "#,
-        )
-        .bind(event_uuid)
-        .bind(user.tenant_id().to_string())
-        .execute(&state.postgres_pool)
+            )
+            .bind(event_uuid)
+            .bind(user.tenant_id().to_string())
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| {
+                AppError::Internal(format!(
+                    "failed to update qrywell search query click count: {error}"
+                ))
+            })?;
+            transaction.commit().await.map_err(|error| {
+                AppError::Internal(format!(
+                    "failed to commit qrywell search click count transaction: {error}"
+                ))
+            })?;
+            Ok::<(), AppError>(())
+        }
         .await;
     }
 
@@ -229,6 +269,7 @@ pub async fn qrywell_search_analytics_handler(
 ) -> ApiResult<Json<QrywellSearchAnalyticsResponse>> {
     let window_days = query.window_days.unwrap_or(14).clamp(1, 90);
     let limit = query.limit.unwrap_or(10).clamp(3, 50);
+    let mut transaction = begin_tenant_transaction(&state.postgres_pool, user.tenant_id()).await?;
 
     let total_queries = sqlx::query_scalar::<_, i64>(
         r#"
@@ -240,7 +281,7 @@ pub async fn qrywell_search_analytics_handler(
     )
     .bind(user.tenant_id().to_string())
     .bind(window_days)
-    .fetch_one(&state.postgres_pool)
+    .fetch_one(&mut *transaction)
     .await
     .map_err(|error| AppError::Internal(format!("failed to load total query count: {error}")))?;
 
@@ -254,7 +295,7 @@ pub async fn qrywell_search_analytics_handler(
     )
     .bind(user.tenant_id().to_string())
     .bind(window_days)
-    .fetch_one(&state.postgres_pool)
+    .fetch_one(&mut *transaction)
     .await
     .map_err(|error| AppError::Internal(format!("failed to load total click count: {error}")))?;
 
@@ -277,7 +318,7 @@ pub async fn qrywell_search_analytics_handler(
     .bind(i64::try_from(limit).map_err(|error| {
         AppError::Internal(format!("invalid analytics limit conversion: {error}"))
     })?)
-    .fetch_all(&state.postgres_pool)
+    .fetch_all(&mut *transaction)
     .await
     .map_err(|error| AppError::Internal(format!("failed to load top queries: {error}")))?
     .into_iter()
@@ -311,7 +352,7 @@ pub async fn qrywell_search_analytics_handler(
     )
     .bind(user.tenant_id().to_string())
     .bind(window_days)
-    .fetch_all(&state.postgres_pool)
+    .fetch_all(&mut *transaction)
     .await
     .map_err(|error| AppError::Internal(format!("failed to load rank metrics: {error}")))?
     .into_iter()
@@ -342,7 +383,7 @@ pub async fn qrywell_search_analytics_handler(
     .bind(i64::try_from(limit).map_err(|error| {
         AppError::Internal(format!("invalid analytics limit conversion: {error}"))
     })?)
-    .fetch_all(&state.postgres_pool)
+    .fetch_all(&mut *transaction)
     .await
     .map_err(|error| AppError::Internal(format!("failed to load zero-click queries: {error}")))?
     .into_iter()
@@ -373,7 +414,7 @@ pub async fn qrywell_search_analytics_handler(
     .bind(i64::try_from(limit).map_err(|error| {
         AppError::Internal(format!("invalid analytics limit conversion: {error}"))
     })?)
-    .fetch_all(&state.postgres_pool)
+    .fetch_all(&mut *transaction)
     .await
     .map_err(|error| AppError::Internal(format!("failed to load low relevance clicks: {error}")))?
     .into_iter()
@@ -384,6 +425,12 @@ pub async fn qrywell_search_analytics_handler(
         clicks: row.clicks,
     })
     .collect::<Vec<_>>();
+
+    transaction.commit().await.map_err(|error| {
+        AppError::Internal(format!(
+            "failed to commit qrywell analytics transaction: {error}"
+        ))
+    })?;
 
     Ok(Json(QrywellSearchAnalyticsResponse {
         window_days,
@@ -515,6 +562,7 @@ pub async fn qrywell_sync_health_handler(
     Query(query): Query<QrywellSyncHealthQuery>,
 ) -> ApiResult<Json<QrywellSyncHealthResponse>> {
     let failed_limit = query.failed_limit.unwrap_or(10).clamp(1, 50);
+    let mut transaction = begin_tenant_transaction(&state.postgres_pool, user.tenant_id()).await?;
 
     let stats = sqlx::query_as::<_, SyncQueueStatsRow>(
         r#"
@@ -527,7 +575,7 @@ pub async fn qrywell_sync_health_handler(
         "#,
     )
     .bind(user.tenant_id().to_string())
-    .fetch_one(&state.postgres_pool)
+    .fetch_one(&mut *transaction)
     .await
     .map_err(|error| AppError::Internal(format!("failed to load qrywell sync stats: {error}")))?;
 
@@ -555,7 +603,7 @@ pub async fn qrywell_sync_health_handler(
         .bind(i64::try_from(failed_limit).map_err(|error| {
             AppError::Internal(format!("invalid failed limit conversion: {error}"))
         })?)
-        .fetch_all(&state.postgres_pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!("failed to load qrywell failed sync jobs: {error}"))
@@ -587,11 +635,17 @@ pub async fn qrywell_sync_health_handler(
         "#,
     )
     .bind(user.tenant_id().to_string())
-    .fetch_optional(&state.postgres_pool)
+    .fetch_optional(&mut *transaction)
     .await
     .map_err(|error| {
         AppError::Internal(format!(
             "failed to load qrywell sync activity stats: {error}"
+        ))
+    })?;
+
+    transaction.commit().await.map_err(|error| {
+        AppError::Internal(format!(
+            "failed to commit qrywell sync health transaction: {error}"
         ))
     })?;
 

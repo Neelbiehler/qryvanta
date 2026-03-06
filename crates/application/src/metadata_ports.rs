@@ -18,4 +18,4 @@ pub use runtime_query::{
     RuntimeRecordJoinType, RuntimeRecordLink, RuntimeRecordLogicalMode, RuntimeRecordOperator,
     RuntimeRecordQuery, RuntimeRecordSort, RuntimeRecordSortDirection, UniqueFieldValue,
 };
-pub use tenant::TenantRepository;
+pub use tenant::{TenantMembership, TenantRepository};

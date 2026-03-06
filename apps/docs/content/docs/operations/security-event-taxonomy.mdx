@@ -1,0 +1,97 @@
+---
+title: Security Event Taxonomy
+description: Stable security event identifiers emitted by Qryvanta and the operator-side secret rotation taxonomy.
+---
+
+Qryvanta uses two stable security-event streams:
+
+- `auth_events.event_type` for authentication and account lifecycle activity
+- `audit_log_entries.action` for tenant-scoped administrative and authorization changes
+
+Use these identifiers in dashboards, SIEM rules, alert routing, and export pipelines. They are intended to stay stable across releases.
+
+## Auth Events
+
+`auth_events.event_type` currently uses these identifiers:
+
+- `auth.registration.completed`
+- `auth.password.login`
+- `auth.password.changed`
+- `auth.password.reset.requested`
+- `auth.password.reset.completed`
+- `auth.email.verification.sent`
+- `auth.email.verification.completed`
+- `auth.invite.sent`
+- `auth.invite.accepted`
+- `auth.mfa.verification`
+- `auth.mfa.enrollment.started`
+- `auth.mfa.enrollment.confirmed`
+- `auth.mfa.disabled`
+- `auth.mfa.recovery_codes.regenerated`
+- `auth.passkey.registration.completed`
+- `auth.passkey.login`
+- `auth.bootstrap.login`
+- `auth.session.logout`
+- `auth.session.tenant_switched`
+- `auth.session.step_up.verification`
+
+`auth_events.outcome` uses these stable values:
+
+- `success`
+- `failed`
+- `account_locked`
+- `invalid_password`
+- `mfa_required`
+- `already_verified`
+
+Recommended detection examples:
+
+- Alert on repeated `auth.password.login` with `invalid_password` from one IP or across many subjects.
+- Alert on bursts of `auth.invite.sent` from one actor or tenant.
+- Track `auth.session.tenant_switched` in admin sessions to correlate high-risk changes with tenant context moves.
+- Review `auth.session.step_up.verification` failures before sensitive admin writes.
+
+## Tenant Admin Audit Actions
+
+Tenant-scoped administrative changes are written to `audit_log_entries.action`.
+
+Security-admin actions currently include:
+
+- `security.role.created`
+- `security.role.assigned`
+- `security.role.unassigned`
+- `security.runtime.field_permissions.saved`
+- `security.temporary_access.granted`
+- `security.temporary_access.revoked`
+- `security.temporary_access.used`
+- `security.tenant.registration_mode.updated`
+- `security.audit.retention.updated`
+- `security.audit.entries.purged`
+
+Related governance actions that often belong in the same dashboards:
+
+- `metadata.workspace.published`
+
+Use the tenant audit log for operator review, exports, and tamper-evident chain verification.
+
+## Secret Rotation Events
+
+Secret rotation for bootstrap, session, worker, and MFA encryption material happens as an operator workflow rather than a product API mutation. Qryvanta does not emit those events automatically today.
+
+Use these stable operator-side event identifiers in deployment logs, ticketing systems, or SIEM annotations:
+
+- `ops.secret.rotation.auth_bootstrap_token`
+- `ops.secret.rotation.session_secret`
+- `ops.secret.rotation.worker_shared_secret`
+- `ops.secret.rotation.totp_encryption_key`
+- `ops.secret.rotation.totp_kms_key_id`
+
+For each rotation event, record:
+
+- environment
+- actor or automation identity
+- start and completion timestamps
+- rollout scope
+- validation result
+
+Pair these operator rotation records with the runbook in [Identity Recovery and Secret Rotation](/docs/operations/identity-and-secret-rotation).

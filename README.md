@@ -22,7 +22,20 @@ The project is built as a Rust-first monorepo with a Next.js frontend and docs s
 - Runtime CRUD/query APIs generated from published metadata definitions.
 - App and workspace model for Admin, Maker, and Worker usage paths.
 - Authentication with email/password, passkeys, MFA, and server-side sessions.
+- Sensitive account recovery and MFA reset flows revoke all active authenticated sessions.
+- High-risk tenant security-admin writes now require recent password or MFA step-up verification.
+- MFA TOTP secrets can be stored with AWS KMS-backed envelope encryption instead of a single static at-rest key.
+- Startup can now reject cross-environment reuse of bootstrap, session, MFA, and worker secrets through fingerprint-based drift checks.
+- Tenant audit logs now carry a per-tenant tamper-evident hash chain, and admin surfaces can verify chain integrity on demand.
+- Auth lifecycle events and tenant-admin audit actions now use a documented stable security event taxonomy for detections and exports.
 - Tenant-scoped RBAC checks and audit/event persistence.
+- PostgreSQL RLS now protects metadata definitions/components/publish/runtime, app, RBAC, extension, audit, workflow execution, and Qrywell tenant queue/event tables as defense in depth.
+- Tenant membership records are RLS-protected with a narrow subject-lookup bypass for bootstrap/login flows.
+- Tenant contact mappings and Qrywell analytics/search-event tables are also RLS-protected.
+- Multi-membership identities now get deterministic default-tenant resolution plus authenticated tenant switching with session rotation.
+- Authenticated API regression tests now exercise cross-tenant IDOR probes across entity-definition, workspace runtime, and workflow route families.
+- Authenticated API regression tests now also cover `GET /auth/me` tenant visibility and `POST /auth/switch-tenant` scope changes.
+- Foreign-resource delete paths now fail closed with `404` instead of succeeding as silent no-ops.
 - Optional queued workflow execution via `qryvanta-worker`.
 - Optional Redis-backed rate limiting and workflow queue-stats caching.
 
@@ -79,6 +92,11 @@ For passkeys and session cookies in local development, keep auth URLs on `localh
 - `FRONTEND_URL=http://localhost:3000`
 - `NEXT_PUBLIC_API_BASE_URL=http://localhost:3001`
 - `WEBAUTHN_RP_ORIGIN=http://localhost:3000`
+- `TOTP_ENCRYPTION_KEY=<64-char hex key>`
+
+Only set `TRUST_PROXY_HEADERS=true` when the API is behind a trusted reverse proxy and `TRUSTED_PROXY_CIDRS` is restricted to that ingress tier. Forwarded client IP headers from direct clients or untrusted peers are ignored.
+
+Secret-valued startup settings can be provided directly, through `<NAME>_FILE`, or through `<NAME>_SECRET_REF` provider references for 1Password, AWS Secrets Manager/SSM, Vault, and GCP Secret Manager. See the operations configuration docs for supported formats and CLI requirements.
 
 ## Worker Runtime
 

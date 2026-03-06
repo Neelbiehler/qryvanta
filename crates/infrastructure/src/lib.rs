@@ -4,6 +4,8 @@
 
 mod aes_secret_encryptor;
 mod argon2_password_hasher;
+mod audit_chain;
+mod aws_kms_envelope_secret_encryptor;
 mod console_email_service;
 mod http_workflow_action_dispatcher;
 mod in_memory_extension_repository;
@@ -21,6 +23,7 @@ mod postgres_passkey_repository;
 mod postgres_rate_limit_repository;
 mod postgres_security_admin_repository;
 mod postgres_tenant_repository;
+mod postgres_tenant_rls;
 mod postgres_user_repository;
 mod postgres_workflow_repository;
 mod redis_rate_limit_repository;
@@ -32,6 +35,7 @@ mod wasm_extension_runtime;
 
 pub use aes_secret_encryptor::AesSecretEncryptor;
 pub use argon2_password_hasher::Argon2PasswordHasher;
+pub use aws_kms_envelope_secret_encryptor::AwsKmsEnvelopeSecretEncryptor;
 pub use console_email_service::ConsoleEmailService;
 pub use http_workflow_action_dispatcher::HttpWorkflowActionDispatcher;
 pub use in_memory_extension_repository::InMemoryExtensionRepository;
@@ -49,6 +53,9 @@ pub use postgres_passkey_repository::PostgresPasskeyRepository;
 pub use postgres_rate_limit_repository::PostgresRateLimitRepository;
 pub use postgres_security_admin_repository::PostgresSecurityAdminRepository;
 pub use postgres_tenant_repository::PostgresTenantRepository;
+pub use postgres_tenant_rls::{
+    begin_qrywell_sync_transaction, begin_tenant_transaction, begin_workflow_worker_transaction,
+};
 pub use postgres_user_repository::PostgresUserRepository;
 pub use postgres_workflow_repository::PostgresWorkflowRepository;
 pub use redis_rate_limit_repository::RedisRateLimitRepository;

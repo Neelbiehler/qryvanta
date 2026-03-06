@@ -6,11 +6,12 @@ impl PostgresWorkflowRepository {
         tenant_id: TenantId,
         workflow: WorkflowDefinition,
     ) -> AppResult<()> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let (trigger_type, trigger_entity) = workflow_trigger_parts(workflow.trigger());
         let (action_type, action_entity, action_payload) = workflow_action_parts(workflow.action());
         let action_steps = workflow_steps_to_json(workflow.steps())?;
 
-        sqlx::query(
+        let result = sqlx::query(
             r#"
             INSERT INTO workflow_definitions (
                 tenant_id,
@@ -57,23 +58,31 @@ impl PostgresWorkflowRepository {
             AppError::Validation(format!("invalid workflow max_attempts value: {error}"))
         })?)
         .bind(workflow.is_enabled())
-        .execute(&self.pool)
-        .await
-        .map_err(|error| {
-            AppError::Internal(format!(
+        .execute(&mut *transaction)
+        .await;
+
+        match result {
+            Ok(_) => {
+                transaction.commit().await.map_err(|error| {
+                    AppError::Internal(format!(
+                        "failed to commit tenant-scoped workflow save transaction: {error}"
+                    ))
+                })?;
+                Ok(())
+            }
+            Err(error) => Err(AppError::Internal(format!(
                 "failed to save workflow '{}' for tenant '{}': {error}",
                 workflow.logical_name().as_str(),
                 tenant_id
-            ))
-        })?;
-
-        Ok(())
+            ))),
+        }
     }
 
     pub(super) async fn list_workflows_impl(
         &self,
         tenant_id: TenantId,
     ) -> AppResult<Vec<WorkflowDefinition>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let rows = sqlx::query_as::<_, WorkflowDefinitionRow>(
             r#"
             SELECT
@@ -94,12 +103,17 @@ impl PostgresWorkflowRepository {
             "#,
         )
         .bind(tenant_id.as_uuid())
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to list workflows for tenant '{}': {error}",
                 tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped workflow list transaction: {error}"
             ))
         })?;
 
@@ -111,6 +125,7 @@ impl PostgresWorkflowRepository {
         tenant_id: TenantId,
         logical_name: &str,
     ) -> AppResult<Option<WorkflowDefinition>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let row = sqlx::query_as::<_, WorkflowDefinitionRow>(
             r#"
             SELECT
@@ -131,12 +146,17 @@ impl PostgresWorkflowRepository {
         )
         .bind(tenant_id.as_uuid())
         .bind(logical_name)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to find workflow '{}' for tenant '{}': {error}",
                 logical_name, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped workflow find transaction: {error}"
             ))
         })?;
 
@@ -148,6 +168,7 @@ impl PostgresWorkflowRepository {
         tenant_id: TenantId,
         trigger: &WorkflowTrigger,
     ) -> AppResult<Vec<WorkflowDefinition>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let (trigger_type, trigger_entity) = workflow_trigger_parts(trigger);
 
         let rows = sqlx::query_as::<_, WorkflowDefinitionRow>(
@@ -178,12 +199,17 @@ impl PostgresWorkflowRepository {
         .bind(tenant_id.as_uuid())
         .bind(trigger_type)
         .bind(trigger_entity)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to list trigger workflows for tenant '{}': {error}",
                 tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped workflow trigger list transaction: {error}"
             ))
         })?;
 

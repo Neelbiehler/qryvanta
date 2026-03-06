@@ -4,7 +4,7 @@ use qryvanta_domain::AuditAction;
 
 use crate::AuditEvent;
 use crate::security_admin_ports::{
-    AuditLogEntry, AuditLogQuery, AuditPurgeResult, AuditRetentionPolicy,
+    AuditIntegrityStatus, AuditLogEntry, AuditLogQuery, AuditPurgeResult, AuditRetentionPolicy,
     WorkspacePublishRunAuditInput,
 };
 
@@ -30,6 +30,17 @@ impl SecurityAdminService {
         self.require_audit_read_permission(actor).await?;
         self.audit_log_repository
             .export_entries(actor.tenant_id(), query)
+            .await
+    }
+
+    /// Verifies tenant audit-chain integrity.
+    pub async fn verify_audit_integrity(
+        &self,
+        actor: &UserIdentity,
+    ) -> AppResult<AuditIntegrityStatus> {
+        self.require_audit_read_permission(actor).await?;
+        self.audit_log_repository
+            .verify_integrity(actor.tenant_id())
             .await
     }
 

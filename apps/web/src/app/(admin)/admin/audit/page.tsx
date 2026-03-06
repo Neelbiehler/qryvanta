@@ -24,6 +24,7 @@ import { AuditControlsPanel } from "@/components/security/audit-controls-panel";
 import { AccessDeniedCard } from "@/components/shared/access-denied-card";
 import {
   apiServerFetch,
+  type AuditIntegrityStatusResponse,
   type AuditLogEntryResponse,
   type AuditRetentionPolicyResponse,
 } from "@/lib/api";
@@ -59,9 +60,10 @@ export default async function AdminAuditLogPage({
   if (subject) query.set("subject", subject);
 
   const cookieHeader = (await cookies()).toString();
-  const [response, retentionResponse] = await Promise.all([
+  const [response, retentionResponse, integrityResponse] = await Promise.all([
     apiServerFetch(`/api/security/audit-log?${query.toString()}`, cookieHeader),
     apiServerFetch("/api/security/audit-retention-policy", cookieHeader),
+    apiServerFetch("/api/security/audit-log/integrity", cookieHeader),
   ]);
 
   if (response.status === 401) {
@@ -89,10 +91,16 @@ export default async function AdminAuditLogPage({
   if (retentionResponse.status !== 200 && retentionResponse.status !== 403) {
     throw new Error("Failed to load audit retention policy");
   }
+  if (integrityResponse.status !== 200 && integrityResponse.status !== 403) {
+    throw new Error("Failed to load audit integrity status");
+  }
 
   const entries = (await response.json()) as AuditLogEntryResponse[];
   const retentionPolicy = retentionResponse.ok
     ? ((await retentionResponse.json()) as AuditRetentionPolicyResponse)
+    : null;
+  const integrityStatus = integrityResponse.ok
+    ? ((await integrityResponse.json()) as AuditIntegrityStatusResponse)
     : null;
   const previousOffset = Math.max(0, safeOffset - safeLimit);
   const nextOffset = safeOffset + safeLimit;
@@ -132,12 +140,27 @@ export default async function AdminAuditLogPage({
             <StatusBadge tone={retentionPolicy ? "warning" : "neutral"}>
               Retention {retentionPolicy?.retention_days ?? "n/a"}d
             </StatusBadge>
+            <StatusBadge
+              tone={
+                integrityStatus === null
+                  ? "neutral"
+                  : integrityStatus.is_valid
+                    ? "success"
+                    : "critical"
+              }
+            >
+              Chain {integrityStatus?.is_valid ? "valid" : integrityStatus ? "invalid" : "n/a"}
+            </StatusBadge>
+            <StatusBadge tone="neutral">
+              Verified {integrityStatus?.verified_entries ?? 0}
+            </StatusBadge>
           </CardContent>
         </Card>
 
         <Card>
           <CardContent className="space-y-4 pt-6">
             <AuditControlsPanel
+              initialIntegrityStatus={integrityStatus}
               queryString={query.toString()}
               retentionDays={retentionPolicy?.retention_days ?? null}
             />
@@ -173,6 +196,7 @@ export default async function AdminAuditLogPage({
               <TableHeader>
                 <TableRow>
                   <TableHead>Time (UTC)</TableHead>
+                  <TableHead>Chain</TableHead>
                   <TableHead>Subject</TableHead>
                   <TableHead>Action</TableHead>
                   <TableHead>Resource</TableHead>
@@ -186,6 +210,9 @@ export default async function AdminAuditLogPage({
                       <TableCell className="font-mono text-xs">
                         {entry.created_at}
                       </TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {entry.chain_position}
+                      </TableCell>
                       <TableCell>{entry.subject}</TableCell>
                       <TableCell className="font-mono text-xs">
                         {entry.action}
@@ -198,7 +225,7 @@ export default async function AdminAuditLogPage({
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell className="text-zinc-500" colSpan={5}>
+                    <TableCell className="text-zinc-500" colSpan={6}>
                       No audit entries found.
                     </TableCell>
                   </TableRow>

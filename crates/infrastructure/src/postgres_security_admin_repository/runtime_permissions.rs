@@ -6,10 +6,7 @@ impl PostgresSecurityAdminRepository {
         tenant_id: TenantId,
         input: SaveRuntimeFieldPermissionsInput,
     ) -> AppResult<Vec<RuntimeFieldPermissionEntry>> {
-        let mut transaction =
-            self.pool.begin().await.map_err(|error| {
-                AppError::Internal(format!("failed to begin transaction: {error}"))
-            })?;
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
 
         sqlx::query(
             r#"
@@ -117,6 +114,7 @@ impl PostgresSecurityAdminRepository {
         subject: Option<&str>,
         entity_logical_name: Option<&str>,
     ) -> AppResult<Vec<RuntimeFieldPermissionEntry>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let rows = sqlx::query_as::<_, RuntimeFieldPermissionRow>(
             r#"
             SELECT
@@ -136,10 +134,15 @@ impl PostgresSecurityAdminRepository {
         .bind(tenant_id.as_uuid())
         .bind(subject)
         .bind(entity_logical_name)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!("failed to list runtime field permissions: {error}"))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped runtime field permission list transaction: {error}"
+            ))
         })?;
 
         Ok(rows

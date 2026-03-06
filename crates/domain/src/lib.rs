@@ -34,7 +34,7 @@ pub use metadata::{
     EntityDefinition, EntityFieldDefinition, EntityFieldMutableUpdateInput, FieldType,
     OptionSetDefinition, OptionSetItem, PublishedEntitySchema, RuntimeRecord,
 };
-pub use security::{AuditAction, Permission, Surface};
+pub use security::{AuditAction, AuthEventOutcome, AuthEventType, Permission, Surface};
 pub use user::{
     AuthTokenType, EmailAddress, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH_WITH_MFA,
     PASSWORD_MIN_LENGTH_WITHOUT_MFA, RegistrationMode, UserId, validate_password,

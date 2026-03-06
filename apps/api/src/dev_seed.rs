@@ -15,7 +15,7 @@ use qryvanta_domain::{
     WorkflowTrigger,
 };
 
-use qryvanta_infrastructure::Argon2PasswordHasher;
+use qryvanta_infrastructure::{Argon2PasswordHasher, begin_tenant_transaction};
 
 use serde_json::{Value, json};
 use sqlx::PgPool;
@@ -93,6 +93,7 @@ pub async fn run(pool: PgPool, config: &ApiConfig) -> AppResult<()> {
     )
     .await?;
 
+    let mut admin_membership_transaction = begin_tenant_transaction(&pool, tenant_id).await?;
     sqlx::query(
         r#"
         UPDATE tenant_memberships
@@ -105,13 +106,21 @@ pub async fn run(pool: PgPool, config: &ApiConfig) -> AppResult<()> {
     .bind(admin_user_id)
     .bind(DEV_SEED_ADMIN_DISPLAY_NAME)
     .bind(DEV_SEED_ADMIN_EMAIL)
-    .execute(&pool)
+    .execute(&mut *admin_membership_transaction)
     .await
     .map_err(|error| {
         AppError::Internal(format!(
             "failed to link tenant membership to dev seed user: {error}"
         ))
     })?;
+    admin_membership_transaction
+        .commit()
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit admin membership seed transaction: {error}"
+            ))
+        })?;
 
     sqlx::query("UPDATE tenants SET name = $2 WHERE id = $1")
         .bind(tenant_id.as_uuid())
@@ -226,6 +235,7 @@ async fn ensure_standard_membership(
     user_id: Uuid,
     subject: &str,
 ) -> AppResult<()> {
+    let mut transaction = begin_tenant_transaction(pool, tenant_id).await?;
     sqlx::query(
         r#"
         INSERT INTO tenant_memberships (tenant_id, subject, display_name, email, user_id)
@@ -241,7 +251,7 @@ async fn ensure_standard_membership(
     .bind(DEV_SEED_STANDARD_DISPLAY_NAME)
     .bind(DEV_SEED_STANDARD_EMAIL)
     .bind(user_id)
-    .execute(pool)
+    .execute(&mut *transaction)
     .await
     .map_err(|error| {
         AppError::Internal(format!(
@@ -262,12 +272,17 @@ async fn ensure_standard_membership(
     )
     .bind(tenant_id.as_uuid())
     .bind(subject)
-    .execute(pool)
+    .execute(&mut *transaction)
     .await
     .map_err(|error| {
         AppError::Internal(format!(
             "failed to remove owner role from standard user in tenant '{}': {error}",
             tenant_id
+        ))
+    })?;
+    transaction.commit().await.map_err(|error| {
+        AppError::Internal(format!(
+            "failed to commit standard membership seed transaction: {error}"
         ))
     })?;
 
