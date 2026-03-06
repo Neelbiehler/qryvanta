@@ -46,9 +46,7 @@ pub struct UserIdentityResponse {
     pub display_name: String,
     pub email: Option<String>,
     pub tenant_id: String,
-    /// Surfaces the authenticated user may access (e.g. `['admin', 'maker', 'worker']`).
     pub accessible_surfaces: Vec<String>,
-    /// Every tenant the subject may switch into.
     pub available_tenants: Vec<TenantOptionResponse>,
 }
 
