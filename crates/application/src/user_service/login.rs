@@ -97,6 +97,6 @@ impl UserService {
             })
             .await?;
 
-        Ok(AuthOutcome::Authenticated(user))
+        Ok(AuthOutcome::Authenticated(Box::new(user)))
     }
 }

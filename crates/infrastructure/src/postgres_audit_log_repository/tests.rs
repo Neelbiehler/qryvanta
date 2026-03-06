@@ -46,33 +46,34 @@ async fn ensure_tenant(pool: &PgPool, tenant_id: TenantId, name: &str) {
     assert!(insert.is_ok());
 }
 
-async fn insert_audit_entry(
-    pool: &PgPool,
+struct AuditEntrySeed<'a> {
     tenant_id: TenantId,
-    subject: &str,
-    action: &str,
-    resource_id: &str,
-    detail: Option<&str>,
-    created_at_sql: &str,
+    subject: &'a str,
+    action: &'a str,
+    resource_id: &'a str,
+    detail: Option<&'a str>,
+    created_at_sql: &'a str,
     chain_position: i64,
-    previous_entry_hash: Option<&str>,
-) -> String {
+    previous_entry_hash: Option<&'a str>,
+}
+
+async fn insert_audit_entry(pool: &PgPool, seed: AuditEntrySeed<'_>) -> String {
     let created_at_utc = sqlx::query_scalar::<_, String>(&format!(
         "SELECT to_char(({}) AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"')",
-        created_at_sql
+        seed.created_at_sql
     ))
     .fetch_one(pool)
     .await
     .unwrap_or_else(|error| panic!("failed to resolve created_at for test audit entry: {error}"));
     let entry_hash = compute_audit_entry_hash(&AuditChainInput {
-        tenant_id,
-        chain_position,
-        previous_entry_hash,
-        subject,
-        action,
+        tenant_id: seed.tenant_id,
+        chain_position: seed.chain_position,
+        previous_entry_hash: seed.previous_entry_hash,
+        subject: seed.subject,
+        action: seed.action,
         resource_type: "runtime_record",
-        resource_id,
-        detail,
+        resource_id: seed.resource_id,
+        detail: seed.detail,
         created_at_utc: created_at_utc.as_str(),
     });
     let insert_sql = r#"
@@ -90,17 +91,17 @@ async fn insert_audit_entry(
             )
             VALUES ($1, $2, $3, $4, $5, $6, (#CREATED_AT#), $7, $8, $9)
             "#
-    .replace("(#CREATED_AT#)", created_at_sql);
+    .replace("(#CREATED_AT#)", seed.created_at_sql);
 
     let insert = sqlx::query(insert_sql.as_str())
-        .bind(tenant_id.as_uuid())
-        .bind(subject)
-        .bind(action)
+        .bind(seed.tenant_id.as_uuid())
+        .bind(seed.subject)
+        .bind(seed.action)
         .bind("runtime_record")
-        .bind(resource_id)
-        .bind(detail)
-        .bind(chain_position)
-        .bind(previous_entry_hash)
+        .bind(seed.resource_id)
+        .bind(seed.detail)
+        .bind(seed.chain_position)
+        .bind(seed.previous_entry_hash)
         .bind(entry_hash.as_str())
         .execute(pool)
         .await;
@@ -121,26 +122,30 @@ async fn export_and_purge_entries_follow_retention_window() {
 
     let old_hash = insert_audit_entry(
         &pool,
-        tenant_id,
-        "alice",
-        "runtime.record.created",
-        "record-old",
-        Some("old entry"),
-        "now() - interval '45 days'",
-        1,
-        None,
+        AuditEntrySeed {
+            tenant_id,
+            subject: "alice",
+            action: "runtime.record.created",
+            resource_id: "record-old",
+            detail: Some("old entry"),
+            created_at_sql: "now() - interval '45 days'",
+            chain_position: 1,
+            previous_entry_hash: None,
+        },
     )
     .await;
     let _recent_hash = insert_audit_entry(
         &pool,
-        tenant_id,
-        "alice",
-        "runtime.record.updated",
-        "record-new",
-        Some("recent entry"),
-        "now() - interval '1 day'",
-        2,
-        Some(old_hash.as_str()),
+        AuditEntrySeed {
+            tenant_id,
+            subject: "alice",
+            action: "runtime.record.updated",
+            resource_id: "record-new",
+            detail: Some("recent entry"),
+            created_at_sql: "now() - interval '1 day'",
+            chain_position: 2,
+            previous_entry_hash: Some(old_hash.as_str()),
+        },
     )
     .await;
 
@@ -194,38 +199,44 @@ async fn audit_log_queries_and_purge_are_tenant_scoped() {
 
     let left_old_hash = insert_audit_entry(
         &pool,
-        left_tenant,
-        "alice",
-        "runtime.record.created",
-        "left-old",
-        Some("left old entry"),
-        "now() - interval '45 days'",
-        1,
-        None,
+        AuditEntrySeed {
+            tenant_id: left_tenant,
+            subject: "alice",
+            action: "runtime.record.created",
+            resource_id: "left-old",
+            detail: Some("left old entry"),
+            created_at_sql: "now() - interval '45 days'",
+            chain_position: 1,
+            previous_entry_hash: None,
+        },
     )
     .await;
     let _left_recent_hash = insert_audit_entry(
         &pool,
-        left_tenant,
-        "alice",
-        "runtime.record.updated",
-        "left-new",
-        Some("left recent entry"),
-        "now() - interval '1 day'",
-        2,
-        Some(left_old_hash.as_str()),
+        AuditEntrySeed {
+            tenant_id: left_tenant,
+            subject: "alice",
+            action: "runtime.record.updated",
+            resource_id: "left-new",
+            detail: Some("left recent entry"),
+            created_at_sql: "now() - interval '1 day'",
+            chain_position: 2,
+            previous_entry_hash: Some(left_old_hash.as_str()),
+        },
     )
     .await;
     let _right_old_hash = insert_audit_entry(
         &pool,
-        right_tenant,
-        "alice",
-        "runtime.record.created",
-        "right-old",
-        Some("right old entry"),
-        "now() - interval '45 days'",
-        1,
-        None,
+        AuditEntrySeed {
+            tenant_id: right_tenant,
+            subject: "alice",
+            action: "runtime.record.created",
+            resource_id: "right-old",
+            detail: Some("right old entry"),
+            created_at_sql: "now() - interval '45 days'",
+            chain_position: 1,
+            previous_entry_hash: None,
+        },
     )
     .await;
 
@@ -314,26 +325,30 @@ async fn verify_integrity_reports_valid_and_tampered_chains() {
 
     let first_hash = insert_audit_entry(
         &pool,
-        tenant_id,
-        "alice",
-        "runtime.record.created",
-        "record-1",
-        Some("first entry"),
-        "TIMESTAMPTZ '2026-03-01T00:00:00Z'",
-        1,
-        None,
+        AuditEntrySeed {
+            tenant_id,
+            subject: "alice",
+            action: "runtime.record.created",
+            resource_id: "record-1",
+            detail: Some("first entry"),
+            created_at_sql: "TIMESTAMPTZ '2026-03-01T00:00:00Z'",
+            chain_position: 1,
+            previous_entry_hash: None,
+        },
     )
     .await;
     let _second_hash = insert_audit_entry(
         &pool,
-        tenant_id,
-        "alice",
-        "runtime.record.updated",
-        "record-2",
-        Some("second entry"),
-        "TIMESTAMPTZ '2026-03-02T00:00:00Z'",
-        2,
-        Some(first_hash.as_str()),
+        AuditEntrySeed {
+            tenant_id,
+            subject: "alice",
+            action: "runtime.record.updated",
+            resource_id: "record-2",
+            detail: Some("second entry"),
+            created_at_sql: "TIMESTAMPTZ '2026-03-02T00:00:00Z'",
+            chain_position: 2,
+            previous_entry_hash: Some(first_hash.as_str()),
+        },
     )
     .await;
 

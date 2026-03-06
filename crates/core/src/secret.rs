@@ -61,17 +61,19 @@ pub fn detect_reused_secret_fingerprints(
     let collisions: Vec<String> = current_records
         .iter()
         .flat_map(|current_record| {
-            known_records.iter().filter_map(|known_record| {
-                (known_record.environment != current_environment
-                    && known_record.secret_name == current_record.secret_name
-                    && known_record.fingerprint == current_record.fingerprint)
-                    .then(|| {
-                        format!(
-                            "{} matches configured fingerprint for environment '{}'",
-                            current_record.secret_name, known_record.environment
-                        )
-                    })
-            })
+            known_records
+                .iter()
+                .filter(|known_record| {
+                    known_record.environment != current_environment
+                        && known_record.secret_name == current_record.secret_name
+                        && known_record.fingerprint == current_record.fingerprint
+                })
+                .map(|known_record| {
+                    format!(
+                        "{} matches configured fingerprint for environment '{}'",
+                        current_record.secret_name, known_record.environment
+                    )
+                })
         })
         .collect();
 

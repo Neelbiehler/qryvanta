@@ -1069,23 +1069,27 @@ async fn auth_me_exposes_available_tenants_and_switching_updates_scope() {
     seed_workspace_surface(
         &harness.state,
         &alpha_user.actor,
-        alpha_entity_logical_name.as_str(),
-        alpha_app_logical_name.as_str(),
-        None,
-        None,
-        None,
-        None,
+        WorkspaceSurfaceSeed {
+            entity_logical_name: alpha_entity_logical_name.as_str(),
+            app_logical_name: alpha_app_logical_name.as_str(),
+            extra_field_logical_name: None,
+            extra_option_set_logical_name: None,
+            extra_form_logical_name: None,
+            extra_view_logical_name: None,
+        },
     )
     .await;
     seed_workspace_surface(
         &harness.state,
         &bravo_owner.actor,
-        bravo_entity_logical_name.as_str(),
-        bravo_app_logical_name.as_str(),
-        None,
-        None,
-        None,
-        None,
+        WorkspaceSurfaceSeed {
+            entity_logical_name: bravo_entity_logical_name.as_str(),
+            app_logical_name: bravo_app_logical_name.as_str(),
+            extra_field_logical_name: None,
+            extra_option_set_logical_name: None,
+            extra_form_logical_name: None,
+            extra_view_logical_name: None,
+        },
     )
     .await;
 
@@ -1259,7 +1263,7 @@ async fn high_risk_security_actions_require_recent_step_up() {
         .await
         .unwrap_or_else(|_| unreachable!());
 
-    let blocked_response = crate::handlers::security::create_role_handler(
+    let blocked_response = match crate::handlers::security::create_role_handler(
         State(harness.state.clone()),
         Extension(actor.actor.clone()),
         session.clone(),
@@ -1269,8 +1273,10 @@ async fn high_risk_security_actions_require_recent_step_up() {
         }),
     )
     .await
-    .unwrap_err()
-    .into_response();
+    {
+        Ok(_) => panic!("expected step-up protected role creation to be rejected"),
+        Err(error) => error.into_response(),
+    };
     assert_eq!(blocked_response.status(), StatusCode::FORBIDDEN);
     let blocked_payload = axum::body::to_bytes(blocked_response.into_body(), usize::MAX)
         .await
@@ -1490,12 +1496,14 @@ async fn seed_scenario(state: &AppState) -> SeededScenario {
     seed_workspace_surface(
         state,
         &left_user.actor,
-        shared_entity_logical_name.as_str(),
-        shared_app_logical_name.as_str(),
-        None,
-        None,
-        None,
-        None,
+        WorkspaceSurfaceSeed {
+            entity_logical_name: shared_entity_logical_name.as_str(),
+            app_logical_name: shared_app_logical_name.as_str(),
+            extra_field_logical_name: None,
+            extra_option_set_logical_name: None,
+            extra_form_logical_name: None,
+            extra_view_logical_name: None,
+        },
     )
     .await;
 
@@ -1526,12 +1534,14 @@ async fn seed_scenario(state: &AppState) -> SeededScenario {
     seed_workspace_surface(
         state,
         &right_user.actor,
-        shared_entity_logical_name.as_str(),
-        shared_app_logical_name.as_str(),
-        Some(right_secret_field_logical_name.as_str()),
-        Some(right_secret_option_set_logical_name.as_str()),
-        Some(right_secret_form_logical_name.as_str()),
-        Some(right_secret_view_logical_name.as_str()),
+        WorkspaceSurfaceSeed {
+            entity_logical_name: shared_entity_logical_name.as_str(),
+            app_logical_name: shared_app_logical_name.as_str(),
+            extra_field_logical_name: Some(right_secret_field_logical_name.as_str()),
+            extra_option_set_logical_name: Some(right_secret_option_set_logical_name.as_str()),
+            extra_form_logical_name: Some(right_secret_form_logical_name.as_str()),
+            extra_view_logical_name: Some(right_secret_view_logical_name.as_str()),
+        },
     )
     .await;
 
@@ -1643,19 +1653,23 @@ async fn seed_user(state: &AppState, email: &str, display_name: &str) -> SeededU
     }
 }
 
+struct WorkspaceSurfaceSeed<'a> {
+    entity_logical_name: &'a str,
+    app_logical_name: &'a str,
+    extra_field_logical_name: Option<&'a str>,
+    extra_option_set_logical_name: Option<&'a str>,
+    extra_form_logical_name: Option<&'a str>,
+    extra_view_logical_name: Option<&'a str>,
+}
+
 async fn seed_workspace_surface(
     state: &AppState,
     actor: &UserIdentity,
-    entity_logical_name: &str,
-    app_logical_name: &str,
-    extra_field_logical_name: Option<&str>,
-    extra_option_set_logical_name: Option<&str>,
-    extra_form_logical_name: Option<&str>,
-    extra_view_logical_name: Option<&str>,
+    seed: WorkspaceSurfaceSeed<'_>,
 ) {
     state
         .metadata_service
-        .register_entity(actor, entity_logical_name, "Account")
+        .register_entity(actor, seed.entity_logical_name, "Account")
         .await
         .unwrap_or_else(|_| unreachable!());
     state
@@ -1663,7 +1677,7 @@ async fn seed_workspace_surface(
         .save_field(
             actor,
             SaveFieldInput {
-                entity_logical_name: entity_logical_name.to_owned(),
+                entity_logical_name: seed.entity_logical_name.to_owned(),
                 logical_name: "name".to_owned(),
                 display_name: "Name".to_owned(),
                 field_type: FieldType::Text,
@@ -1679,17 +1693,17 @@ async fn seed_workspace_surface(
         .unwrap_or_else(|_| unreachable!());
     state
         .metadata_service
-        .publish_entity(actor, entity_logical_name)
+        .publish_entity(actor, seed.entity_logical_name)
         .await
         .unwrap_or_else(|_| unreachable!());
 
-    if let Some(extra_field_logical_name) = extra_field_logical_name {
+    if let Some(extra_field_logical_name) = seed.extra_field_logical_name {
         state
             .metadata_service
             .save_field(
                 actor,
                 SaveFieldInput {
-                    entity_logical_name: entity_logical_name.to_owned(),
+                    entity_logical_name: seed.entity_logical_name.to_owned(),
                     logical_name: extra_field_logical_name.to_owned(),
                     display_name: "Secret Code".to_owned(),
                     field_type: FieldType::Text,
@@ -1705,18 +1719,18 @@ async fn seed_workspace_surface(
             .unwrap_or_else(|_| unreachable!());
         state
             .metadata_service
-            .publish_entity(actor, entity_logical_name)
+            .publish_entity(actor, seed.entity_logical_name)
             .await
             .unwrap_or_else(|_| unreachable!());
     }
 
-    if let Some(extra_option_set_logical_name) = extra_option_set_logical_name {
+    if let Some(extra_option_set_logical_name) = seed.extra_option_set_logical_name {
         state
             .metadata_service
             .save_option_set(
                 actor,
                 SaveOptionSetInput {
-                    entity_logical_name: entity_logical_name.to_owned(),
+                    entity_logical_name: seed.entity_logical_name.to_owned(),
                     logical_name: extra_option_set_logical_name.to_owned(),
                     display_name: "Secret Status".to_owned(),
                     options: vec![
@@ -1729,13 +1743,13 @@ async fn seed_workspace_surface(
             .unwrap_or_else(|_| unreachable!());
     }
 
-    if let Some(extra_form_logical_name) = extra_form_logical_name {
+    if let Some(extra_form_logical_name) = seed.extra_form_logical_name {
         state
             .metadata_service
             .save_form(
                 actor,
                 SaveFormInput {
-                    entity_logical_name: entity_logical_name.to_owned(),
+                    entity_logical_name: seed.entity_logical_name.to_owned(),
                     logical_name: extra_form_logical_name.to_owned(),
                     display_name: "Secret Form".to_owned(),
                     form_type: FormType::Main,
@@ -1747,13 +1761,13 @@ async fn seed_workspace_surface(
             .unwrap_or_else(|_| unreachable!());
     }
 
-    if let Some(extra_view_logical_name) = extra_view_logical_name {
+    if let Some(extra_view_logical_name) = seed.extra_view_logical_name {
         state
             .metadata_service
             .save_view(
                 actor,
                 SaveViewInput {
-                    entity_logical_name: entity_logical_name.to_owned(),
+                    entity_logical_name: seed.entity_logical_name.to_owned(),
                     logical_name: extra_view_logical_name.to_owned(),
                     display_name: "Secret View".to_owned(),
                     view_type: ViewType::Grid,
@@ -1788,7 +1802,7 @@ async fn seed_workspace_surface(
         .create_app(
             actor,
             CreateAppInput {
-                logical_name: app_logical_name.to_owned(),
+                logical_name: seed.app_logical_name.to_owned(),
                 display_name: "Operations".to_owned(),
                 description: Some("Operations workspace".to_owned()),
             },
@@ -1800,8 +1814,8 @@ async fn seed_workspace_surface(
         .bind_entity(
             actor,
             BindAppEntityInput {
-                app_logical_name: app_logical_name.to_owned(),
-                entity_logical_name: entity_logical_name.to_owned(),
+                app_logical_name: seed.app_logical_name.to_owned(),
+                entity_logical_name: seed.entity_logical_name.to_owned(),
                 navigation_label: Some("Accounts".to_owned()),
                 navigation_order: 0,
                 forms: Some(vec![AppEntityFormInput {
@@ -1828,9 +1842,9 @@ async fn seed_workspace_surface(
         .save_role_entity_permission(
             actor,
             SaveAppRoleEntityPermissionInput {
-                app_logical_name: app_logical_name.to_owned(),
+                app_logical_name: seed.app_logical_name.to_owned(),
                 role_name: TENANT_OWNER_ROLE.to_owned(),
-                entity_logical_name: entity_logical_name.to_owned(),
+                entity_logical_name: seed.entity_logical_name.to_owned(),
                 can_read: true,
                 can_create: true,
                 can_update: true,

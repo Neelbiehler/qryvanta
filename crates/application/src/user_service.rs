@@ -144,7 +144,7 @@ pub trait PasswordHasher: Send + Sync {
 #[derive(Debug)]
 pub enum AuthOutcome {
     /// Authentication succeeded. Session can be established.
-    Authenticated(UserRecord),
+    Authenticated(Box<UserRecord>),
     /// Password was correct but TOTP verification is required.
     MfaRequired {
         /// The user ID awaiting MFA.
