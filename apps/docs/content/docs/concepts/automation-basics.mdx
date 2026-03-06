@@ -10,6 +10,9 @@ A workflow starts from a trigger and executes action steps.
 
 - Manual execution
 - Runtime record created
+- Runtime record updated
+- Runtime record deleted
+- Schedule tick
 
 The workflow studio now ships trigger presets so makers can configure real event sources faster:
 
@@ -22,8 +25,6 @@ The workflow studio now ships trigger presets so makers can configure real event
 - Approval requested
 
 These presets map to native runtime trigger types (`runtime_record_*` and `schedule_tick`) and execute directly through the workflow runtime.
-
-More native trigger types are planned and will be documented when released.
 
 Backend trigger coverage now includes:
 
@@ -43,7 +44,7 @@ Backend trigger coverage now includes:
 
 Queued mode is recommended for isolated worker scaling.
 
-Current trigger coverage is manual run and record-created events.
+Manual, runtime record, and schedule triggers are available in both inline and queued execution modes.
 
 ## Failure Handling
 
