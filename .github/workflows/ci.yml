@@ -1,10 +1,10 @@
 name: ci
 
 on:
-  pull_request:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
+  schedule:
+    # Run once per day instead of on every push or pull request.
+    - cron: "17 3 * * *"
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -44,7 +44,7 @@ jobs:
         run: cargo xcheck --locked
 
       - name: Rust lint
-        run: cargo xclippy --locked
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Rust tests
         run: cargo xtest --locked
