@@ -4,12 +4,4 @@ import type { TenantOptionResponse } from "./tenant-option-response";
 /**
  * API representation of the authenticated user.
  */
-export type UserIdentityResponse = { subject: string, display_name: string, email: string | null, tenant_id: string, 
-/**
- * Surfaces the authenticated user may access (e.g. `['admin', 'maker', 'worker']`).
- */
-accessible_surfaces: Array<string>,
-/**
- * Every tenant the subject may switch into.
- */
-available_tenants: Array<TenantOptionResponse>, };
+export type UserIdentityResponse = { subject: string, display_name: string, email: string | null, tenant_id: string, accessible_surfaces: Array<string>, available_tenants: Array<TenantOptionResponse>, };
