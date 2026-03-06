@@ -65,7 +65,7 @@ jobs:
 
       - name: Install Cosign
         if: steps.token_check.outputs.has_token == 'true' && steps.changesets.outputs.published == 'true'
-        uses: sigstore/cosign-installer@v3.8.2
+        uses: sigstore/cosign-installer@v4.0.0
 
       - name: Pack published npm artifacts
         if: steps.token_check.outputs.has_token == 'true' && steps.changesets.outputs.published == 'true'
