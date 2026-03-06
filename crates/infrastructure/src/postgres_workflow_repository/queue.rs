@@ -9,6 +9,7 @@ impl PostgresWorkflowRepository {
         let run_uuid = uuid::Uuid::parse_str(run_id).map_err(|error| {
             AppError::Validation(format!("invalid workflow run id '{run_id}': {error}"))
         })?;
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
 
         sqlx::query(
             r#"
@@ -26,11 +27,16 @@ impl PostgresWorkflowRepository {
         )
         .bind(tenant_id.as_uuid())
         .bind(run_uuid)
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to enqueue workflow run '{run_id}' for tenant '{tenant_id}': {error}"
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped workflow enqueue transaction: {error}"
             ))
         })?;
 
@@ -60,11 +66,7 @@ impl PostgresWorkflowRepository {
             })
             .transpose()?;
 
-        let mut transaction = self.pool.begin().await.map_err(|error| {
-            AppError::Internal(format!(
-                "failed to start workflow job claim transaction: {error}"
-            ))
-        })?;
+        let mut transaction = begin_workflow_worker_transaction(&self.pool).await?;
 
         let claim_rows = sqlx::query_as::<_, ClaimedWorkflowJobRow>(
             r#"
@@ -167,6 +169,7 @@ impl PostgresWorkflowRepository {
         let job_uuid = uuid::Uuid::parse_str(job_id).map_err(|error| {
             AppError::Validation(format!("invalid workflow job id '{job_id}': {error}"))
         })?;
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
 
         let result = sqlx::query(
             r#"
@@ -188,7 +191,7 @@ impl PostgresWorkflowRepository {
         .bind(job_uuid)
         .bind(worker_id)
         .bind(lease_token)
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
@@ -201,6 +204,11 @@ impl PostgresWorkflowRepository {
                 "workflow job '{job_id}' is not currently leased by worker '{worker_id}' with matching lease token"
             )));
         }
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped workflow job completion transaction: {error}"
+            ))
+        })?;
 
         Ok(())
     }
@@ -216,6 +224,7 @@ impl PostgresWorkflowRepository {
         let job_uuid = uuid::Uuid::parse_str(job_id).map_err(|error| {
             AppError::Validation(format!("invalid workflow job id '{job_id}': {error}"))
         })?;
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
 
         let result = sqlx::query(
             r#"
@@ -239,7 +248,7 @@ impl PostgresWorkflowRepository {
         .bind(worker_id)
         .bind(lease_token)
         .bind(error_message)
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
@@ -252,6 +261,11 @@ impl PostgresWorkflowRepository {
                 "workflow job '{job_id}' is not currently leased by worker '{worker_id}' with matching lease token"
             )));
         }
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped workflow job failure transaction: {error}"
+            ))
+        })?;
 
         Ok(())
     }
@@ -327,6 +341,7 @@ impl PostgresWorkflowRepository {
         &self,
         query: WorkflowQueueStatsQuery,
     ) -> AppResult<WorkflowQueueStats> {
+        let mut transaction = begin_workflow_worker_transaction(&self.pool).await?;
         let partition_count = query
             .partition
             .map(|value| {
@@ -376,7 +391,7 @@ impl PostgresWorkflowRepository {
         )
         .bind(partition_count)
         .bind(partition_index)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!("failed to load workflow queue stats: {error}"))
@@ -398,11 +413,16 @@ impl PostgresWorkflowRepository {
         })?)
         .bind(partition_count)
         .bind(partition_index)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to load workflow active worker stats: {error}"
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit workflow queue stats transaction: {error}"
             ))
         })?;
 

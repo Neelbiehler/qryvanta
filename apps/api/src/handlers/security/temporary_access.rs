@@ -11,8 +11,11 @@ pub struct TemporaryAccessGrantListQuery {
 pub async fn create_temporary_access_grant_handler(
     State(state): State<AppState>,
     Extension(user): Extension<UserIdentity>,
+    session: Session,
     Json(payload): Json<CreateTemporaryAccessGrantRequest>,
 ) -> ApiResult<(StatusCode, Json<TemporaryAccessGrantResponse>)> {
+    require_recent_step_up(&session).await?;
+
     let permissions = payload
         .permissions
         .iter()
@@ -65,9 +68,12 @@ pub async fn list_temporary_access_grants_handler(
 pub async fn revoke_temporary_access_grant_handler(
     State(state): State<AppState>,
     Extension(user): Extension<UserIdentity>,
+    session: Session,
     Path(grant_id): Path<String>,
     Json(payload): Json<RevokeTemporaryAccessGrantRequest>,
 ) -> ApiResult<StatusCode> {
+    require_recent_step_up(&session).await?;
+
     state
         .security_admin_service
         .revoke_temporary_access_grant(&user, grant_id.as_str(), payload.revoke_reason.as_deref())

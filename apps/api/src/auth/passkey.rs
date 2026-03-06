@@ -1,10 +1,12 @@
 use axum::Json;
-use axum::extract::{Query, State};
+use axum::extract::{ConnectInfo, Query, State};
 use axum::http::HeaderMap;
 use axum::http::StatusCode;
 use qryvanta_application::AuthEvent;
 use qryvanta_core::{AppError, UserIdentity};
+use qryvanta_domain::{AuthEventOutcome, AuthEventType};
 use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
 use tower_sessions::Session;
 use uuid::Uuid;
 use webauthn_rs::prelude::{
@@ -15,11 +17,11 @@ use webauthn_rs::prelude::{
 use crate::error::ApiResult;
 use crate::state::AppState;
 
-use super::session_helpers::{extract_request_context, load_passkeys};
-use super::{
-    SESSION_CREATED_AT_KEY, SESSION_USER_KEY, SESSION_WEBAUTHN_AUTH_STATE_KEY,
-    SESSION_WEBAUTHN_REG_STATE_KEY,
+use super::session_helpers::{
+    active_identity_for_subject, extract_request_context, load_passkeys, mark_step_up_verified,
+    persist_authenticated_identity,
 };
+use super::{SESSION_USER_KEY, SESSION_WEBAUTHN_AUTH_STATE_KEY, SESSION_WEBAUTHN_REG_STATE_KEY};
 
 #[derive(Debug, Deserialize)]
 pub struct LoginStartQuery {
@@ -75,6 +77,7 @@ pub async fn webauthn_registration_start_handler(
 pub async fn webauthn_registration_finish_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
+    ConnectInfo(connect_info): ConnectInfo<SocketAddr>,
     session: Session,
     Json(payload): Json<RegisterPublicKeyCredential>,
 ) -> ApiResult<StatusCode> {
@@ -106,13 +109,18 @@ pub async fn webauthn_registration_finish_handler(
         .insert_for_subject(subject.as_str(), passkey_json.as_str())
         .await?;
 
-    let (ip_address, user_agent) = extract_request_context(&headers);
+    let (ip_address, user_agent) = extract_request_context(
+        &headers,
+        Some(connect_info),
+        state.trust_proxy_headers,
+        &state.trusted_proxy_cidrs,
+    );
     state
         .auth_event_service
         .record_event(AuthEvent {
             subject: Some(subject),
-            event_type: "passkey_registration".to_owned(),
-            outcome: "success".to_owned(),
+            event_type: AuthEventType::PasskeyRegistrationCompleted,
+            outcome: AuthEventOutcome::Success,
             ip_address,
             user_agent,
         })
@@ -156,6 +164,7 @@ pub async fn webauthn_login_start_handler(
 pub async fn webauthn_login_finish_handler(
     State(state): State<AppState>,
     headers: HeaderMap,
+    ConnectInfo(connect_info): ConnectInfo<SocketAddr>,
     session: Session,
     Json(payload): Json<PublicKeyCredential>,
 ) -> ApiResult<Json<AuthStatusResponse>> {
@@ -195,50 +204,37 @@ pub async fn webauthn_login_finish_handler(
         .replace_for_subject(subject.as_str(), serialized_passkeys.as_slice())
         .await?;
 
-    let tenant_id = state
-        .tenant_repository
-        .find_tenant_for_subject(&subject)
-        .await?
-        .ok_or_else(|| {
-            AppError::Unauthorized(format!(
-                "no tenant membership is configured for subject '{subject}'"
-            ))
-        })?;
+    let identity = active_identity_for_subject(&state, subject.as_str()).await?;
 
     state
         .tenant_repository
-        .create_membership(tenant_id, &subject, &subject, None)
+        .create_membership(identity.tenant_id(), &subject, &subject, None)
         .await?;
 
     state
         .contact_bootstrap_service
-        .ensure_subject_contact(tenant_id, subject.as_str(), subject.as_str(), None)
+        .ensure_subject_contact(
+            identity.tenant_id(),
+            subject.as_str(),
+            identity.display_name(),
+            identity.email(),
+        )
         .await?;
+    persist_authenticated_identity(&session, &identity).await?;
+    mark_step_up_verified(&session).await?;
 
-    let identity = UserIdentity::new(subject.clone(), subject.clone(), None, tenant_id);
-
-    session
-        .insert(SESSION_USER_KEY, &identity)
-        .await
-        .map_err(|error| {
-            AppError::Internal(format!("failed to persist session identity: {error}"))
-        })?;
-
-    // OWASP Session Management: record absolute creation time.
-    session
-        .insert(SESSION_CREATED_AT_KEY, chrono::Utc::now().timestamp())
-        .await
-        .map_err(|error| {
-            AppError::Internal(format!("failed to persist session creation time: {error}"))
-        })?;
-
-    let (ip_address, user_agent) = extract_request_context(&headers);
+    let (ip_address, user_agent) = extract_request_context(
+        &headers,
+        Some(connect_info),
+        state.trust_proxy_headers,
+        &state.trusted_proxy_cidrs,
+    );
     state
         .auth_event_service
         .record_event(AuthEvent {
             subject: Some(subject),
-            event_type: "passkey_login".to_owned(),
-            outcome: "success".to_owned(),
+            event_type: AuthEventType::PasskeyLogin,
+            outcome: AuthEventOutcome::Success,
             ip_address,
             user_agent,
         })

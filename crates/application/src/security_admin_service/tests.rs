@@ -8,10 +8,10 @@ use qryvanta_core::{AppError, AppResult, TenantId, UserIdentity};
 use qryvanta_domain::{Permission, RegistrationMode};
 
 use crate::security_admin_ports::{
-    AuditLogEntry, AuditLogQuery, AuditLogRepository, AuditRetentionPolicy, CreateRoleInput,
-    CreateTemporaryAccessGrantInput, RoleAssignment, RoleDefinition, RuntimeFieldPermissionEntry,
-    SaveRuntimeFieldPermissionsInput, SecurityAdminRepository, TemporaryAccessGrant,
-    TemporaryAccessGrantQuery, WorkspacePublishRunAuditInput,
+    AuditIntegrityStatus, AuditLogEntry, AuditLogQuery, AuditLogRepository, AuditRetentionPolicy,
+    CreateRoleInput, CreateTemporaryAccessGrantInput, RoleAssignment, RoleDefinition,
+    RuntimeFieldPermissionEntry, SaveRuntimeFieldPermissionsInput, SecurityAdminRepository,
+    TemporaryAccessGrant, TemporaryAccessGrantQuery, WorkspacePublishRunAuditInput,
 };
 use crate::{
     AuditEvent, AuditRepository, AuthorizationRepository, AuthorizationService, RuntimeFieldGrant,
@@ -218,6 +218,7 @@ impl SecurityAdminRepository for FakeSecurityAdminRepository {
 
 struct FakeAuditLogRepository {
     entries: Vec<AuditLogEntry>,
+    integrity_status: AuditIntegrityStatus,
 }
 
 #[async_trait]
@@ -244,6 +245,10 @@ impl AuditLogRepository for FakeAuditLogRepository {
         _retention_days: u16,
     ) -> AppResult<u64> {
         Ok(0)
+    }
+
+    async fn verify_integrity(&self, _tenant_id: TenantId) -> AppResult<AuditIntegrityStatus> {
+        Ok(self.integrity_status.clone())
     }
 }
 
@@ -281,6 +286,13 @@ fn service_with_permissions(
         Arc::new(FakeSecurityAdminRepository::default()),
         Arc::new(FakeAuditLogRepository {
             entries: Vec::new(),
+            integrity_status: AuditIntegrityStatus {
+                is_valid: true,
+                verified_entries: 0,
+                latest_chain_position: None,
+                latest_entry_hash: None,
+                failures: Vec::new(),
+            },
         }),
         audit_repository.clone(),
     );
@@ -449,4 +461,15 @@ async fn purge_audit_log_entries_rejects_when_immutable_mode_enabled() {
 
     let events = audit_repository.events.lock().await;
     assert!(events.is_empty());
+}
+
+#[tokio::test]
+async fn verify_audit_integrity_requires_audit_permission() {
+    let tenant_id = TenantId::new();
+    let actor = actor(tenant_id, "alice");
+    let (service, _) = service_with_permissions(tenant_id, "alice", Vec::new());
+
+    let result = service.verify_audit_integrity(&actor).await;
+
+    assert!(matches!(result, Err(AppError::Forbidden(_))));
 }

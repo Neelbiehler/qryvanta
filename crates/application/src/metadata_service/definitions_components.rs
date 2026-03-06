@@ -109,6 +109,27 @@ impl MetadataService {
             )
             .await?;
 
+        self.require_entity_exists(actor.tenant_id(), entity_logical_name)
+            .await?;
+
+        let option_set_exists = self
+            .repository
+            .find_option_set(
+                actor.tenant_id(),
+                entity_logical_name,
+                option_set_logical_name,
+            )
+            .await?
+            .is_some();
+        if !option_set_exists {
+            return Err(AppError::NotFound(format!(
+                "option set '{}.{}' does not exist for tenant '{}'",
+                entity_logical_name,
+                option_set_logical_name,
+                actor.tenant_id()
+            )));
+        }
+
         let fields = self
             .repository
             .list_fields(actor.tenant_id(), entity_logical_name)
@@ -257,6 +278,19 @@ impl MetadataService {
                 Permission::MetadataFieldWrite,
             )
             .await?;
+        let form_exists = self
+            .repository
+            .find_form(actor.tenant_id(), entity_logical_name, form_logical_name)
+            .await?
+            .is_some();
+        if !form_exists {
+            return Err(AppError::NotFound(format!(
+                "form '{}.{}' does not exist for tenant '{}'",
+                entity_logical_name,
+                form_logical_name,
+                actor.tenant_id()
+            )));
+        }
         self.repository
             .delete_form(actor.tenant_id(), entity_logical_name, form_logical_name)
             .await?;
@@ -398,6 +432,19 @@ impl MetadataService {
                 Permission::MetadataFieldWrite,
             )
             .await?;
+        let view_exists = self
+            .repository
+            .find_view(actor.tenant_id(), entity_logical_name, view_logical_name)
+            .await?
+            .is_some();
+        if !view_exists {
+            return Err(AppError::NotFound(format!(
+                "view '{}.{}' does not exist for tenant '{}'",
+                entity_logical_name,
+                view_logical_name,
+                actor.tenant_id()
+            )));
+        }
         self.repository
             .delete_view(actor.tenant_id(), entity_logical_name, view_logical_name)
             .await?;

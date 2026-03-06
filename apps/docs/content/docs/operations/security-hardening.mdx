@@ -1,0 +1,100 @@
+---
+title: Security Hardening
+description: Production security baseline for Qryvanta self-hosted deployments.
+---
+
+Qryvanta now fails fast on missing MFA encryption keys, rotates authenticated sessions on all login paths, and ships default browser security headers for the API and web app.
+
+Use this page as the minimum production hardening baseline before exposing a deployment to external tenants.
+
+For recovery operations and secret lifecycle procedures, use [Identity Recovery and Secret Rotation](/docs/operations/identity-and-secret-rotation).
+For startup secret-source formats (`*_FILE`, `*_SECRET_REF`) and supported external manager references, use [Configuration](/docs/operations/configuration).
+For stable security event identifiers across auth flows and tenant-admin audit actions, use [Security Event Taxonomy](/docs/operations/security-event-taxonomy).
+
+## Required Secrets
+
+- `SESSION_SECRET`: at least 32 characters and unique per environment.
+- `TOTP_ENCRYPTION_KEY`: exactly 64 hex characters and unique per environment when `TOTP_ENCRYPTION_MODE=static`, or as a legacy fallback during staged migration to `aws_kms_envelope`.
+- `TOTP_KMS_KEY_ID`: required when `TOTP_ENCRYPTION_MODE=aws_kms_envelope` so new MFA secrets are wrapped with AWS KMS-backed envelope encryption at rest.
+- `AUTH_BOOTSTRAP_TOKEN`: high-entropy bootstrap token stored outside git.
+- `WORKER_SHARED_SECRET`: required when queued workflow workers are enabled.
+- Use either direct env vars, `*_FILE`, or `*_SECRET_REF` per secret. Do not configure multiple sources for the same setting.
+- Set `DEPLOYMENT_ENVIRONMENT` and maintain `SECRET_REUSE_GUARD_FINGERPRINTS` so startup fails if staging/production (or local/staging) accidentally reuse the same secret material.
+
+Do not reuse the same secret set across local, staging, and production environments.
+
+## Network and Proxy Rules
+
+- Keep `TRUST_PROXY_HEADERS=false` unless the API is behind a trusted ingress or load balancer.
+- If `TRUST_PROXY_HEADERS=true`, set `TRUSTED_PROXY_CIDRS` to only the proxy source IPs/CIDRs that connect directly to the API.
+- Ensure the trusted proxy overwrites `X-Forwarded-For` and `X-Real-Ip` on every request.
+- Restrict `FRONTEND_URL` and `WEBAUTHN_RP_ORIGIN` to the exact browser origin used by the deployed web app.
+- Enforce HTTPS in front of both the API and web app before enabling `SESSION_COOKIE_SECURE=true`.
+
+## Authentication Controls
+
+- Password sessions use idle timeout plus absolute timeout enforcement.
+- Passkey, password, invite, and bootstrap login paths rotate the server-side session identifier on successful authentication.
+- Password changes, password resets, MFA disable, and recovery-code regeneration revoke all active authenticated sessions.
+- High-risk tenant admin writes now require recent step-up verification inside the active session; operators can satisfy that prompt with the current password, an authenticator TOTP code, or a recovery code.
+- MFA enrollment is stored as pending state until the confirmation code succeeds.
+- MFA TOTP secrets at rest can now use AWS KMS envelope encryption for new enrollments, with optional static-key fallback to preserve older ciphertext during rollout.
+- Password reset tokens are single-use, server-side hashed, and expire after one hour.
+- Subjects with memberships in multiple tenants now get a deterministic default tenant, and `POST /auth/switch-tenant` rotates the session while persisting the new default selection.
+- `GET /auth/me` now returns the current tenant plus the full `available_tenants` switch list for authenticated product clients.
+- Forwarded client IP headers are now ignored unless the direct peer socket address is inside the trusted proxy allowlist.
+
+## Audit Integrity
+
+- Tenant audit rows now carry a monotonic `chain_position`, the prior row hash, and a row hash derived from the event payload plus timestamp.
+- `GET /api/security/audit-log/integrity` verifies the full tenant chain and reports the latest anchored position/hash plus any detected gaps or payload tampering.
+- `GET /api/security/audit-log/export` includes the chain fields so operators can archive or independently re-verify exported entries.
+- Purging old audit entries still removes historical rows; use immutable-audit mode when your retention policy requires a fully preserved chain.
+
+## Database Tenant Isolation
+
+- Metadata publish/runtime tables now enforce PostgreSQL Row Level Security with a transaction-scoped tenant context.
+- Metadata component tables for option sets, forms, views, and business rules now use the same tenant-scoped RLS model.
+- App definitions, RBAC/security-admin tables, extension definitions, and audit-log tables now use the same tenant-scoped RLS model.
+- Workflow definitions, execution history, and queued workflow jobs are now protected by RLS; worker claim and queue-stats paths use a transaction-scoped operational bypass instead of unrestricted table access.
+- Tenant contact mappings and Qrywell analytics/search-event tables are also protected by tenant-scoped RLS.
+- Qrywell sync jobs are now RLS-protected; the background sync worker uses a dedicated transaction-scoped bypass only for cross-tenant job claiming.
+- Tenant membership rows are now RLS-protected; subject-first bootstrap/login lookups use a single-subject lookup scope instead of unrestricted table reads.
+- The application sets `qryvanta.current_tenant_id` inside tenant-scoped metadata transactions before touching protected tables.
+- If tenant context is missing, protected tenant-owned queries fail closed instead of returning cross-tenant rows.
+- Workflow worker heartbeats remain a global operational table because they have no tenant key; keep that surface on internal-only routes guarded by the shared worker secret.
+- `tower_sessions` remains service-managed rather than RLS-protected because the `tower-sessions` store accesses it by opaque session identifier outside tenant-aware repository code; restrict database access to the application role and prefer Redis-backed sessions when you need stronger operational separation between app data and session storage.
+- Authenticated subject selection now has explicit product semantics: bootstrap/login resolves a persisted default tenant when available, otherwise falls back deterministically and stores that choice for future sessions.
+
+## Tenant-Isolation Regression Tests
+
+- Qryvanta now ships authenticated router-level IDOR regression tests for entity-definition, workspace runtime, and workflow route families.
+- The suite logs in a real tenant user, seeds a second tenant with conflicting logical names and foreign resource IDs, and asserts that protected routes do not leak or mutate cross-tenant data.
+- Current coverage explicitly checks metadata definition reads, published schema reads, workspace record/query/delete reads and mutations, workspace form/view reads, and workflow run listings, replay, retry, and schedule-dispatch paths.
+- Foreign-resource delete requests now fail closed with `404` instead of silently succeeding as no-ops.
+- Coverage now also verifies `GET /auth/me` tenant visibility plus `POST /auth/switch-tenant` session rotation and scope changes for multi-membership identities.
+- Scheduler dispatch coverage now includes shared `schedule_key` probes to ensure one tenant cannot trigger another tenant's scheduled workflows.
+- Security-admin regression coverage now also proves stale sessions cannot create roles until `POST /auth/step-up` refreshes the step-up timestamp.
+
+## Browser Security Headers
+
+Qryvanta ships these default headers on API and web responses:
+
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Permissions-Policy` with high-risk browser APIs disabled
+- A minimal `Content-Security-Policy` that blocks framing and plugin/object embedding
+
+Validate these headers in staging after every ingress, CDN, or reverse-proxy change.
+
+Use [Ingress Conformance](/docs/operations/ingress-conformance) to validate public HTTPS redirects, CORS preflight, trace-header preservation, and security-header preservation after edge changes.
+
+## Remaining Enterprise Work
+
+This hardening pass improves the baseline, but a high-assurance enterprise rollout should still include:
+
+- Independent penetration testing against tenant isolation and workflow surfaces
+- Centralized secret distribution with audit trails
+- Periodic dependency audits and image scanning in CI/CD
+- Threat modeling for admin escalation and extension execution

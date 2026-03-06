@@ -2,6 +2,19 @@ use async_trait::async_trait;
 use qryvanta_core::{AppResult, TenantId};
 use qryvanta_domain::RegistrationMode;
 
+/// One subject membership in a tenant.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TenantMembership {
+    /// Tenant identifier.
+    pub tenant_id: TenantId,
+    /// Tenant display name.
+    pub tenant_name: String,
+    /// Membership-specific display name for the subject.
+    pub display_name: String,
+    /// Optional membership email.
+    pub email: Option<String>,
+}
+
 /// Port for tenant membership and subject-contact mapping operations.
 #[async_trait]
 pub trait TenantRepository: Send + Sync {
@@ -31,6 +44,10 @@ pub trait TenantRepository: Send + Sync {
         email: Option<&str>,
         preferred_tenant_id: Option<TenantId>,
     ) -> AppResult<TenantId>;
+
+    /// Lists every tenant membership for a subject.
+    async fn list_memberships_for_subject(&self, subject: &str)
+    -> AppResult<Vec<TenantMembership>>;
 
     /// Returns contact record mapping for a subject.
     async fn contact_record_for_subject(

@@ -2,21 +2,30 @@
 
 import { useState } from "react";
 
-import { Button, Input, Label } from "@qryvanta/ui";
+import { Button, Input, Label, Notice } from "@qryvanta/ui";
 
 import {
   apiFetch,
+  type AuditIntegrityStatusResponse,
   type AuditLogEntryResponse,
   type AuditPurgeResultResponse,
   type UpdateAuditRetentionPolicyRequest,
 } from "@/lib/api";
+import {
+  apiErrorMessage,
+  isStepUpRequiredError,
+  readApiError,
+} from "@/lib/api-error";
+import { StepUpDialog } from "@/components/security/step-up-dialog";
 
 type AuditControlsPanelProps = {
+  initialIntegrityStatus: AuditIntegrityStatusResponse | null;
   queryString: string;
   retentionDays: number | null;
 };
 
 export function AuditControlsPanel({
+  initialIntegrityStatus,
   queryString,
   retentionDays,
 }: AuditControlsPanelProps) {
@@ -25,13 +34,42 @@ export function AuditControlsPanel({
   );
   const [lastPurgeResult, setLastPurgeResult] =
     useState<AuditPurgeResultResponse | null>(null);
+  const [integrityStatus, setIntegrityStatus] =
+    useState<AuditIntegrityStatusResponse | null>(initialIntegrityStatus);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [isStepUpOpen, setIsStepUpOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [isVerifyingIntegrity, setIsVerifyingIntegrity] = useState(false);
   const [isUpdatingRetention, setIsUpdatingRetention] = useState(false);
   const [isPurging, setIsPurging] = useState(false);
 
+  async function handleProtectedActionFailure(
+    response: Response,
+    fallback: string,
+  ) {
+    const error = await readApiError(response);
+
+    if (isStepUpRequiredError(error)) {
+      setIsStepUpOpen(true);
+      setErrorMessage(null);
+      setStatusMessage(null);
+      return;
+    }
+
+    setErrorMessage(apiErrorMessage(error, fallback));
+  }
+
+  function handleStepUpVerified() {
+    setErrorMessage(null);
+    setStatusMessage(
+      "Verification confirmed. Retry the blocked audit administration action.",
+    );
+  }
+
   async function handleExport() {
     setErrorMessage(null);
+    setStatusMessage(null);
     setIsExporting(true);
 
     try {
@@ -63,6 +101,7 @@ export function AuditControlsPanel({
 
   async function handleRetentionSave() {
     setErrorMessage(null);
+    setStatusMessage(null);
     const parsedRetentionDays = Number.parseInt(retentionDaysValue, 10);
     if (Number.isNaN(parsedRetentionDays) || parsedRetentionDays <= 0) {
       setErrorMessage("Retention days must be a positive number.");
@@ -81,9 +120,9 @@ export function AuditControlsPanel({
       });
 
       if (!response.ok) {
-        const payload = (await response.json()) as { message?: string };
-        setErrorMessage(
-          payload.message ?? "Unable to update retention policy.",
+        await handleProtectedActionFailure(
+          response,
+          "Unable to update retention policy.",
         );
       }
     } catch {
@@ -93,8 +132,36 @@ export function AuditControlsPanel({
     }
   }
 
+  async function handleVerifyIntegrity() {
+    setErrorMessage(null);
+    setStatusMessage(null);
+    setIsVerifyingIntegrity(true);
+
+    try {
+      const response = await apiFetch("/api/security/audit-log/integrity");
+      if (!response.ok) {
+        const payload = (await response.json()) as { message?: string };
+        setErrorMessage(payload.message ?? "Unable to verify audit integrity.");
+        return;
+      }
+
+      const result = (await response.json()) as AuditIntegrityStatusResponse;
+      setIntegrityStatus(result);
+      setStatusMessage(
+        result.is_valid
+          ? `Audit chain verified across ${result.verified_entries} entries.`
+          : `Audit chain verification found ${result.failures.length} issue(s).`,
+      );
+    } catch {
+      setErrorMessage("Unable to verify audit integrity.");
+    } finally {
+      setIsVerifyingIntegrity(false);
+    }
+  }
+
   async function handlePurge() {
     setErrorMessage(null);
+    setStatusMessage(null);
     setLastPurgeResult(null);
     setIsPurging(true);
 
@@ -104,8 +171,10 @@ export function AuditControlsPanel({
       });
 
       if (!response.ok) {
-        const payload = (await response.json()) as { message?: string };
-        setErrorMessage(payload.message ?? "Unable to purge audit entries.");
+        await handleProtectedActionFailure(
+          response,
+          "Unable to purge audit entries.",
+        );
         return;
       }
 
@@ -124,7 +193,29 @@ export function AuditControlsPanel({
         <Button disabled={isExporting} onClick={handleExport} type="button">
           {isExporting ? "Exporting..." : "Export Filtered Results"}
         </Button>
+        <Button
+          disabled={isVerifyingIntegrity}
+          onClick={handleVerifyIntegrity}
+          type="button"
+          variant="outline"
+        >
+          {isVerifyingIntegrity ? "Verifying..." : "Verify Integrity"}
+        </Button>
       </div>
+
+      {integrityStatus ? (
+        <Notice tone={integrityStatus.is_valid ? "success" : "warning"}>
+          {integrityStatus.is_valid
+            ? `Audit chain verified across ${integrityStatus.verified_entries} entries.`
+            : `Audit chain verification failed for ${integrityStatus.failures.length} check(s).`}
+          {integrityStatus.latest_chain_position !== null
+            ? ` Latest chain position: ${integrityStatus.latest_chain_position}.`
+            : ""}
+          {!integrityStatus.is_valid && integrityStatus.failures.length > 0
+            ? ` ${integrityStatus.failures[0]}`
+            : ""}
+        </Notice>
+      ) : null}
 
       {retentionDays !== null ? (
         <div className="grid gap-3 md:grid-cols-3 md:items-end">
@@ -167,11 +258,20 @@ export function AuditControlsPanel({
         </p>
       ) : null}
 
+      {statusMessage ? <Notice tone="success">{statusMessage}</Notice> : null}
+
       {errorMessage ? (
         <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           {errorMessage}
         </p>
       ) : null}
+
+      <StepUpDialog
+        open={isStepUpOpen}
+        onOpenChange={setIsStepUpOpen}
+        onVerified={handleStepUpVerified}
+        description="Recent password or MFA verification is required before changing audit retention or purging audit entries."
+      />
     </div>
   );
 }

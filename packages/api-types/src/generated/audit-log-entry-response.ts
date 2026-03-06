@@ -3,4 +3,4 @@
 /**
  * API representation of an audit log entry.
  */
-export type AuditLogEntryResponse = { event_id: string, subject: string, action: string, resource_type: string, resource_id: string, detail: string | null, created_at: string, };
+export type AuditLogEntryResponse = { event_id: string, subject: string, action: string, resource_type: string, resource_id: string, detail: string | null, created_at: string, chain_position: bigint, previous_entry_hash: string | null, entry_hash: string, };

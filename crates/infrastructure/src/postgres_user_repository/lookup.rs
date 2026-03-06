@@ -5,7 +5,10 @@ impl PostgresUserRepository {
         let row = sqlx::query_as::<_, UserRow>(
             r#"
             SELECT id, email, email_verified, password_hash, totp_enabled,
-                   totp_secret_enc, recovery_codes_hash, failed_login_count, locked_until
+                   totp_secret_enc, recovery_codes_hash,
+                   totp_pending_secret_enc, recovery_codes_pending_hash,
+                   failed_login_count, locked_until, password_changed_at,
+                   auth_sessions_revoked_after, default_tenant_id
             FROM users
             WHERE LOWER(email) = LOWER($1)
             LIMIT 1
@@ -23,7 +26,10 @@ impl PostgresUserRepository {
         let row = sqlx::query_as::<_, UserRow>(
             r#"
             SELECT id, email, email_verified, password_hash, totp_enabled,
-                   totp_secret_enc, recovery_codes_hash, failed_login_count, locked_until
+                   totp_secret_enc, recovery_codes_hash,
+                   totp_pending_secret_enc, recovery_codes_pending_hash,
+                   failed_login_count, locked_until, password_changed_at,
+                   auth_sessions_revoked_after, default_tenant_id
             FROM users
             WHERE id = $1
             LIMIT 1

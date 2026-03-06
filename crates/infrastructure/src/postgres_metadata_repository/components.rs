@@ -6,6 +6,7 @@ impl PostgresMetadataRepository {
         tenant_id: TenantId,
         option_set: OptionSetDefinition,
     ) -> AppResult<()> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let items_json = serde_json::to_value(option_set.options()).map_err(|error| {
             AppError::Internal(format!(
                 "failed to serialize option set '{}.{}' items: {error}",
@@ -37,7 +38,7 @@ impl PostgresMetadataRepository {
         .bind(option_set.logical_name().as_str())
         .bind(option_set.display_name().as_str())
         .bind(items_json)
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
@@ -45,6 +46,11 @@ impl PostgresMetadataRepository {
                 option_set.entity_logical_name().as_str(),
                 option_set.logical_name().as_str(),
                 tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped option set save transaction: {error}"
             ))
         })?;
 
@@ -56,6 +62,7 @@ impl PostgresMetadataRepository {
         tenant_id: TenantId,
         entity_logical_name: &str,
     ) -> AppResult<Vec<OptionSetDefinition>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let rows = sqlx::query_as::<_, OptionSetRow>(
             r#"
             SELECT entity_logical_name, logical_name, display_name, items_json
@@ -66,12 +73,17 @@ impl PostgresMetadataRepository {
         )
         .bind(tenant_id.as_uuid())
         .bind(entity_logical_name)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to list option sets for entity '{}' in tenant '{}': {error}",
                 entity_logical_name, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped option set list transaction: {error}"
             ))
         })?;
 
@@ -99,6 +111,7 @@ impl PostgresMetadataRepository {
         entity_logical_name: &str,
         option_set_logical_name: &str,
     ) -> AppResult<Option<OptionSetDefinition>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let row = sqlx::query_as::<_, OptionSetRow>(
             r#"
             SELECT entity_logical_name, logical_name, display_name, items_json
@@ -109,12 +122,17 @@ impl PostgresMetadataRepository {
         .bind(tenant_id.as_uuid())
         .bind(entity_logical_name)
         .bind(option_set_logical_name)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to find option set '{}.{}' in tenant '{}': {error}",
                 entity_logical_name, option_set_logical_name, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped option set find transaction: {error}"
             ))
         })?;
 
@@ -141,6 +159,7 @@ impl PostgresMetadataRepository {
         entity_logical_name: &str,
         option_set_logical_name: &str,
     ) -> AppResult<()> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let result = sqlx::query(
             r#"
             DELETE FROM entity_option_sets
@@ -150,7 +169,7 @@ impl PostgresMetadataRepository {
         .bind(tenant_id.as_uuid())
         .bind(entity_logical_name)
         .bind(option_set_logical_name)
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
@@ -165,6 +184,11 @@ impl PostgresMetadataRepository {
                 entity_logical_name, option_set_logical_name, tenant_id
             )));
         }
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped option set delete transaction: {error}"
+            ))
+        })?;
 
         Ok(())
     }
@@ -174,6 +198,7 @@ impl PostgresMetadataRepository {
         tenant_id: TenantId,
         form: FormDefinition,
     ) -> AppResult<()> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let definition_json = serde_json::to_value(&form).map_err(|error| {
             AppError::Internal(format!(
                 "failed to serialize form '{}.{}': {error}",
@@ -208,7 +233,7 @@ impl PostgresMetadataRepository {
         .bind(form.display_name().as_str())
         .bind(form.form_type().as_str())
         .bind(definition_json)
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
@@ -216,6 +241,11 @@ impl PostgresMetadataRepository {
                 form.entity_logical_name().as_str(),
                 form.logical_name().as_str(),
                 tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped form save transaction: {error}"
             ))
         })?;
 
@@ -227,6 +257,7 @@ impl PostgresMetadataRepository {
         tenant_id: TenantId,
         entity_logical_name: &str,
     ) -> AppResult<Vec<FormDefinition>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let rows = sqlx::query_as::<_, FormRow>(
             r#"
             SELECT definition_json
@@ -237,12 +268,17 @@ impl PostgresMetadataRepository {
         )
         .bind(tenant_id.as_uuid())
         .bind(entity_logical_name)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to list forms for entity '{}' in tenant '{}': {error}",
                 entity_logical_name, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped form list transaction: {error}"
             ))
         })?;
 
@@ -264,6 +300,7 @@ impl PostgresMetadataRepository {
         entity_logical_name: &str,
         form_logical_name: &str,
     ) -> AppResult<Option<FormDefinition>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let row = sqlx::query_as::<_, FormRow>(
             r#"
             SELECT definition_json
@@ -274,12 +311,17 @@ impl PostgresMetadataRepository {
         .bind(tenant_id.as_uuid())
         .bind(entity_logical_name)
         .bind(form_logical_name)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to find form '{}.{}' in tenant '{}': {error}",
                 entity_logical_name, form_logical_name, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped form find transaction: {error}"
             ))
         })?;
 
@@ -300,6 +342,7 @@ impl PostgresMetadataRepository {
         entity_logical_name: &str,
         form_logical_name: &str,
     ) -> AppResult<()> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let result = sqlx::query(
             r#"
             DELETE FROM entity_forms
@@ -309,7 +352,7 @@ impl PostgresMetadataRepository {
         .bind(tenant_id.as_uuid())
         .bind(entity_logical_name)
         .bind(form_logical_name)
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
@@ -324,6 +367,11 @@ impl PostgresMetadataRepository {
                 entity_logical_name, form_logical_name, tenant_id
             )));
         }
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped form delete transaction: {error}"
+            ))
+        })?;
 
         Ok(())
     }
@@ -333,6 +381,7 @@ impl PostgresMetadataRepository {
         tenant_id: TenantId,
         view: ViewDefinition,
     ) -> AppResult<()> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let definition_json = serde_json::to_value(&view).map_err(|error| {
             AppError::Internal(format!(
                 "failed to serialize view '{}.{}': {error}",
@@ -370,7 +419,7 @@ impl PostgresMetadataRepository {
         .bind(view.view_type().as_str())
         .bind(view.is_default())
         .bind(definition_json)
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
@@ -378,6 +427,11 @@ impl PostgresMetadataRepository {
                 view.entity_logical_name().as_str(),
                 view.logical_name().as_str(),
                 tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped view save transaction: {error}"
             ))
         })?;
 
@@ -389,6 +443,7 @@ impl PostgresMetadataRepository {
         tenant_id: TenantId,
         entity_logical_name: &str,
     ) -> AppResult<Vec<ViewDefinition>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let rows = sqlx::query_as::<_, ViewRow>(
             r#"
             SELECT definition_json
@@ -399,12 +454,17 @@ impl PostgresMetadataRepository {
         )
         .bind(tenant_id.as_uuid())
         .bind(entity_logical_name)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to list views for entity '{}' in tenant '{}': {error}",
                 entity_logical_name, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped view list transaction: {error}"
             ))
         })?;
 
@@ -426,6 +486,7 @@ impl PostgresMetadataRepository {
         entity_logical_name: &str,
         view_logical_name: &str,
     ) -> AppResult<Option<ViewDefinition>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let row = sqlx::query_as::<_, ViewRow>(
             r#"
             SELECT definition_json
@@ -436,12 +497,17 @@ impl PostgresMetadataRepository {
         .bind(tenant_id.as_uuid())
         .bind(entity_logical_name)
         .bind(view_logical_name)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to find view '{}.{}' in tenant '{}': {error}",
                 entity_logical_name, view_logical_name, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped view find transaction: {error}"
             ))
         })?;
 
@@ -462,6 +528,7 @@ impl PostgresMetadataRepository {
         entity_logical_name: &str,
         view_logical_name: &str,
     ) -> AppResult<()> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let result = sqlx::query(
             r#"
             DELETE FROM entity_views
@@ -471,7 +538,7 @@ impl PostgresMetadataRepository {
         .bind(tenant_id.as_uuid())
         .bind(entity_logical_name)
         .bind(view_logical_name)
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
@@ -486,6 +553,11 @@ impl PostgresMetadataRepository {
                 entity_logical_name, view_logical_name, tenant_id
             )));
         }
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped view delete transaction: {error}"
+            ))
+        })?;
 
         Ok(())
     }
@@ -495,6 +567,7 @@ impl PostgresMetadataRepository {
         tenant_id: TenantId,
         business_rule: BusinessRuleDefinition,
     ) -> AppResult<()> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let definition_json = serde_json::to_value(&business_rule).map_err(|error| {
             AppError::Internal(format!(
                 "failed to serialize business rule '{}.{}': {error}",
@@ -532,7 +605,7 @@ impl PostgresMetadataRepository {
         .bind(business_rule.scope().as_str())
         .bind(definition_json)
         .bind(business_rule.is_active())
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
@@ -540,6 +613,11 @@ impl PostgresMetadataRepository {
                 business_rule.entity_logical_name().as_str(),
                 business_rule.logical_name().as_str(),
                 tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped business rule save transaction: {error}"
             ))
         })?;
 
@@ -551,6 +629,7 @@ impl PostgresMetadataRepository {
         tenant_id: TenantId,
         entity_logical_name: &str,
     ) -> AppResult<Vec<BusinessRuleDefinition>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let rows = sqlx::query_as::<_, BusinessRuleRow>(
             r#"
             SELECT definition_json
@@ -561,12 +640,17 @@ impl PostgresMetadataRepository {
         )
         .bind(tenant_id.as_uuid())
         .bind(entity_logical_name)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to list business rules for entity '{}' in tenant '{}': {error}",
                 entity_logical_name, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped business rule list transaction: {error}"
             ))
         })?;
 
@@ -590,6 +674,7 @@ impl PostgresMetadataRepository {
         entity_logical_name: &str,
         business_rule_logical_name: &str,
     ) -> AppResult<Option<BusinessRuleDefinition>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let row = sqlx::query_as::<_, BusinessRuleRow>(
             r#"
             SELECT definition_json
@@ -600,12 +685,17 @@ impl PostgresMetadataRepository {
         .bind(tenant_id.as_uuid())
         .bind(entity_logical_name)
         .bind(business_rule_logical_name)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to find business rule '{}.{}' in tenant '{}': {error}",
                 entity_logical_name, business_rule_logical_name, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped business rule find transaction: {error}"
             ))
         })?;
 
@@ -626,6 +716,7 @@ impl PostgresMetadataRepository {
         entity_logical_name: &str,
         business_rule_logical_name: &str,
     ) -> AppResult<()> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let result = sqlx::query(
             r#"
             DELETE FROM entity_business_rules
@@ -635,7 +726,7 @@ impl PostgresMetadataRepository {
         .bind(tenant_id.as_uuid())
         .bind(entity_logical_name)
         .bind(business_rule_logical_name)
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
@@ -650,6 +741,11 @@ impl PostgresMetadataRepository {
                 entity_logical_name, business_rule_logical_name, tenant_id
             )));
         }
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped business rule delete transaction: {error}"
+            ))
+        })?;
 
         Ok(())
     }

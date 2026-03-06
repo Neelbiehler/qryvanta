@@ -1,16 +1,16 @@
 use axum::Router;
-use axum::middleware::from_fn;
+use axum::middleware::from_fn_with_state;
 use axum::routing::{delete, get, post, put};
 
 use crate::state::AppState;
 use crate::{auth, handlers, middleware};
 
-pub(super) fn build_protected_routes() -> Router<AppState> {
+pub(super) fn build_protected_routes(app_state: AppState) -> Router<AppState> {
     Router::new()
         .nest("/api", build_api_routes())
         .nest("/api/v1", build_api_routes())
         .merge(build_authenticated_auth_routes())
-        .route_layer(from_fn(middleware::require_auth))
+        .route_layer(from_fn_with_state(app_state, middleware::require_auth))
 }
 
 fn build_api_routes() -> Router<AppState> {
@@ -300,6 +300,10 @@ fn build_api_routes() -> Router<AppState> {
             get(handlers::security::export_audit_log_handler),
         )
         .route(
+            "/security/audit-log/integrity",
+            get(handlers::security::verify_audit_log_integrity_handler),
+        )
+        .route(
             "/security/audit-log/purge",
             post(handlers::security::purge_audit_log_handler),
         )
@@ -333,6 +337,8 @@ fn build_api_routes() -> Router<AppState> {
 fn build_authenticated_auth_routes() -> Router<AppState> {
     Router::new()
         .route("/auth/me", get(auth::me_handler))
+        .route("/auth/step-up", post(auth::step_up_handler))
+        .route("/auth/switch-tenant", post(auth::switch_tenant_handler))
         .route(
             "/auth/webauthn/register/start",
             post(auth::webauthn_registration_start_handler),

@@ -12,6 +12,7 @@ For local first run, set at least:
 
 - `DATABASE_URL`
 - `SESSION_SECRET`
+- `TOTP_ENCRYPTION_KEY`
 - `AUTH_BOOTSTRAP_TOKEN`
 - `NEXT_PUBLIC_API_BASE_URL`
 
@@ -23,6 +24,78 @@ Add `WEBAUTHN_RP_ID` and `WEBAUTHN_RP_ORIGIN` when testing passkeys.
 - Defaults are developer-friendly but never assumed for production.
 - Sensitive values must be sourced from secret managers or encrypted stores.
 - Invalid required values should block startup.
+
+## Secret Sources
+
+Secret-valued startup settings can be supplied in exactly one of three ways:
+
+1. Direct env var: `SESSION_SECRET=...`
+2. File-backed value: `SESSION_SECRET_FILE=/run/secrets/session_secret`
+3. External secret-manager reference: `SESSION_SECRET_SECRET_REF=op://vault/item/password`
+
+Do not set multiple sources for the same setting. Startup fails fast when `<NAME>`, `<NAME>_FILE`, and `<NAME>_SECRET_REF` are combined.
+
+`*_FILE` reads the file contents and strips trailing newline characters only.
+
+`*_SECRET_REF` executes a provider CLI on the host at startup. Supported reference schemes are:
+
+- `op://vault/item/field` via `op read`
+- `aws-sm://secret-id` via `aws secretsmanager get-secret-value`
+- `aws-ssm:///parameter/name` via `aws ssm get-parameter --with-decryption`
+- `vault://path#field` via `vault kv get -field=<field>`
+- `gcp-sm://projects/<project>/secrets/<secret>/versions/<version>` via `gcloud secrets versions access`
+
+If you use `*_SECRET_REF`, the corresponding CLI must be installed and authenticated on every API and worker host that resolves that value during startup.
+
+## MFA Secret Encryption At Rest
+
+Qryvanta currently stores encrypted MFA TOTP secrets in the `users` table. You can choose between:
+
+- `TOTP_ENCRYPTION_MODE=static` (default): encrypts TOTP secrets directly with `TOTP_ENCRYPTION_KEY`
+- `TOTP_ENCRYPTION_MODE=aws_kms_envelope`: generates a per-secret data key, encrypts the TOTP payload locally, and wraps that data key with AWS KMS using `TOTP_KMS_KEY_ID`
+
+When `aws_kms_envelope` is enabled:
+
+- new MFA enrollments are stored with the envelope format
+- the API host must have the AWS CLI installed plus KMS `Encrypt` and `Decrypt` access for `TOTP_KMS_KEY_ID`
+- keep `TOTP_ENCRYPTION_KEY` configured as a legacy fallback if the database already contains older static-encrypted TOTP rows
+
+Qryvanta does not yet auto-rewrap existing TOTP ciphertext into the KMS envelope format. Existing enrollments stay on the legacy static key until users re-enroll MFA or operators perform a forced MFA reset.
+
+## Secret Reuse Drift Guard
+
+Qryvanta can fail startup when one environment reuses the same high-risk secret as another environment.
+
+Configure:
+
+- `DEPLOYMENT_ENVIRONMENT` with a stable label such as `local`, `staging`, or `production`
+- `SECRET_REUSE_GUARD_FINGERPRINTS` with a JSON array of fingerprint records exported from other environments
+
+Tracked secrets:
+
+- API: `AUTH_BOOTSTRAP_TOKEN`, `SESSION_SECRET`, `TOTP_ENCRYPTION_KEY` when present, and `WORKER_SHARED_SECRET` when queued execution is enabled
+- Worker: `WORKER_SHARED_SECRET`
+
+To generate the current environment fingerprints:
+
+```bash
+cargo run -p qryvanta-api -- print-secret-fingerprints
+cargo run -p qryvanta-worker -- print-secret-fingerprints
+```
+
+Example record shape:
+
+```json
+[
+  {
+    "environment": "staging",
+    "secret_name": "SESSION_SECRET",
+    "fingerprint": "5d6e..."
+  }
+]
+```
+
+If a current fingerprint matches the same `secret_name` from a different environment in `SECRET_REUSE_GUARD_FINGERPRINTS`, startup fails with a validation error.
 
 ## Configuration Areas
 
@@ -45,33 +118,39 @@ Never commit secrets or production credentials to git.
 
 | Variable | Required | Description |
 | --- | --- | --- |
-| `DATABASE_URL` | Yes | PostgreSQL connection string used by API and migrations |
+| `DATABASE_URL` | Yes | PostgreSQL connection string used by API and migrations; supports `DATABASE_URL_FILE` and `DATABASE_URL_SECRET_REF` |
 | `PHYSICAL_ISOLATION_MODE` | No | Tenant isolation deployment profile (`shared` default, `tenant_per_schema`, `tenant_per_database`) |
 | `PHYSICAL_ISOLATION_TENANT_ID` | Required for `tenant_per_schema`/`tenant_per_database` | Tenant UUID this API/worker deployment is pinned to for physical isolation |
-| `PHYSICAL_ISOLATION_SCHEMA_TEMPLATE` | Required if `PHYSICAL_ISOLATION_MODE=tenant_per_schema` | Schema template containing `{tenant_id}` placeholder (for example `tenant_{tenant_id}`) |
-| `PHYSICAL_ISOLATION_DATABASE_URL_TEMPLATE` | Required if `PHYSICAL_ISOLATION_MODE=tenant_per_database` | Database URL template containing `{tenant_id}` placeholder |
+| `PHYSICAL_ISOLATION_SCHEMA_TEMPLATE` | Required if `PHYSICAL_ISOLATION_MODE=tenant_per_schema` | Schema template containing `{tenant_id}` placeholder (for example `tenant_{tenant_id}`); supports `PHYSICAL_ISOLATION_SCHEMA_TEMPLATE_FILE` and `_SECRET_REF` variants |
+| `PHYSICAL_ISOLATION_DATABASE_URL_TEMPLATE` | Required if `PHYSICAL_ISOLATION_MODE=tenant_per_database` | Database URL template containing `{tenant_id}` placeholder; supports `PHYSICAL_ISOLATION_DATABASE_URL_TEMPLATE_FILE` and `_SECRET_REF` variants |
 | `API_HOST` | No | API bind host (`127.0.0.1` default) |
 | `API_PORT` | No | API bind port (`3001` default) |
 | `FRONTEND_URL` | No | Allowed CORS origin and post-login redirect target |
-| `SESSION_SECRET` | Yes | Session secret (32+ chars) |
+| `DEPLOYMENT_ENVIRONMENT` | No | Environment label used by secret reuse guard and `print-secret-fingerprints` commands |
+| `SECRET_REUSE_GUARD_FINGERPRINTS` | No | JSON array of fingerprint records exported from other environments; startup fails on same-secret collisions |
+| `SESSION_SECRET` | Yes | Session secret (32+ chars); supports `SESSION_SECRET_FILE` and `SESSION_SECRET_SECRET_REF` |
 | `SESSION_STORE` | No | Session backend (`postgres` default, `redis` for shared session state across API replicas) |
-| `AUTH_BOOTSTRAP_TOKEN` | Yes | One-time bootstrap token for initial authenticated session setup |
+| `AUTH_BOOTSTRAP_TOKEN` | Yes | One-time bootstrap token for initial authenticated session setup; supports `AUTH_BOOTSTRAP_TOKEN_FILE` and `_SECRET_REF` variants |
 | `DEV_DEFAULT_TENANT_ID` | No | Optional local-development tenant UUID used when bootstrap creates first membership |
 | `WEBAUTHN_RP_ID` | No | WebAuthn relying party id (`localhost` default) |
 | `WEBAUTHN_RP_ORIGIN` | No | WebAuthn relying party origin (`FRONTEND_URL` default) |
 | `SESSION_COOKIE_SECURE` | No | Enforce secure session cookies (`false` default for local dev) |
-| `TOTP_ENCRYPTION_KEY` | Yes (prod) | 64-char hex value used to encrypt stored TOTP secrets (`[0;32]` fallback only for local dev) |
+| `TRUST_PROXY_HEADERS` | No | Enable forwarded-header processing for rate limiting and auth-event IP attribution (`false` default; requires `TRUSTED_PROXY_CIDRS`) |
+| `TRUSTED_PROXY_CIDRS` | Required when `TRUST_PROXY_HEADERS=true` | Comma-separated proxy IPs or CIDR blocks allowed to supply `X-Forwarded-For` / `X-Real-Ip` |
+| `TOTP_ENCRYPTION_MODE` | No | MFA secret-at-rest mode (`static` default, `aws_kms_envelope` for AWS KMS-wrapped per-secret data keys) |
+| `TOTP_ENCRYPTION_KEY` | Required for `TOTP_ENCRYPTION_MODE=static`; optional legacy fallback for `aws_kms_envelope` | 64-char hex value used to encrypt stored TOTP secrets; startup fails if invalid or set to the all-zero placeholder; supports `TOTP_ENCRYPTION_KEY_FILE` and `_SECRET_REF` variants |
+| `TOTP_KMS_KEY_ID` | Required if `TOTP_ENCRYPTION_MODE=aws_kms_envelope` | AWS KMS key id or alias used to wrap per-secret MFA data keys |
 | `EMAIL_PROVIDER` | No | Email adapter (`console` default, `smtp` for production delivery) |
 | `SMTP_HOST` | Required if `EMAIL_PROVIDER=smtp` | SMTP server host (must be non-empty; startup fails fast if missing) |
 | `SMTP_PORT` | Required if `EMAIL_PROVIDER=smtp` | SMTP server port (`u16`; startup fails on invalid values) |
 | `SMTP_USERNAME` | Required if `EMAIL_PROVIDER=smtp` | SMTP username (must be non-empty) |
-| `SMTP_PASSWORD` | Required if `EMAIL_PROVIDER=smtp` | SMTP password (must be non-empty) |
+| `SMTP_PASSWORD` | Required if `EMAIL_PROVIDER=smtp` | SMTP password (must be non-empty); supports `SMTP_PASSWORD_FILE` and `SMTP_PASSWORD_SECRET_REF` |
 | `SMTP_FROM_ADDRESS` | Required if `EMAIL_PROVIDER=smtp` | Sender address used for auth/invite emails (must be non-empty and valid) |
-| `REDIS_URL` | Required for Redis backends | Redis connection URL used by API cache/rate-limit adapters (for example `redis://127.0.0.1:6379`) |
+| `REDIS_URL` | Required for Redis backends | Redis connection URL used by API cache/rate-limit adapters (for example `redis://127.0.0.1:6379`); supports `REDIS_URL_FILE` and `REDIS_URL_SECRET_REF` |
 | `RATE_LIMIT_STORE` | No | Rate-limit storage backend (`postgres` default, `redis` for shared throttling across API replicas) |
 | `WORKFLOW_QUEUE_STATS_CACHE_BACKEND` | No | Queue-stats cache backend (`in_memory` default, `redis` for shared cache across replicas) |
 | `WORKFLOW_EXECUTION_MODE` | No | Workflow runtime mode (`inline` default, `queued` enables remote worker claim flow) |
-| `WORKER_SHARED_SECRET` | Required if `WORKFLOW_EXECUTION_MODE=queued` | Shared bearer token used by worker-to-API internal claim channel |
+| `WORKER_SHARED_SECRET` | Required if `WORKFLOW_EXECUTION_MODE=queued` | Shared bearer token used by worker-to-API internal claim channel; supports `WORKER_SHARED_SECRET_FILE` and `_SECRET_REF` variants |
 | `WORKFLOW_WORKER_DEFAULT_LEASE_SECONDS` | No | Default worker job lease duration in seconds for internal claim requests (`30` default) |
 | `WORKFLOW_WORKER_MAX_CLAIM_LIMIT` | No | Upper bound for jobs returned per worker claim request (`25` default) |
 | `WORKFLOW_WORKER_MAX_PARTITION_COUNT` | No | Upper bound for accepted queue partition counts in worker claim requests (`128` default) |
@@ -95,8 +174,18 @@ Never commit secrets or production credentials to git.
 | `WORKER_COORDINATION_SCOPE_KEY` | No | Optional lock scope override (defaults to `partition:<count>:<index>` when partitioned, otherwise `worker:<worker_id>`) |
 | `WORKER_LEASE_LOSS_STRATEGY` | No | Lease-loss behavior (`graceful_drain` default cancels mutating in-flight tasks and stops new work, `abort_all` cancels all in-flight tasks) |
 | `NEXT_PUBLIC_API_BASE_URL` | No | Browser-facing API base URL for web app |
+| `QRYWELL_API_BASE_URL` | No | Optional Qrywell API origin; supports `QRYWELL_API_BASE_URL_FILE` and `_SECRET_REF` variants |
+| `QRYWELL_API_KEY` | No | Optional Qrywell shared API key; supports `QRYWELL_API_KEY_FILE` and `QRYWELL_API_KEY_SECRET_REF` |
 
 For local passkey and session stability, keep `FRONTEND_URL`, `WEBAUTHN_RP_ORIGIN`, and `NEXT_PUBLIC_API_BASE_URL` aligned to `localhost` hosts.
+
+`TOTP_ENCRYPTION_KEY` must be generated per environment and stored in a secret manager when you use `TOTP_ENCRYPTION_MODE=static` or when legacy MFA rows still rely on it during a staged `aws_kms_envelope` rollout. Reusing the same value across unrelated environments is discouraged.
+
+When `TOTP_ENCRYPTION_MODE=aws_kms_envelope`, every API replica must be able to execute `aws kms encrypt` and `aws kms decrypt` for the configured `TOTP_KMS_KEY_ID`.
+
+When `SECRET_REUSE_GUARD_FINGERPRINTS` is configured, `DEPLOYMENT_ENVIRONMENT` must also be set and the guard list should contain fingerprint exports from every other long-lived environment that must not share secret material.
+
+When using file-backed or external secret-manager values, keep the same source configuration on every replica so restarts do not split runtime behavior across API or worker pods.
 
 When configuring partitioned worker claims, define both `WORKER_PARTITION_COUNT` and `WORKER_PARTITION_INDEX` together or leave both unset.
 
@@ -113,6 +202,8 @@ Use a short `WORKFLOW_QUEUE_STATS_CACHE_TTL_SECONDS` only for operator polling w
 When in-flight runtime query or workflow dispatch pressure reaches `RUNTIME_QUERY_MAX_IN_FLIGHT` or `WORKFLOW_BURST_MAX_IN_FLIGHT`, API handlers fail fast with `429` to protect core latency and queue stability.
 
 When `SESSION_STORE=redis`, `RATE_LIMIT_STORE=redis`, or `WORKFLOW_QUEUE_STATS_CACHE_BACKEND=redis`, `REDIS_URL` must be set and reachable during API runtime.
+
+When `TRUST_PROXY_HEADERS=true`, `TRUSTED_PROXY_CIDRS` must contain only the source IPs/CIDRs for the ingress tier that connects directly to the API. Requests from any other peer address ignore forwarded IP headers and fall back to the socket IP instead.
 
 When `AUDIT_IMMUTABLE_MODE=true`, `POST /api/security/audit-log/purge` is blocked to preserve append-only audit history.
 

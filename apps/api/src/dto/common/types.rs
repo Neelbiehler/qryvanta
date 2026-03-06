@@ -48,4 +48,22 @@ pub struct UserIdentityResponse {
     pub tenant_id: String,
     /// Surfaces the authenticated user may access (e.g. `['admin', 'maker', 'worker']`).
     pub accessible_surfaces: Vec<String>,
+    /// Every tenant the subject may switch into.
+    pub available_tenants: Vec<TenantOptionResponse>,
+}
+
+/// One tenant available to the authenticated user.
+#[derive(Debug, Serialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/tenant-option-response.ts"
+)]
+pub struct TenantOptionResponse {
+    pub tenant_id: String,
+    pub tenant_name: String,
+    pub display_name: String,
+    pub email: Option<String>,
+    pub accessible_surfaces: Vec<String>,
+    pub is_current: bool,
+    pub is_default: bool,
 }

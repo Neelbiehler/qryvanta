@@ -46,6 +46,7 @@ pub(super) const NOT_FOUND: &str = "not_found";
 pub(super) const CONFLICT: &str = "conflict";
 pub(super) const UNAUTHORIZED: &str = "unauthorized";
 pub(super) const FORBIDDEN: &str = "forbidden";
+pub(super) const FORBIDDEN_STEP_UP_REQUIRED: &str = "forbidden.step_up_required";
 pub(super) const RATE_LIMITED: &str = "rate_limited";
 pub(super) const INTERNAL_ERROR: &str = "internal_error";
 
@@ -55,10 +56,18 @@ pub(super) fn error_code_for(error: &AppError) -> &'static str {
         AppError::NotFound(_) => NOT_FOUND,
         AppError::Conflict(_) => CONFLICT,
         AppError::Unauthorized(_) => UNAUTHORIZED,
-        AppError::Forbidden(_) => FORBIDDEN,
+        AppError::Forbidden(detail) => forbidden_code_for(detail.as_str()),
         AppError::RateLimited(_) => RATE_LIMITED,
         AppError::Internal(_) => INTERNAL_ERROR,
     }
+}
+
+fn forbidden_code_for(detail: &str) -> &'static str {
+    if detail == "step-up authentication required for this action" {
+        return FORBIDDEN_STEP_UP_REQUIRED;
+    }
+
+    FORBIDDEN
 }
 
 fn validation_code_for(detail: &str) -> &'static str {
@@ -173,5 +182,14 @@ mod tests {
         ));
 
         assert_eq!(code, VALIDATION_GENERIC);
+    }
+
+    #[test]
+    fn classifies_step_up_forbidden_errors() {
+        let code = error_code_for(&AppError::Forbidden(
+            "step-up authentication required for this action".to_owned(),
+        ));
+
+        assert_eq!(code, FORBIDDEN_STEP_UP_REQUIRED);
     }
 }

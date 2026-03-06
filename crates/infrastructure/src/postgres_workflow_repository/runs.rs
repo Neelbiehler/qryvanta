@@ -6,6 +6,7 @@ impl PostgresWorkflowRepository {
         tenant_id: TenantId,
         input: CreateWorkflowRunInput,
     ) -> AppResult<WorkflowRun> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let row = sqlx::query_as::<_, WorkflowRunRow>(
             r#"
             INSERT INTO workflow_execution_runs (
@@ -37,12 +38,17 @@ impl PostgresWorkflowRepository {
         .bind(input.trigger_type)
         .bind(input.trigger_entity_logical_name)
         .bind(input.trigger_payload)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to create workflow run for tenant '{}': {error}",
                 tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped workflow run create transaction: {error}"
             ))
         })?;
 
@@ -60,6 +66,7 @@ impl PostgresWorkflowRepository {
                 attempt.run_id
             ))
         })?;
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
 
         sqlx::query(
             r#"
@@ -84,12 +91,17 @@ impl PostgresWorkflowRepository {
         .bind(workflow_step_traces_to_json(
             attempt.step_traces.as_slice(),
         )?)
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to append workflow run attempt for run '{}' tenant '{}': {error}",
                 attempt.run_id, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped workflow attempt append transaction: {error}"
             ))
         })?;
 
@@ -107,6 +119,7 @@ impl PostgresWorkflowRepository {
                 input.run_id
             ))
         })?;
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
 
         let row = sqlx::query_as::<_, WorkflowRunRow>(
             r#"
@@ -135,12 +148,17 @@ impl PostgresWorkflowRepository {
         .bind(input.status.as_str())
         .bind(input.attempts)
         .bind(input.dead_letter_reason)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to complete workflow run '{}' for tenant '{}': {error}",
                 run_id, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped workflow run completion transaction: {error}"
             ))
         })?;
 
@@ -152,6 +170,7 @@ impl PostgresWorkflowRepository {
         tenant_id: TenantId,
         query: WorkflowRunListQuery,
     ) -> AppResult<Vec<WorkflowRun>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let rows = sqlx::query_as::<_, WorkflowRunRow>(
             r#"
             SELECT
@@ -180,12 +199,17 @@ impl PostgresWorkflowRepository {
         .bind(i64::try_from(query.offset).map_err(|error| {
             AppError::Validation(format!("invalid workflow run list offset: {error}"))
         })?)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to list workflow runs for tenant '{}': {error}",
                 tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped workflow run list transaction: {error}"
             ))
         })?;
 
@@ -200,6 +224,7 @@ impl PostgresWorkflowRepository {
         let run_uuid = uuid::Uuid::parse_str(run_id).map_err(|error| {
             AppError::Validation(format!("invalid workflow run id '{}': {error}", run_id))
         })?;
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
 
         let row = sqlx::query_as::<_, WorkflowRunRow>(
             r#"
@@ -220,12 +245,17 @@ impl PostgresWorkflowRepository {
         )
         .bind(tenant_id.as_uuid())
         .bind(run_uuid)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to find workflow run '{}' for tenant '{}': {error}",
                 run_id, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped workflow run find transaction: {error}"
             ))
         })?;
 
@@ -240,6 +270,7 @@ impl PostgresWorkflowRepository {
         let run_uuid = uuid::Uuid::parse_str(run_id).map_err(|error| {
             AppError::Validation(format!("invalid workflow run id '{}': {error}", run_id))
         })?;
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
 
         let rows = sqlx::query_as::<_, WorkflowRunAttemptRow>(
             r#"
@@ -251,12 +282,17 @@ impl PostgresWorkflowRepository {
         )
         .bind(tenant_id.as_uuid())
         .bind(run_uuid)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to list workflow run attempts for run '{}' tenant '{}': {error}",
                 run_id, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped workflow attempt list transaction: {error}"
             ))
         })?;
 

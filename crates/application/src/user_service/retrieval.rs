@@ -10,4 +10,9 @@ impl UserService {
     pub async fn find_by_email(&self, email: &str) -> AppResult<Option<UserRecord>> {
         self.user_repository.find_by_email(email).await
     }
+
+    /// Returns a user record by session/auth subject, if it exists.
+    pub async fn find_by_subject(&self, subject: &str) -> AppResult<Option<UserRecord>> {
+        self.user_repository.find_by_subject(subject).await
+    }
 }

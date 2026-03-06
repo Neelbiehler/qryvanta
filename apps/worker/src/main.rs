@@ -83,8 +83,14 @@ struct ClaimedWorkflowJobResponse {
 async fn main() -> Result<(), AppError> {
     dotenvy::dotenv().ok();
     init_tracing();
+    let args = env::args().collect::<Vec<_>>();
+    let command = args.get(1).map(String::as_str);
 
     let config = WorkerConfig::load()?;
+    if command == Some("print-secret-fingerprints") {
+        print_secret_fingerprints(&config)?;
+        return Ok(());
+    }
     let pool = connect_pool(config.database_url.as_str()).await?;
     let workflow_service = build_workflow_service(pool);
     let lease_coordinator = build_lease_coordinator(&config)?;
@@ -580,4 +586,22 @@ fn init_tracing() {
         .with_target(false)
         .compact()
         .init();
+}
+
+fn print_secret_fingerprints(config: &WorkerConfig) -> Result<(), AppError> {
+    let deployment_environment = env::var("DEPLOYMENT_ENVIRONMENT")
+        .ok()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            AppError::Validation(
+                "DEPLOYMENT_ENVIRONMENT is required for print-secret-fingerprints".to_owned(),
+            )
+        })?;
+    let fingerprints = config.secret_fingerprint_records(deployment_environment.as_str());
+    let output = serde_json::to_string_pretty(&fingerprints).map_err(|error| {
+        AppError::Internal(format!("failed to serialize fingerprints: {error}"))
+    })?;
+    println!("{output}");
+    Ok(())
 }

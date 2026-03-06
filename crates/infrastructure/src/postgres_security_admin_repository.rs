@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::str::FromStr;
 
+use crate::begin_tenant_transaction;
 use async_trait::async_trait;
 use sqlx::{FromRow, PgPool, Postgres, Transaction};
 

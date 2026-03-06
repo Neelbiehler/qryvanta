@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use qryvanta_core::{AppResult, TenantId};
 use qryvanta_domain::RegistrationMode;
 
-use super::audit::{AuditLogEntry, AuditLogQuery};
+use super::audit::{AuditIntegrityStatus, AuditLogEntry, AuditLogQuery};
 use super::governance::AuditRetentionPolicy;
 use super::roles::{CreateRoleInput, RoleAssignment, RoleDefinition};
 use super::runtime_permissions::{RuntimeFieldPermissionEntry, SaveRuntimeFieldPermissionsInput};
@@ -126,4 +126,7 @@ pub trait AuditLogRepository: Send + Sync {
         tenant_id: TenantId,
         retention_days: u16,
     ) -> AppResult<u64>;
+
+    /// Verifies tenant audit-chain integrity.
+    async fn verify_integrity(&self, tenant_id: TenantId) -> AppResult<AuditIntegrityStatus>;
 }

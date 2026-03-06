@@ -1,5 +1,5 @@
 use axum::Router;
-use axum::middleware::from_fn_with_state;
+use axum::middleware::{from_fn, from_fn_with_state};
 use axum::routing::{get, post};
 use qryvanta_core::AppError;
 use tower_http::trace::TraceLayer;
@@ -11,6 +11,8 @@ use crate::{auth, handlers, middleware};
 mod cors;
 mod protected;
 mod public_auth;
+#[cfg(test)]
+mod tests;
 mod worker_internal;
 
 use cors::build_cors_layer;
@@ -29,7 +31,7 @@ pub fn build_router<S>(
 where
     S: SessionStore + Clone + Send + Sync + 'static,
 {
-    let protected_routes = build_protected_routes();
+    let protected_routes = build_protected_routes(app_state.clone());
     let cors_layer = build_cors_layer(frontend_url)?;
 
     let login_routes = build_login_routes(app_state.clone());
@@ -54,6 +56,7 @@ where
             app_state.clone(),
             middleware::require_same_origin_for_mutations,
         ))
+        .layer(from_fn(middleware::apply_security_headers))
         .layer(from_fn_with_state(
             app_state.clone(),
             middleware::trace_and_observe,

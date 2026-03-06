@@ -15,6 +15,27 @@ pub struct AuditLogEntry {
     pub detail: Option<String>,
     /// Event timestamp in RFC3339.
     pub created_at: String,
+    /// Monotonic chain position within the tenant audit stream.
+    pub chain_position: i64,
+    /// Previous entry hash in the tenant chain, if any.
+    pub previous_entry_hash: Option<String>,
+    /// Current entry hash anchoring this audit row.
+    pub entry_hash: String,
+}
+
+/// Summary of tenant audit chain verification.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuditIntegrityStatus {
+    /// Whether the chain verified successfully.
+    pub is_valid: bool,
+    /// Number of entries scanned during verification.
+    pub verified_entries: usize,
+    /// Latest verified chain position, if any entries exist.
+    pub latest_chain_position: Option<i64>,
+    /// Latest verified entry hash, if any entries exist.
+    pub latest_entry_hash: Option<String>,
+    /// Human-readable verification failures.
+    pub failures: Vec<String>,
 }
 
 /// Query parameters for audit log listing.

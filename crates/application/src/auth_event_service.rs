@@ -3,6 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use qryvanta_core::AppResult;
+use qryvanta_domain::{AuthEventOutcome, AuthEventType};
 
 /// Authentication event payload for security analytics.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -10,9 +11,9 @@ pub struct AuthEvent {
     /// Subject if available.
     pub subject: Option<String>,
     /// Stable event type identifier.
-    pub event_type: String,
+    pub event_type: AuthEventType,
     /// Event outcome label (success or failure).
-    pub outcome: String,
+    pub outcome: AuthEventOutcome,
     /// Caller IP address if available.
     pub ip_address: Option<String>,
     /// Caller user-agent if available.

@@ -4,6 +4,7 @@
 
 /// Authentication primitives shared across services.
 pub mod auth;
+pub mod secret;
 
 use std::fmt::{Display, Formatter};
 
@@ -12,6 +13,10 @@ use thiserror::Error;
 use uuid::Uuid;
 
 pub use auth::UserIdentity;
+pub use secret::{
+    SecretFingerprintRecord, detect_reused_secret_fingerprints, optional_secret,
+    required_non_empty_secret, required_secret, secret_fingerprint,
+};
 
 /// Result type used across Qryvanta crates.
 pub type AppResult<T> = Result<T, AppError>;

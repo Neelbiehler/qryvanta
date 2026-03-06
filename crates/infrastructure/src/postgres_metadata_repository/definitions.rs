@@ -6,6 +6,7 @@ impl PostgresMetadataRepository {
         tenant_id: TenantId,
         entity: EntityDefinition,
     ) -> AppResult<()> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let result = sqlx::query(
             r#"
             INSERT INTO entity_definitions (
@@ -25,11 +26,18 @@ impl PostgresMetadataRepository {
         .bind(entity.description())
         .bind(entity.plural_display_name().map(|value| value.as_str()))
         .bind(entity.icon())
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await;
 
         match result {
-            Ok(_) => Ok(()),
+            Ok(_) => {
+                transaction.commit().await.map_err(|error| {
+                    AppError::Internal(format!(
+                        "failed to commit tenant-scoped entity save transaction: {error}"
+                    ))
+                })?;
+                Ok(())
+            }
             Err(error) => {
                 if let sqlx::Error::Database(database_error) = &error
                     && database_error.code().as_deref() == Some("23505")
@@ -52,6 +60,7 @@ impl PostgresMetadataRepository {
         &self,
         tenant_id: TenantId,
     ) -> AppResult<Vec<EntityDefinition>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let rows = sqlx::query_as::<_, EntityRow>(
             r#"
             SELECT logical_name, display_name, description, plural_display_name, icon
@@ -61,10 +70,15 @@ impl PostgresMetadataRepository {
             "#,
         )
         .bind(tenant_id.as_uuid())
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!("failed to list entity definitions: {error}"))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped entity list transaction: {error}"
+            ))
         })?;
 
         rows.into_iter()
@@ -91,6 +105,7 @@ impl PostgresMetadataRepository {
         tenant_id: TenantId,
         logical_name: &str,
     ) -> AppResult<Option<EntityDefinition>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let row = sqlx::query_as::<_, EntityRow>(
             r#"
             SELECT logical_name, display_name, description, plural_display_name, icon
@@ -100,12 +115,17 @@ impl PostgresMetadataRepository {
         )
         .bind(tenant_id.as_uuid())
         .bind(logical_name)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to find entity definition '{}' for tenant '{}': {error}",
                 logical_name, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped entity lookup transaction: {error}"
             ))
         })?;
 
@@ -126,6 +146,7 @@ impl PostgresMetadataRepository {
         tenant_id: TenantId,
         entity: EntityDefinition,
     ) -> AppResult<()> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let rows_affected = sqlx::query(
             r#"
             UPDATE entity_definitions
@@ -142,7 +163,7 @@ impl PostgresMetadataRepository {
         .bind(entity.description())
         .bind(entity.plural_display_name().map(|value| value.as_str()))
         .bind(entity.icon())
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!("failed to update entity definition: {error}"))
@@ -157,6 +178,12 @@ impl PostgresMetadataRepository {
             )));
         }
 
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped entity update transaction: {error}"
+            ))
+        })?;
+
         Ok(())
     }
 
@@ -165,6 +192,7 @@ impl PostgresMetadataRepository {
         tenant_id: TenantId,
         field: EntityFieldDefinition,
     ) -> AppResult<()> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         sqlx::query(
             r#"
             INSERT INTO entity_fields (
@@ -218,7 +246,7 @@ impl PostgresMetadataRepository {
         .bind(field.max_length())
         .bind(field.min_value())
         .bind(field.max_value())
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
@@ -226,6 +254,12 @@ impl PostgresMetadataRepository {
                 field.logical_name().as_str(),
                 field.entity_logical_name().as_str(),
                 tenant_id
+            ))
+        })?;
+
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped field save transaction: {error}"
             ))
         })?;
 
@@ -237,6 +271,7 @@ impl PostgresMetadataRepository {
         tenant_id: TenantId,
         entity_logical_name: &str,
     ) -> AppResult<Vec<EntityFieldDefinition>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let rows = sqlx::query_as::<_, FieldRow>(
             r#"
             SELECT
@@ -261,12 +296,17 @@ impl PostgresMetadataRepository {
         )
         .bind(tenant_id.as_uuid())
         .bind(entity_logical_name)
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to list fields for entity '{}' in tenant '{}': {error}",
                 entity_logical_name, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped field list transaction: {error}"
             ))
         })?;
 
@@ -299,6 +339,7 @@ impl PostgresMetadataRepository {
         entity_logical_name: &str,
         field_logical_name: &str,
     ) -> AppResult<Option<EntityFieldDefinition>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let row = sqlx::query_as::<_, FieldRow>(
             r#"
             SELECT
@@ -323,12 +364,17 @@ impl PostgresMetadataRepository {
         .bind(tenant_id.as_uuid())
         .bind(entity_logical_name)
         .bind(field_logical_name)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to find field '{}.{}' in tenant '{}': {error}",
                 entity_logical_name, field_logical_name, tenant_id
+            ))
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped field lookup transaction: {error}"
             ))
         })?;
 
@@ -360,6 +406,7 @@ impl PostgresMetadataRepository {
         entity_logical_name: &str,
         field_logical_name: &str,
     ) -> AppResult<()> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let result = sqlx::query(
             r#"
             DELETE FROM entity_fields
@@ -369,7 +416,7 @@ impl PostgresMetadataRepository {
         .bind(tenant_id.as_uuid())
         .bind(entity_logical_name)
         .bind(field_logical_name)
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
@@ -385,6 +432,12 @@ impl PostgresMetadataRepository {
             )));
         }
 
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped field delete transaction: {error}"
+            ))
+        })?;
+
         Ok(())
     }
 
@@ -394,7 +447,8 @@ impl PostgresMetadataRepository {
         entity_logical_name: &str,
         field_logical_name: &str,
     ) -> AppResult<bool> {
-        sqlx::query_scalar(
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
+        let exists = sqlx::query_scalar(
             r#"
             SELECT EXISTS (
                 SELECT 1
@@ -411,13 +465,20 @@ impl PostgresMetadataRepository {
         .bind(tenant_id.as_uuid())
         .bind(entity_logical_name)
         .bind(field_logical_name)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *transaction)
         .await
         .map_err(|error| {
             AppError::Internal(format!(
                 "failed to evaluate published-field usage for '{}.{}' in tenant '{}': {error}",
                 entity_logical_name, field_logical_name, tenant_id
             ))
-        })
+        })?;
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit tenant-scoped published schema check transaction: {error}"
+            ))
+        })?;
+
+        Ok(exists)
     }
 }

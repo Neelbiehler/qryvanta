@@ -34,6 +34,7 @@ pub fn build_app_state(pool: PgPool, config: &ApiConfig) -> Result<AppState, App
         config,
         repositories.tenant_repository.clone(),
         repositories.user_repository.clone(),
+        security_services.authorization_service.clone(),
         security_services.auth_event_service.clone(),
     )?;
     let workflow_queue_stats_cache =
@@ -79,6 +80,7 @@ pub fn build_app_state(pool: PgPool, config: &ApiConfig) -> Result<AppState, App
         authorization_service: security_services.authorization_service.clone(),
         auth_event_service: security_services.auth_event_service,
         user_service: user_services.user_service,
+        tenant_access_service: user_services.tenant_access_service,
         auth_token_service: user_services.auth_token_service,
         workflow_service: WorkflowService::new(
             security_services.authorization_service,
@@ -98,6 +100,8 @@ pub fn build_app_state(pool: PgPool, config: &ApiConfig) -> Result<AppState, App
         passkey_repository: repositories.passkey_repository,
         webauthn,
         frontend_url: config.frontend_url.clone(),
+        trust_proxy_headers: config.trust_proxy_headers,
+        trusted_proxy_cidrs: config.trusted_proxy_cidrs.clone(),
         physical_isolation_mode: config.physical_isolation_mode,
         physical_isolation_tenant_id: config.physical_isolation_tenant_id,
         bootstrap_token: config.bootstrap_token.clone(),
