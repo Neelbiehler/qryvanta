@@ -54,11 +54,19 @@ async fn ensure_tenant(pool: &PgPool, tenant_id: TenantId, name: &str) {
 }
 
 fn workflow(logical_name: &str, display_name: &str) -> WorkflowDefinition {
+    workflow_with_trigger(logical_name, display_name, WorkflowTrigger::Manual)
+}
+
+fn workflow_with_trigger(
+    logical_name: &str,
+    display_name: &str,
+    trigger: WorkflowTrigger,
+) -> WorkflowDefinition {
     WorkflowDefinition::new(WorkflowDefinitionInput {
         logical_name: logical_name.to_owned(),
         display_name: display_name.to_owned(),
         description: None,
-        trigger: WorkflowTrigger::Manual,
+        trigger,
         action: WorkflowAction::LogMessage {
             message: format!("{display_name} executed"),
         },
@@ -67,6 +75,81 @@ fn workflow(logical_name: &str, display_name: &str) -> WorkflowDefinition {
         is_enabled: true,
     })
     .unwrap_or_else(|_| unreachable!())
+}
+
+#[tokio::test]
+async fn workflow_repository_persists_expanded_trigger_types() {
+    let Some(pool) = test_pool().await else {
+        return;
+    };
+
+    let repository = PostgresWorkflowRepository::new(pool.clone());
+    let tenant_id = TenantId::new();
+    ensure_tenant(&pool, tenant_id, "Workflow Trigger Coverage Tenant").await;
+
+    let workflows = vec![
+        workflow_with_trigger(
+            "contact_updated_ops",
+            "Contact Updated Ops",
+            WorkflowTrigger::RuntimeRecordUpdated {
+                entity_logical_name: "contact".to_owned(),
+            },
+        ),
+        workflow_with_trigger(
+            "contact_deleted_ops",
+            "Contact Deleted Ops",
+            WorkflowTrigger::RuntimeRecordDeleted {
+                entity_logical_name: "contact".to_owned(),
+            },
+        ),
+        workflow_with_trigger(
+            "hourly_ops",
+            "Hourly Ops",
+            WorkflowTrigger::ScheduleTick {
+                schedule_key: "hourly".to_owned(),
+            },
+        ),
+    ];
+
+    for workflow in workflows {
+        assert!(repository.save_workflow(tenant_id, workflow).await.is_ok());
+    }
+
+    let updated_workflow = repository
+        .find_workflow(tenant_id, "contact_updated_ops")
+        .await
+        .unwrap_or_else(|error| panic!("failed to load updated workflow: {error}"))
+        .unwrap_or_else(|| unreachable!());
+    assert_eq!(
+        updated_workflow.trigger(),
+        &WorkflowTrigger::RuntimeRecordUpdated {
+            entity_logical_name: "contact".to_owned(),
+        }
+    );
+
+    let deleted_workflow = repository
+        .find_workflow(tenant_id, "contact_deleted_ops")
+        .await
+        .unwrap_or_else(|error| panic!("failed to load deleted workflow: {error}"))
+        .unwrap_or_else(|| unreachable!());
+    assert_eq!(
+        deleted_workflow.trigger(),
+        &WorkflowTrigger::RuntimeRecordDeleted {
+            entity_logical_name: "contact".to_owned(),
+        }
+    );
+
+    let schedule_workflow = repository
+        .find_workflow(tenant_id, "hourly_ops")
+        .await
+        .unwrap_or_else(|error| panic!("failed to load scheduled workflow: {error}"))
+        .unwrap_or_else(|| unreachable!());
+    assert_eq!(
+        schedule_workflow.trigger(),
+        &WorkflowTrigger::ScheduleTick {
+            schedule_key: "hourly".to_owned(),
+        }
+    );
 }
 
 #[tokio::test]
