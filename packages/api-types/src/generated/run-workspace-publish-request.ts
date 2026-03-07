@@ -3,4 +3,4 @@
 /**
  * Request payload for selective workspace publish execution.
  */
-export type RunWorkspacePublishRequest = { entity_logical_names: Array<string>, app_logical_names: Array<string>, dry_run: boolean, };
+export type RunWorkspacePublishRequest = { entity_logical_names: Array<string>, app_logical_names: Array<string>, workflow_logical_names: Array<string>, dry_run: boolean, };

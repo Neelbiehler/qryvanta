@@ -2,9 +2,11 @@ use axum::Json;
 use axum::extract::{Extension, Query, State};
 use axum::http::StatusCode;
 
-use qryvanta_application::{WorkflowClaimPartition, WorkflowWorkerHeartbeatInput};
+use qryvanta_application::{
+    RuntimeRecordWorkflowEventDrainResult, WorkflowClaimPartition, WorkflowWorkerHeartbeatInput,
+};
 use qryvanta_core::AppError;
-use qryvanta_domain::{WorkflowAction, WorkflowStep, WorkflowTrigger};
+use qryvanta_domain::{WorkflowStep, WorkflowTrigger};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -13,12 +15,31 @@ use crate::middleware::WorkerIdentity;
 use crate::state::AppState;
 
 mod claim;
+mod drain;
 mod heartbeat;
 mod stats;
 
 pub use claim::claim_workflow_jobs_handler;
+pub use drain::drain_runtime_record_workflow_events_handler;
 pub use heartbeat::worker_heartbeat_handler;
 pub use stats::workflow_queue_stats_handler;
+
+#[derive(Debug, Serialize)]
+pub struct RuntimeRecordWorkflowEventDrainResponse {
+    pub claimed_events: u32,
+    pub dispatched_workflows: u32,
+    pub released_events: u32,
+}
+
+impl From<RuntimeRecordWorkflowEventDrainResult> for RuntimeRecordWorkflowEventDrainResponse {
+    fn from(value: RuntimeRecordWorkflowEventDrainResult) -> Self {
+        Self {
+            claimed_events: value.claimed_events,
+            dispatched_workflows: value.dispatched_workflows,
+            released_events: value.released_events,
+        }
+    }
+}
 
 fn parse_worker_partition(
     partition_count: Option<u32>,

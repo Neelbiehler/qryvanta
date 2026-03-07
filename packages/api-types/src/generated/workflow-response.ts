@@ -4,4 +4,4 @@ import type { WorkflowStepDto } from "./workflow-step-dto";
 /**
  * API representation of one workflow definition.
  */
-export type WorkflowResponse = { logical_name: string, display_name: string, description: string | null, trigger_type: string, trigger_entity_logical_name: string | null, action_type: string, action_entity_logical_name: string | null, action_payload: Record<string, unknown>, steps: Array<WorkflowStepDto>, max_attempts: number, is_enabled: boolean, };
+export type WorkflowResponse = { logical_name: string, display_name: string, description: string | null, trigger_type: string, trigger_entity_logical_name: string | null, steps: Array<WorkflowStepDto>, max_attempts: number, lifecycle_state: string, published_version: number | null, is_enabled: boolean, };

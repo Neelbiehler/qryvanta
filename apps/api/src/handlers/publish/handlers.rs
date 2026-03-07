@@ -13,7 +13,10 @@ use crate::dto::{
 };
 use crate::error::ApiResult;
 
-use super::diff::{compute_field_diff, compute_form_surface_delta, compute_view_surface_delta};
+use super::diff::{
+    compute_field_diff, compute_form_surface_delta, compute_view_surface_delta,
+    compute_workflow_diff,
+};
 use super::history::map_workspace_publish_history_entries;
 use super::issues::{
     build_unknown_selection_issues, collect_workspace_issues, partition_known_names,
@@ -27,6 +30,7 @@ pub async fn workspace_publish_checks_handler(
 ) -> ApiResult<Json<WorkspacePublishChecksResponse>> {
     let entities = state.metadata_service.list_entities(&user).await?;
     let apps = state.app_service.list_apps(&user).await?;
+    let workflows = state.workflow_service.list_workflows(&user).await?;
 
     let entity_names = entities
         .iter()
@@ -36,13 +40,19 @@ pub async fn workspace_publish_checks_handler(
         .iter()
         .map(|app| app.logical_name().as_str().to_owned())
         .collect::<Vec<_>>();
+    let workflow_names = workflows
+        .iter()
+        .map(|workflow| workflow.logical_name().as_str().to_owned())
+        .collect::<Vec<_>>();
 
-    let issues = collect_workspace_issues(&state, &user, &entity_names, &app_names).await?;
+    let issues =
+        collect_workspace_issues(&state, &user, &entity_names, &app_names, &workflow_names).await?;
 
     Ok(Json(WorkspacePublishChecksResponse {
         is_publishable: issues.is_empty(),
         checked_entities: entity_names.len(),
         checked_apps: app_names.len(),
+        checked_workflows: workflow_names.len(),
         issues,
     }))
 }
@@ -54,6 +64,7 @@ pub async fn run_workspace_publish_handler(
 ) -> ApiResult<Json<RunWorkspacePublishResponse>> {
     let entities = state.metadata_service.list_entities(&user).await?;
     let apps = state.app_service.list_apps(&user).await?;
+    let workflows = state.workflow_service.list_workflows(&user).await?;
 
     let available_entity_names = entities
         .iter()
@@ -63,16 +74,26 @@ pub async fn run_workspace_publish_handler(
         .iter()
         .map(|app| app.logical_name().as_str().to_owned())
         .collect::<Vec<_>>();
+    let available_workflow_names = workflows
+        .iter()
+        .map(|workflow| workflow.logical_name().as_str().to_owned())
+        .collect::<Vec<_>>();
 
     let requested_entities =
         resolve_requested_names(payload.entity_logical_names, available_entity_names.clone());
     let requested_apps =
         resolve_requested_names(payload.app_logical_names, available_app_names.clone());
+    let requested_workflows = resolve_requested_names(
+        payload.workflow_logical_names,
+        available_workflow_names.clone(),
+    );
 
     let (known_entity_names, unknown_entity_names) =
         partition_known_names(&requested_entities, &available_entity_names);
     let (known_app_names, unknown_app_names) =
         partition_known_names(&requested_apps, &available_app_names);
+    let (known_workflow_names, unknown_workflow_names) =
+        partition_known_names(&requested_workflows, &available_workflow_names);
 
     let mut issues = Vec::new();
     issues.extend(build_unknown_selection_issues(
@@ -83,13 +104,25 @@ pub async fn run_workspace_publish_handler(
         PublishCheckScopeDto::App,
         &unknown_app_names,
     ));
+    issues.extend(build_unknown_selection_issues(
+        PublishCheckScopeDto::Workflow,
+        &unknown_workflow_names,
+    ));
 
     issues.extend(
-        collect_workspace_issues(&state, &user, &known_entity_names, &known_app_names).await?,
+        collect_workspace_issues(
+            &state,
+            &user,
+            &known_entity_names,
+            &known_app_names,
+            &known_workflow_names,
+        )
+        .await?,
     );
 
     let mut published_entities = Vec::new();
     let mut validated_apps = Vec::new();
+    let mut published_workflows = Vec::new();
     let should_publish = issues.is_empty() && !payload.dry_run;
 
     if issues.is_empty() {
@@ -100,8 +133,10 @@ pub async fn run_workspace_publish_handler(
                 is_publishable: true,
                 requested_entities: requested_entities.len(),
                 requested_apps: requested_apps.len(),
+                requested_workflows: requested_workflows.len(),
                 published_entities,
                 validated_apps,
+                published_workflows,
                 issues,
             };
 
@@ -119,14 +154,24 @@ pub async fn run_workspace_publish_handler(
                 .await?;
             published_entities.push(entity_logical_name.clone());
         }
+
+        for workflow_logical_name in &known_workflow_names {
+            state
+                .workflow_service
+                .publish_workflow(&user, workflow_logical_name.as_str())
+                .await?;
+            published_workflows.push(workflow_logical_name.clone());
+        }
     }
 
     let response = RunWorkspacePublishResponse {
         is_publishable: issues.is_empty(),
         requested_entities: requested_entities.len(),
         requested_apps: requested_apps.len(),
+        requested_workflows: requested_workflows.len(),
         published_entities,
         validated_apps,
+        published_workflows,
         issues,
     };
 
@@ -138,10 +183,13 @@ pub async fn run_workspace_publish_handler(
                 WorkspacePublishRunAuditInput {
                     requested_entities: response.requested_entities,
                     requested_apps: response.requested_apps,
+                    requested_workflows: response.requested_workflows,
                     requested_entity_logical_names: requested_entities.clone(),
                     requested_app_logical_names: requested_apps.clone(),
+                    requested_workflow_logical_names: requested_workflows.clone(),
                     published_entities: response.published_entities.clone(),
                     validated_apps: response.validated_apps.clone(),
+                    published_workflows: response.published_workflows.clone(),
                     issue_count: response.issues.len(),
                     is_publishable: response.is_publishable,
                 },
@@ -180,6 +228,7 @@ pub async fn workspace_publish_diff_handler(
 ) -> ApiResult<Json<WorkspacePublishDiffResponse>> {
     let entities = state.metadata_service.list_entities(&user).await?;
     let apps = state.app_service.list_apps(&user).await?;
+    let workflows = state.workflow_service.list_workflows(&user).await?;
 
     let available_entity_names = entities
         .iter()
@@ -189,16 +238,26 @@ pub async fn workspace_publish_diff_handler(
         .iter()
         .map(|app| app.logical_name().as_str().to_owned())
         .collect::<Vec<_>>();
+    let available_workflow_names = workflows
+        .iter()
+        .map(|workflow| workflow.logical_name().as_str().to_owned())
+        .collect::<Vec<_>>();
 
     let requested_entities =
         resolve_requested_names(payload.entity_logical_names, available_entity_names.clone());
     let requested_apps =
         resolve_requested_names(payload.app_logical_names, available_app_names.clone());
+    let requested_workflows = resolve_requested_names(
+        payload.workflow_logical_names,
+        available_workflow_names.clone(),
+    );
 
     let (known_entity_names, unknown_entity_names) =
         partition_known_names(&requested_entities, &available_entity_names);
     let (known_app_names, unknown_app_names) =
         partition_known_names(&requested_apps, &available_app_names);
+    let (known_workflow_names, unknown_workflow_names) =
+        partition_known_names(&requested_workflows, &available_workflow_names);
 
     let mut entity_diffs = Vec::new();
     for entity_logical_name in &known_entity_names {
@@ -286,10 +345,36 @@ pub async fn workspace_publish_diff_handler(
         });
     }
 
+    let mut workflow_diffs = Vec::new();
+    for workflow_logical_name in &known_workflow_names {
+        let Some(draft_workflow) = workflows
+            .iter()
+            .find(|workflow| workflow.logical_name().as_str() == workflow_logical_name.as_str())
+            .cloned()
+        else {
+            continue;
+        };
+        let published_workflow = if let Some(version) = draft_workflow.published_version() {
+            state
+                .workflow_service
+                .find_published_workflow_version(&user, workflow_logical_name.as_str(), version)
+                .await?
+        } else {
+            None
+        };
+
+        workflow_diffs.push(compute_workflow_diff(
+            &draft_workflow,
+            published_workflow.as_ref(),
+        ));
+    }
+
     Ok(Json(WorkspacePublishDiffResponse {
         unknown_entity_logical_names: unknown_entity_names,
         unknown_app_logical_names: unknown_app_names,
+        unknown_workflow_logical_names: unknown_workflow_names,
         entity_diffs,
         app_diffs,
+        workflow_diffs,
     }))
 }

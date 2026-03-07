@@ -98,6 +98,7 @@ impl PostgresMetadataRepository {
         tenant_id: TenantId,
         entity_logical_name: &str,
         record_id: &str,
+        workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<()> {
         let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
         let record_uuid = parse_runtime_record_uuid(record_id)?;
@@ -126,6 +127,15 @@ impl PostgresMetadataRepository {
                 record_id, entity_logical_name
             )));
         }
+
+        super::write::enqueue_runtime_record_workflow_event(
+            &mut transaction,
+            tenant_id,
+            entity_logical_name,
+            record_id,
+            workflow_event,
+        )
+        .await?;
 
         transaction.commit().await.map_err(|error| {
             AppError::Internal(format!(

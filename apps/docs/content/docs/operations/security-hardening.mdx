@@ -44,6 +44,17 @@ Do not reuse the same secret set across local, staging, and production environme
 - `GET /auth/me` now returns the current tenant plus the full `available_tenants` switch list for authenticated product clients.
 - Forwarded client IP headers are now ignored unless the direct peer socket address is inside the trusted proxy allowlist.
 
+## Workflow Governance Permissions
+
+- Workflow access is now governed by dedicated role grants instead of metadata-field permissions.
+- Grant `workflow.read` to roles that need visibility into workflow definitions, run history, replay, and attempt inspection.
+- Grant `workflow.manage` to roles that need to save drafts, publish or disable workflows, manually execute them, or retry failed steps.
+- Keep workflow permissions separate from broad metadata edit grants when you want operators to run automations without wider schema-authoring access.
+- Publishing or disabling workflows that contain outbound integration actions now requires recent step-up verification in the current session, matching other high-risk tenant-admin writes.
+- Inline credential-bearing headers such as `authorization`, `proxy-authorization`, `cookie`, `x-api-key`, and related token headers are rejected during workflow publish checks for `http_request` and `webhook` steps unless they are supplied through secret references.
+- Use workflow `header_secret_refs` entries with supported secret-manager reference schemes (`op://`, `aws-sm://`, `aws-ssm://`, `vault://`, `gcp-sm://`) for outbound credential headers.
+- Workflow step traces redact both credential-bearing inline headers and secret-reference-backed header values before run-history persistence so operators do not see raw outbound secrets or their resolved values.
+
 ## Audit Integrity
 
 - Tenant audit rows now carry a monotonic `chain_position`, the prior row hash, and a row hash derived from the event payload plus timestamp.

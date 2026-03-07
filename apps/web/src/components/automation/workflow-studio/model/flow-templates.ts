@@ -2,6 +2,7 @@ import type {
   DraftWorkflowStep,
   TriggerType,
 } from "@/components/automation/workflow-studio/model";
+import { createDraftObjectFieldsFromValue } from "@/components/automation/workflow-studio/model";
 
 export const STEP_LIBRARY: Array<{
   type: DraftWorkflowStep["type"];
@@ -17,6 +18,46 @@ export const STEP_LIBRARY: Array<{
     type: "create_runtime_record",
     label: "Create record",
     description: "Create a new runtime record.",
+  },
+  {
+    type: "update_runtime_record",
+    label: "Update record",
+    description: "Update an existing runtime record.",
+  },
+  {
+    type: "delete_runtime_record",
+    label: "Delete record",
+    description: "Delete an existing runtime record.",
+  },
+  {
+    type: "send_email",
+    label: "Send email",
+    description: "Send an outbound email notification.",
+  },
+  {
+    type: "http_request",
+    label: "HTTP request",
+    description: "Call an external HTTP endpoint.",
+  },
+  {
+    type: "webhook",
+    label: "Webhook",
+    description: "Dispatch an outbound webhook event.",
+  },
+  {
+    type: "assign_owner",
+    label: "Assign owner",
+    description: "Route a record to an owner or queue.",
+  },
+  {
+    type: "approval_request",
+    label: "Approval request",
+    description: "Create a native approval request.",
+  },
+  {
+    type: "delay",
+    label: "Delay",
+    description: "Pause workflow execution for a bounded duration.",
   },
   {
     type: "condition",
@@ -88,7 +129,7 @@ export const FLOW_TEMPLATES: Array<{
   {
     id: "webhook_trigger",
     label: "Webhook Event Trigger",
-    description: "Starts when a webhook_event runtime record is created.",
+    description: "Starts when the native workflow webhook ingress receives a matching key.",
     category: "trigger",
     keywords: ["trigger", "webhook", "event", "start"],
     target: "trigger",
@@ -96,7 +137,7 @@ export const FLOW_TEMPLATES: Array<{
   {
     id: "inbound_email_trigger",
     label: "Inbound Email Trigger",
-    description: "Starts when an inbound_email runtime record is captured.",
+    description: "Starts when the native workflow email ingress receives a matching mailbox key.",
     category: "trigger",
     keywords: ["trigger", "email", "inbound", "mailbox", "start"],
     target: "trigger",
@@ -104,7 +145,7 @@ export const FLOW_TEMPLATES: Array<{
   {
     id: "form_submission_trigger",
     label: "Form Submission Trigger",
-    description: "Starts when a form_submission runtime record is created.",
+    description: "Starts when the native workflow form ingress receives a matching key.",
     category: "trigger",
     keywords: ["trigger", "form", "submission", "event", "start"],
     target: "trigger",
@@ -128,7 +169,7 @@ export const FLOW_TEMPLATES: Array<{
   {
     id: "approval_requested_trigger",
     label: "Approval Requested Trigger",
-    description: "Starts when an approval_request runtime record is created.",
+    description: "Starts when the native workflow approval ingress receives a matching approval key.",
     category: "trigger",
     keywords: ["trigger", "approval", "review", "request", "start"],
     target: "trigger",
@@ -152,7 +193,7 @@ export const FLOW_TEMPLATES: Array<{
   {
     id: "http_request",
     label: "HTTP Request",
-    description: "Queue an outbound HTTP dispatch record for an integration worker.",
+    description: "Call an external HTTP endpoint with a typed request step.",
     category: "integration",
     keywords: ["http", "request", "api", "integration"],
     target: "step",
@@ -168,7 +209,7 @@ export const FLOW_TEMPLATES: Array<{
   {
     id: "delay_step",
     label: "Delay",
-    description: "Insert a wait/delay semantic step for downstream processing.",
+    description: "Pause workflow execution with a native delay step.",
     category: "integration",
     keywords: ["delay", "wait", "timer"],
     target: "step",
@@ -176,7 +217,7 @@ export const FLOW_TEMPLATES: Array<{
   {
     id: "send_email_notification",
     label: "Send Email Notification",
-    description: "Create an email_outbox record for downstream mail delivery.",
+    description: "Send an outbound email with native workflow delivery.",
     category: "integration",
     keywords: ["email", "notification", "message", "integration"],
     target: "step",
@@ -192,7 +233,7 @@ export const FLOW_TEMPLATES: Array<{
   {
     id: "dispatch_webhook",
     label: "Dispatch Webhook",
-    description: "Create a webhook_dispatch record for outbound webhook delivery.",
+    description: "Send an outbound webhook event with native workflow delivery.",
     category: "integration",
     keywords: ["webhook", "dispatch", "http", "integration"],
     target: "step",
@@ -224,7 +265,7 @@ export const FLOW_TEMPLATES: Array<{
   {
     id: "assign_record_owner",
     label: "Assign Record Owner",
-    description: "Create a record_assignment event for ownership routing.",
+    description: "Assign a record to an owner or queue with a native action.",
     category: "data",
     keywords: ["assign", "owner", "routing", "queue"],
     target: "step",
@@ -232,7 +273,7 @@ export const FLOW_TEMPLATES: Array<{
   {
     id: "create_approval_request",
     label: "Create Approval Request",
-    description: "Create an approval_request record for human approval flow.",
+    description: "Create a native approval request for a target record.",
     category: "data",
     keywords: ["approval", "review", "request", "workflow"],
     target: "step",
@@ -360,20 +401,20 @@ export function triggerTemplateConfig(templateId: FlowTemplateId): TriggerTempla
       };
     case "webhook_trigger":
       return {
-        triggerType: "runtime_record_created",
-        triggerEntityLogicalName: "webhook_event",
+        triggerType: "webhook_received",
+        triggerEntityLogicalName: "incoming_webhook",
         statusLabel: "Webhook Event",
       };
     case "inbound_email_trigger":
       return {
-        triggerType: "runtime_record_created",
-        triggerEntityLogicalName: "inbound_email",
+        triggerType: "inbound_email_received",
+        triggerEntityLogicalName: "support",
         statusLabel: "Inbound Email",
       };
     case "form_submission_trigger":
       return {
-        triggerType: "runtime_record_created",
-        triggerEntityLogicalName: "form_submission",
+        triggerType: "form_submitted",
+        triggerEntityLogicalName: "lead_capture",
         statusLabel: "Form Submission",
       };
     case "schedule_hourly_trigger":
@@ -390,9 +431,9 @@ export function triggerTemplateConfig(templateId: FlowTemplateId): TriggerTempla
       };
     case "approval_requested_trigger":
       return {
-        triggerType: "runtime_record_created",
-        triggerEntityLogicalName: "approval_request",
-        statusLabel: "Approval Requested",
+        triggerType: "approval_event_received",
+        triggerEntityLogicalName: "manager_signoff",
+        statusLabel: "Approval Event",
       };
     default:
       return null;
@@ -416,7 +457,107 @@ export function createDraftStep(
       id: createId(),
       type: "create_runtime_record",
       entityLogicalName: "task",
-      dataJson: JSON.stringify({ title: "Follow-up" }, null, 2),
+      dataFields: createDraftObjectFieldsFromValue({ title: "Follow-up" }),
+    };
+  }
+
+  if (stepType === "update_runtime_record") {
+    return {
+      id: createId(),
+      type: "update_runtime_record",
+      entityLogicalName: "task",
+      recordId: "{{trigger.payload.record_id}}",
+      dataFields: createDraftObjectFieldsFromValue({ status: "in_progress" }),
+    };
+  }
+
+  if (stepType === "delete_runtime_record") {
+    return {
+      id: createId(),
+      type: "delete_runtime_record",
+      entityLogicalName: "task",
+      recordId: "{{trigger.payload.record_id}}",
+    };
+  }
+
+  if (stepType === "send_email") {
+    return {
+      id: createId(),
+      type: "send_email",
+      to: "ops@example.com",
+      subject: "Workflow alert",
+      body: "Workflow {{run.id}} completed.",
+      htmlBody: "",
+    };
+  }
+
+  if (stepType === "http_request") {
+    const defaultBody = {
+      run_id: "{{run.id}}",
+      record_id: "{{trigger.payload.record_id}}",
+    };
+    return {
+      id: createId(),
+      type: "http_request",
+      method: "POST",
+      url: "https://api.example.com/hooks/workflow",
+      headersJson: JSON.stringify({ "content-type": "application/json" }, null, 2),
+      headerSecretRefsJson: JSON.stringify({}, null, 2),
+      bodyMode: "object",
+      bodyFields: createDraftObjectFieldsFromValue(defaultBody),
+      bodyArrayItems: [],
+      bodyScalarKind: "string",
+      bodyScalarValue: "",
+      bodyJson: JSON.stringify(defaultBody, null, 2),
+    };
+  }
+
+  if (stepType === "webhook") {
+    return {
+      id: createId(),
+      type: "webhook",
+      endpoint: "https://example.org/workflow-callback",
+      event: "workflow.completed",
+      headersJson: JSON.stringify({}, null, 2),
+      headerSecretRefsJson: JSON.stringify({}, null, 2),
+      payloadFields: createDraftObjectFieldsFromValue({
+        run_id: "{{run.id}}",
+        trigger_record_id: "{{trigger.payload.record_id}}",
+      }),
+    };
+  }
+
+  if (stepType === "assign_owner") {
+    return {
+      id: createId(),
+      type: "assign_owner",
+      entityLogicalName: "task",
+      recordId: "{{trigger.payload.record_id}}",
+      ownerId: "triage_queue",
+      reason: "workflow routing",
+    };
+  }
+
+  if (stepType === "approval_request") {
+    return {
+      id: createId(),
+      type: "approval_request",
+      entityLogicalName: "task",
+      recordId: "{{trigger.payload.record_id}}",
+      requestType: "record_change",
+      requestedBy: "{{trigger.payload.triggered_by}}",
+      approverId: "",
+      reason: "Please review this record change.",
+      payloadFields: createDraftObjectFieldsFromValue({ status: "pending_review" }),
+    };
+  }
+
+  if (stepType === "delay") {
+    return {
+      id: createId(),
+      type: "delay",
+      durationMs: "5000",
+      reason: "wait for downstream consistency",
     };
   }
 
@@ -425,7 +566,8 @@ export function createDraftStep(
     type: "condition",
     fieldPath: "status",
     operator: "equals",
-    valueJson: JSON.stringify("open"),
+    valueKind: "string",
+    valueText: "open",
     thenLabel: "Yes",
     elseLabel: "No",
     thenSteps: [
@@ -480,226 +622,179 @@ export function createTemplateStep(
         id: createId(),
         type: "create_runtime_record",
         entityLogicalName: "team_feed_event",
-        dataJson: JSON.stringify(
-          {
-            title: "Workflow update",
-            body: "Processed {{trigger.payload.record_id}} in run {{run.id}}",
-            visibility: "team",
-          },
-          null,
-          2,
-        ),
+        dataFields: createDraftObjectFieldsFromValue({
+          title: "Workflow update",
+          body: "Processed {{trigger.payload.record_id}} in run {{run.id}}",
+          visibility: "team",
+        }),
       };
     case "create_audit_entry":
       return {
         id: createId(),
         type: "create_runtime_record",
         entityLogicalName: "workflow_audit_log",
-        dataJson: JSON.stringify(
-          {
-            run_id: "{{run.id}}",
-            event: "workflow_step_completed",
-            source_record_id: "{{trigger.payload.record_id}}",
-          },
-          null,
-          2,
-        ),
+        dataFields: createDraftObjectFieldsFromValue({
+          run_id: "{{run.id}}",
+          event: "workflow_step_completed",
+          source_record_id: "{{trigger.payload.record_id}}",
+        }),
       };
     case "create_task":
       return {
         id: createId(),
         type: "create_runtime_record",
         entityLogicalName: "task",
-        dataJson: JSON.stringify({ title: "Follow-up", priority: "normal" }, null, 2),
+        dataFields: createDraftObjectFieldsFromValue({
+          title: "Follow-up",
+          priority: "normal",
+        }),
       };
     case "create_note":
       return {
         id: createId(),
         type: "create_runtime_record",
         entityLogicalName: "note",
-        dataJson: JSON.stringify({ title: "Activity Note", body: "auto generated" }, null, 2),
+        dataFields: createDraftObjectFieldsFromValue({
+          title: "Activity Note",
+          body: "auto generated",
+        }),
       };
     case "create_followup_task":
       return {
         id: createId(),
         type: "create_runtime_record",
         entityLogicalName: "task",
-        dataJson: JSON.stringify(
-          {
-            title: "Follow up on {{trigger.payload.record_id}}",
-            status: "open",
-            priority: "normal",
-            source: "workflow",
-          },
-          null,
-          2,
-        ),
+        dataFields: createDraftObjectFieldsFromValue({
+          title: "Follow up on {{trigger.payload.record_id}}",
+          status: "open",
+          priority: "normal",
+          source: "workflow",
+        }),
       };
     case "assign_record_owner":
       return {
         id: createId(),
-        type: "create_runtime_record",
-        entityLogicalName: "record_assignment",
-        dataJson: JSON.stringify(
-          {
-            source_record_id: "{{trigger.payload.record_id}}",
-            source_entity: "{{trigger.payload.entity_logical_name}}",
-            owner_id: "triage_queue",
-            reason: "auto routing",
-          },
-          null,
-          2,
-        ),
+        type: "assign_owner",
+        entityLogicalName: "{{trigger.payload.entity_logical_name}}",
+        recordId: "{{trigger.payload.record_id}}",
+        ownerId: "triage_queue",
+        reason: "auto routing",
       };
     case "create_approval_request":
       return {
         id: createId(),
-        type: "create_runtime_record",
-        entityLogicalName: "approval_request",
-        dataJson: JSON.stringify(
-          {
-            request_type: "record_change",
-            source_record_id: "{{trigger.payload.record_id}}",
-            requested_by: "{{trigger.payload.triggered_by}}",
-            status: "pending",
-          },
-          null,
-          2,
-        ),
+        type: "approval_request",
+        entityLogicalName: "{{trigger.payload.entity_logical_name}}",
+        recordId: "{{trigger.payload.record_id}}",
+        requestType: "record_change",
+        requestedBy: "{{trigger.payload.triggered_by}}",
+        approverId: "",
+        reason: "Review workflow-triggered change",
+        payloadFields: createDraftObjectFieldsFromValue({
+          trigger_record_id: "{{trigger.payload.record_id}}",
+        }),
       };
     case "create_incident_ticket":
       return {
         id: createId(),
         type: "create_runtime_record",
         entityLogicalName: "incident_ticket",
-        dataJson: JSON.stringify(
-          {
-            title: "Automation incident for {{trigger.payload.record_id}}",
-            severity: "medium",
-            source: "workflow",
-            status: "open",
-          },
-          null,
-          2,
-        ),
+        dataFields: createDraftObjectFieldsFromValue({
+          title: "Automation incident for {{trigger.payload.record_id}}",
+          severity: "medium",
+          source: "workflow",
+          status: "open",
+        }),
       };
     case "upsert_contact_profile":
       return {
         id: createId(),
         type: "create_runtime_record",
         entityLogicalName: "contact_upsert_queue",
-        dataJson: JSON.stringify(
-          {
-            external_id: "{{trigger.payload.record_id}}",
-            source: "workflow",
-            payload: {
-              email: "{{trigger.payload.email}}",
-              name: "{{trigger.payload.name}}",
-            },
+        dataFields: createDraftObjectFieldsFromValue({
+          external_id: "{{trigger.payload.record_id}}",
+          source: "workflow",
+          payload: {
+            email: "{{trigger.payload.email}}",
+            name: "{{trigger.payload.name}}",
           },
-          null,
-          2,
-        ),
+        }),
       };
     case "http_request":
+      const defaultBody = {
+        run_id: "{{run.id}}",
+        record_id: "{{trigger.payload.record_id}}",
+      };
       return {
         id: createId(),
-        type: "create_runtime_record",
-        entityLogicalName: "integration_http_request",
-        dataJson: JSON.stringify(
+        type: "http_request",
+        method: "POST",
+        url: "https://api.example.com/hooks/workflow",
+        headersJson: JSON.stringify(
           {
-            method: "POST",
-            url: "https://api.example.com/hooks/workflow",
-            headers: {
-              "content-type": "application/json",
-            },
-            body: {
-              run_id: "{{run.id}}",
-              record_id: "{{trigger.payload.record_id}}",
-            },
+            "content-type": "application/json",
           },
           null,
           2,
         ),
+        headerSecretRefsJson: JSON.stringify({}, null, 2),
+        bodyMode: "object",
+        bodyFields: createDraftObjectFieldsFromValue(defaultBody),
+        bodyArrayItems: [],
+        bodyScalarKind: "string",
+        bodyScalarValue: "",
+        bodyJson: JSON.stringify(defaultBody, null, 2),
       };
     case "transform_payload":
       return {
         id: createId(),
         type: "create_runtime_record",
         entityLogicalName: "integration_payload",
-        dataJson: JSON.stringify(
-          {
-            source: "trigger",
-            transformed: true,
-            mapping_version: "v1",
-          },
-          null,
-          2,
-        ),
+        dataFields: createDraftObjectFieldsFromValue({
+          source: "trigger",
+          transformed: true,
+          mapping_version: "v1",
+        }),
       };
     case "delay_step":
       return {
         id: createId(),
-        type: "create_runtime_record",
-        entityLogicalName: "workflow_delay_request",
-        dataJson: JSON.stringify(
-          {
-            duration: "PT5M",
-            reason: "downstream consistency wait",
-            run_id: "{{run.id}}",
-          },
-          null,
-          2,
-        ),
+        type: "delay",
+        durationMs: "300000",
+        reason: "downstream consistency wait",
       };
     case "send_email_notification":
       return {
         id: createId(),
-        type: "create_runtime_record",
-        entityLogicalName: "email_outbox",
-        dataJson: JSON.stringify(
-          {
-            to: "ops@example.com",
-            subject: "Workflow alert: {{trigger.payload.record_id}}",
-            body: "Flow {{run.id}} processed {{trigger.payload.record_id}}.",
-            channel: "email",
-          },
-          null,
-          2,
-        ),
+        type: "send_email",
+        to: "ops@example.com",
+        subject: "Workflow alert: {{trigger.payload.record_id}}",
+        body: "Flow {{run.id}} processed {{trigger.payload.record_id}}.",
+        htmlBody: "",
       };
     case "send_slack_notification":
       return {
         id: createId(),
         type: "create_runtime_record",
         entityLogicalName: "chat_notification",
-        dataJson: JSON.stringify(
-          {
-            provider: "slack",
-            channel: "#ops-alerts",
-            message: "Workflow {{run.id}} handled {{trigger.payload.record_id}}",
-          },
-          null,
-          2,
-        ),
+        dataFields: createDraftObjectFieldsFromValue({
+          provider: "slack",
+          channel: "#ops-alerts",
+          message: "Workflow {{run.id}} handled {{trigger.payload.record_id}}",
+        }),
       };
     case "dispatch_webhook":
       return {
         id: createId(),
-        type: "create_runtime_record",
-        entityLogicalName: "webhook_dispatch",
-        dataJson: JSON.stringify(
-          {
-            endpoint: "https://example.org/workflow-callback",
-            event: "workflow.completed",
-            payload: {
-              run_id: "{{run.id}}",
-              trigger_record_id: "{{trigger.payload.record_id}}",
-            },
-          },
-          null,
-          2,
-        ),
+        type: "webhook",
+        endpoint: "https://example.org/workflow-callback",
+        event: "workflow.completed",
+        headersJson: JSON.stringify({}, null, 2),
+        headerSecretRefsJson: JSON.stringify({}, null, 2),
+        payloadFields: createDraftObjectFieldsFromValue({
+          run_id: "{{run.id}}",
+          trigger_record_id: "{{trigger.payload.record_id}}",
+        }),
       };
     case "condition_exists":
       return {
@@ -707,7 +802,8 @@ export function createTemplateStep(
         type: "condition",
         fieldPath: "contact.email",
         operator: "exists",
-        valueJson: "null",
+        valueKind: "null",
+        valueText: "",
         thenLabel: "Found",
         elseLabel: "Missing",
         thenSteps: [
@@ -722,7 +818,7 @@ export function createTemplateStep(
             id: createId(),
             type: "create_runtime_record",
             entityLogicalName: "task",
-            dataJson: JSON.stringify({ title: "Collect missing email" }, null, 2),
+            dataFields: createDraftObjectFieldsFromValue({ title: "Collect missing email" }),
           },
         ],
       };
@@ -733,7 +829,8 @@ export function createTemplateStep(
         type: "condition",
         fieldPath: "status",
         operator: "equals",
-        valueJson: JSON.stringify("open"),
+        valueKind: "string",
+        valueText: "open",
         thenLabel: "Open",
         elseLabel: "Closed",
         thenSteps: [

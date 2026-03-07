@@ -8,6 +8,7 @@ impl PostgresMetadataRepository {
         data: Value,
         unique_values: Vec<UniqueFieldValue>,
         created_by_subject: &str,
+        workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<RuntimeRecord> {
         let generated_record_id = Uuid::new_v4();
         self.create_runtime_record_with_id_uuid_impl(
@@ -17,6 +18,7 @@ impl PostgresMetadataRepository {
             data,
             unique_values,
             created_by_subject,
+            workflow_event,
         )
         .await
     }
@@ -29,6 +31,7 @@ impl PostgresMetadataRepository {
         data: Value,
         unique_values: Vec<UniqueFieldValue>,
         created_by_subject: &str,
+        workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<RuntimeRecord> {
         let parsed_record_id = parse_runtime_record_uuid(record_id)?;
         self.create_runtime_record_with_id_uuid_impl(
@@ -38,6 +41,7 @@ impl PostgresMetadataRepository {
             data,
             unique_values,
             created_by_subject,
+            workflow_event,
         )
         .await
     }
@@ -50,6 +54,7 @@ impl PostgresMetadataRepository {
         data: Value,
         unique_values: Vec<UniqueFieldValue>,
         created_by_subject: &str,
+        workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<RuntimeRecord> {
         let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
 
@@ -90,6 +95,15 @@ impl PostgresMetadataRepository {
             &unique_values,
         )
         .await?;
+        let created_record_id = created.id.to_string();
+        enqueue_runtime_record_workflow_event(
+            &mut transaction,
+            tenant_id,
+            entity_logical_name,
+            created_record_id.as_str(),
+            workflow_event,
+        )
+        .await?;
 
         transaction.commit().await.map_err(|error| {
             AppError::Internal(format!(
@@ -108,6 +122,7 @@ impl PostgresMetadataRepository {
         record_id: &str,
         data: Value,
         unique_values: Vec<UniqueFieldValue>,
+        workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<RuntimeRecord> {
         let record_uuid = parse_runtime_record_uuid(record_id)?;
 
@@ -167,6 +182,14 @@ impl PostgresMetadataRepository {
             &unique_values,
         )
         .await?;
+        enqueue_runtime_record_workflow_event(
+            &mut transaction,
+            tenant_id,
+            entity_logical_name,
+            record_id,
+            workflow_event,
+        )
+        .await?;
 
         transaction.commit().await.map_err(|error| {
             AppError::Internal(format!(
@@ -177,4 +200,72 @@ impl PostgresMetadataRepository {
 
         runtime_record_from_row(updated)
     }
+}
+
+pub(super) async fn enqueue_runtime_record_workflow_event(
+    transaction: &mut sqlx::Transaction<'_, Postgres>,
+    tenant_id: TenantId,
+    entity_logical_name: &str,
+    record_id: &str,
+    workflow_event: Option<RuntimeRecordWorkflowEventInput>,
+) -> AppResult<()> {
+    let Some(workflow_event) = workflow_event else {
+        return Ok(());
+    };
+
+    let payload = normalized_runtime_record_workflow_payload(
+        workflow_event.payload,
+        entity_logical_name,
+        record_id,
+    );
+
+    sqlx::query(
+        r#"
+        INSERT INTO workflow_runtime_trigger_events (
+            tenant_id,
+            trigger_type,
+            entity_logical_name,
+            record_id,
+            emitted_by_subject,
+            payload,
+            status,
+            created_at,
+            updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, 'pending', now(), now())
+        "#,
+    )
+    .bind(tenant_id.as_uuid())
+    .bind(workflow_event.trigger.trigger_type())
+    .bind(entity_logical_name)
+    .bind(record_id)
+    .bind(workflow_event.emitted_by_subject)
+    .bind(payload)
+    .execute(&mut **transaction)
+    .await
+    .map_err(|error| {
+        AppError::Internal(format!(
+            "failed to enqueue runtime workflow event for entity '{}' record '{}' in tenant '{}': {error}",
+            entity_logical_name, record_id, tenant_id
+        ))
+    })?;
+
+    Ok(())
+}
+
+pub(super) fn normalized_runtime_record_workflow_payload(
+    mut payload: Value,
+    entity_logical_name: &str,
+    record_id: &str,
+) -> Value {
+    if let Some(payload_object) = payload.as_object_mut() {
+        payload_object.insert(
+            "entity_logical_name".to_owned(),
+            Value::String(entity_logical_name.to_owned()),
+        );
+        payload_object.insert("record_id".to_owned(), Value::String(record_id.to_owned()));
+        payload_object.insert("id".to_owned(), Value::String(record_id.to_owned()));
+    }
+
+    payload
 }

@@ -31,6 +31,63 @@ pub enum WorkflowStepDto {
         #[ts(type = "Record<string, unknown>")]
         data: Value,
     },
+    UpdateRuntimeRecord {
+        entity_logical_name: String,
+        record_id: String,
+        #[ts(type = "Record<string, unknown>")]
+        data: Value,
+    },
+    DeleteRuntimeRecord {
+        entity_logical_name: String,
+        record_id: String,
+    },
+    SendEmail {
+        to: String,
+        subject: String,
+        body: String,
+        html_body: Option<String>,
+    },
+    HttpRequest {
+        method: String,
+        url: String,
+        #[ts(type = "Record<string, string> | null")]
+        headers: Option<Value>,
+        #[ts(type = "Record<string, string> | null")]
+        header_secret_refs: Option<Value>,
+        #[ts(type = "unknown | null")]
+        body: Option<Value>,
+    },
+    Webhook {
+        endpoint: String,
+        event: String,
+        #[ts(type = "Record<string, string> | null")]
+        headers: Option<Value>,
+        #[ts(type = "Record<string, string> | null")]
+        header_secret_refs: Option<Value>,
+        #[ts(type = "Record<string, unknown>")]
+        payload: Value,
+    },
+    AssignOwner {
+        entity_logical_name: String,
+        record_id: String,
+        owner_id: String,
+        reason: Option<String>,
+    },
+    ApprovalRequest {
+        entity_logical_name: String,
+        record_id: String,
+        request_type: String,
+        requested_by: Option<String>,
+        approver_id: Option<String>,
+        reason: Option<String>,
+        #[ts(type = "Record<string, unknown> | null")]
+        payload: Option<Value>,
+    },
+    Delay {
+        #[ts(type = "number")]
+        duration_ms: u64,
+        reason: Option<String>,
+    },
     Condition {
         field_path: String,
         operator: WorkflowConditionOperatorDto,
@@ -55,13 +112,8 @@ pub struct SaveWorkflowRequest {
     pub description: Option<String>,
     pub trigger_type: String,
     pub trigger_entity_logical_name: Option<String>,
-    pub action_type: Option<String>,
-    pub action_entity_logical_name: Option<String>,
-    #[ts(type = "Record<string, unknown> | null")]
-    pub action_payload: Option<Value>,
-    pub steps: Option<Vec<WorkflowStepDto>>,
+    pub steps: Vec<WorkflowStepDto>,
     pub max_attempts: Option<u16>,
-    pub is_enabled: Option<bool>,
 }
 
 /// Incoming payload for manual workflow execution.
@@ -123,12 +175,10 @@ pub struct WorkflowResponse {
     pub description: Option<String>,
     pub trigger_type: String,
     pub trigger_entity_logical_name: Option<String>,
-    pub action_type: String,
-    pub action_entity_logical_name: Option<String>,
-    #[ts(type = "Record<string, unknown>")]
-    pub action_payload: Value,
     pub steps: Vec<WorkflowStepDto>,
     pub max_attempts: u16,
+    pub lifecycle_state: String,
+    pub published_version: Option<i32>,
     pub is_enabled: bool,
 }
 
@@ -141,6 +191,7 @@ pub struct WorkflowResponse {
 pub struct WorkflowRunResponse {
     pub run_id: String,
     pub workflow_logical_name: String,
+    pub workflow_version: i32,
     pub trigger_type: String,
     pub trigger_entity_logical_name: Option<String>,
     #[ts(type = "Record<string, unknown>")]

@@ -5,6 +5,22 @@ description: Workflow trigger and action behavior for runtime operations.
 
 Qryvanta workflows run from metadata definitions.
 A workflow starts from a trigger and executes action steps.
+Workflow definitions are stored and transported as one canonical step graph (`trigger` + `steps`), so the runtime, worker payloads, and maker editor all operate on the same structure.
+
+## Workflow Lifecycle
+
+- Saving from Maker now persists a draft workflow definition.
+- Publishing creates the next immutable workflow version and makes it active for dispatch and manual execution.
+- Disabling stops future dispatch without deleting the latest published version.
+- Workflow runs are pinned to the published version that created them, so queued jobs, replay, and step retry do not drift when drafts change.
+- Workspace publish now includes workflow selections alongside entities and apps, so release windows can validate and publish automation changes as one scope.
+
+## Workflow Access Control
+
+- `workflow.read` is required to view workflow definitions, run history, run attempts, and replay data.
+- `workflow.manage` is required to save drafts, publish, disable, execute manually, and retry failed steps.
+- Metadata field permissions no longer imply workflow access. Grant workflow permissions explicitly to maker or operator roles that manage automations.
+- Publishing or disabling workflows that contain outbound integration steps (`send_email`, `http_request`, `webhook`) now requires recent step-up verification in the active session.
 
 ## Trigger Types
 
@@ -13,6 +29,10 @@ A workflow starts from a trigger and executes action steps.
 - Runtime record updated
 - Runtime record deleted
 - Schedule tick
+- Webhook received
+- Form submitted
+- Inbound email received
+- Approval event received
 
 The workflow studio now ships trigger presets so makers can configure real event sources faster:
 
@@ -24,7 +44,7 @@ The workflow studio now ships trigger presets so makers can configure real event
 - Daily schedule tick
 - Approval requested
 
-These presets map to native runtime trigger types (`runtime_record_*` and `schedule_tick`) and execute directly through the workflow runtime.
+These presets map to native workflow trigger types (`runtime_record_*`, `schedule_tick`, `webhook_received`, `form_submitted`, `inbound_email_received`, and `approval_event_received`) and execute directly through the workflow runtime.
 
 Backend trigger coverage now includes:
 
@@ -32,10 +52,37 @@ Backend trigger coverage now includes:
 - `runtime_record_updated`
 - `runtime_record_deleted`
 - `schedule_tick`
+- `webhook_received`
+- `form_submitted`
+- `inbound_email_received`
+- `approval_event_received`
 
-`schedule_tick` can be dispatched through the protected API endpoint:
+`schedule_tick` now has a built-in worker scheduler for common UTC slot keys:
+
+- `hourly`
+- `daily`
+- `daily_utc_HHMM`
+- `weekday_utc_HHMM`
+
+The protected API endpoint remains available for manual replay, overrides, and custom schedulers:
 
 - `POST /api/workflows/triggers/schedule/dispatch`
+
+`webhook_received` now has a native ingress endpoint:
+
+- `POST /api/public/workflows/webhooks/{tenant_id}/{webhook_key}`
+
+`form_submitted` now has a native ingress endpoint:
+
+- `POST /api/public/workflows/forms/{tenant_id}/{form_key}`
+
+`inbound_email_received` now has a native ingress endpoint:
+
+- `POST /api/public/workflows/email/{tenant_id}/{mailbox_key}`
+
+`approval_event_received` now has a native ingress endpoint:
+
+- `POST /api/public/workflows/approvals/{tenant_id}/{approval_key}`
 
 ## Execution Modes
 
@@ -44,7 +91,10 @@ Backend trigger coverage now includes:
 
 Queued mode is recommended for isolated worker scaling.
 
-Manual, runtime record, and schedule triggers are available in both inline and queued execution modes.
+Manual and runtime record triggers are available in both inline and queued execution modes.
+Schedule triggers are native in queued mode through the worker scheduler loop, and can still be dispatched manually through the protected API in inline environments.
+
+Runtime record triggers now use a transactional outbox. Record create/update/delete writes persist the trigger event in the same database transaction as the record mutation, and the workflow runtime drains that outbox inline or through worker polling depending on execution mode.
 
 ## Failure Handling
 
@@ -59,7 +109,7 @@ The Maker automation canvas now includes workflow-authoring guardrails similar t
 
 - **Flow Checker** validates trigger and step configuration before save.
 - Validation issues are clickable and focus the trigger or step that needs fixing.
-- Save is blocked while checker errors are present, so invalid flow payloads do not get posted.
+- Save and publish are blocked while checker errors are present, so invalid flow payloads do not get posted.
 - **Duplicate Step** lets makers clone a selected action or condition subtree for faster authoring.
 - A low-code guidance strip highlights the next recommended action while you build.
 - The quick action picker (`A`) uses plain-language insertion targets to reduce routing confusion.
@@ -71,38 +121,63 @@ The Maker automation canvas now includes workflow-authoring guardrails similar t
 - Dynamic tokens selected in settings are shown as visual chips to separate mapped data from static text.
 - Action templates now include real operational patterns (notifications, webhook dispatch, ownership routing, approvals, incident tickets, feed updates, and audit entries).
 - Workflow builder now auto-loads entity metadata so trigger entity selection, action entity inputs, condition field paths, and trigger payload tokens can be selected from discovered entities and published fields.
-- Condition and data-mapping editors include compact field pickers so makers can click field paths and auto-insert tokenized JSON mappings instead of typing paths manually.
-- Create-record cards surface clickable mapped-field badges that jump focus to the mapped key in Data JSON for faster review and edits.
+- Record-create, record-update, webhook-payload, and approval-payload steps now use typed field-row editors instead of monolithic JSON object blobs for common payload authoring.
+- Condition steps now use typed value controls (`Text`, `Number`, `Boolean`, `Null`, `JSON`) instead of a raw JSON comparison input.
+- Condition and data-mapping editors include compact field pickers so makers can click field paths and auto-insert tokenized mappings instead of typing paths manually.
+- Create-record cards surface clickable mapped-field badges that jump focus to the mapped key in the payload editor for faster review and edits.
+- The test tab now builds sample trigger payloads with typed field rows and trigger-aware sample presets instead of requiring a raw payload JSON textarea.
+- Common object-shaped steps now show live JSON previews of the outbound or persisted payload so makers can inspect shape before saving or running a test.
+- HTTP request steps now support `No body`, typed object-body editing, typed array/scalar bodies, or raw JSON mode, so common outbound request payloads no longer require a monolithic JSON textarea.
 
 ### Real-use Action Templates
 
 The action catalog now includes business-ready templates inspired by enterprise flow builders:
 
 - **Notifications:** send email, send Slack/Teams-style chat notifications.
-- **Integrations:** HTTP request queue records and outbound webhook dispatch records.
+- **Integrations:** native HTTP request and webhook actions.
+- **Workflow Controls:** native delay steps for bounded in-worker pauses.
 - **Operations:** create audit entries and team feed updates.
-- **Data Ops:** follow-up tasks, ownership assignment, approval requests, incident tickets, contact upsert queue records.
+- **Data Ops:** record create/update/delete, ownership assignment, approval requests, incident tickets, contact upsert queue records.
 
-Each template is still represented as executable workflow steps (`log_message`, `create_runtime_record`, and `condition`) so runs remain fully traceable in the current execution engine.
+The canonical engine now supports native action steps for `send_email`, `http_request`, `webhook`, `update_runtime_record`, `delete_runtime_record`, `assign_owner`, `approval_request`, and `delay` alongside `log_message`, `create_runtime_record`, and `condition`, so common platform actions no longer need magic runtime entities in the workflow model.
 
 ### Runtime Execution Details
 
+- Draft workflows do not execute until published.
+- Manual execution uses the current published version, not the latest draft.
+- Step retry reuses the published version pinned to the original run.
 - Trigger dispatch now includes record context (`record_id`, `entity_logical_name`, and full record `data`) so action templates can use real event values.
+- Workflow-created runtime writes do not trigger additional workflows. This release keeps chaining disabled intentionally until native recursion guards and loop detection land.
 - Step payloads support runtime token interpolation for `{{trigger.*}}`, `{{trigger.payload.*}}`, `{{run.id}}`, `{{run.attempt}}`, and `{{now.iso}}`.
-- Interpolation runs before action execution, so queued integration-style records (email outbox, webhook dispatch, task routing, approvals) are persisted with resolved values.
+- Interpolation runs before action execution, so native outbound actions and runtime-record writes persist or dispatch resolved values.
 - Log-message actions are captured in per-step run traces for execution visibility.
 - Integration actions support real dispatch adapters with retry and idempotency semantics:
-  - `integration_http_request` -> outbound HTTP dispatch
-  - `webhook_dispatch` -> outbound webhook delivery
-  - `email_outbox` -> outbound email delivery
+  - `http_request` -> outbound HTTP dispatch
+  - `webhook` -> outbound webhook delivery
+  - `send_email` -> outbound email delivery
+- Inline credential-bearing outbound headers are blocked at publish time for `http_request` and `webhook` steps.
+- Use `header_secret_refs` for secret-backed outbound headers instead. Each entry maps a header name to a supported secret-manager reference such as `op://...`, `aws-sm://...`, `aws-ssm://...`, `vault://...`, or `gcp-sm://...`.
+- The workflow editor now includes typed secret-header presets for common outbound auth patterns (`Authorization`, `X-API-Key`, `Cookie`, and custom secret-backed headers) instead of requiring raw secret-header JSON for those paths.
+- Authorization presets now support `Raw`, `Bearer`, and `Basic` formatting for secret-backed headers, so the secret can store only the credential value instead of the whole header string.
+- The workflow editor now includes provider-aware secret-reference builders for those outbound auth headers (`op://`, `aws-sm://`, `aws-ssm://`, `vault://`, `gcp-sm://`), so makers can compose valid secret refs without hand-typing provider URI formats.
+- Native data actions support direct runtime writes and platform-side effects:
+  - `update_runtime_record` -> unchecked runtime record update
+  - `delete_runtime_record` -> unchecked runtime record delete
+  - `assign_owner` -> ownership routing record creation
+  - `approval_request` -> approval request record creation
+  - `delay` -> bounded in-worker pause step
 - Idempotency keys are derived from run and step path (`<run_id>:<step_path>`) so workflow retries do not duplicate external side effects when downstream providers honor idempotency headers.
 
 ## Observability and Reliability
 
 - Step traces include status, input/output payloads, error message, and execution duration.
+- Credential-bearing outbound headers are redacted from step traces before persistence.
+- Secret-backed outbound headers are resolved at dispatch time and their references are redacted from step traces before persistence.
 - Failed actions are retried up to workflow `max_attempts` and recorded in run attempt history.
 - Dead-lettered runs retain terminal error reason for operator triage.
 - External dispatch actions include workflow run and step headers for cross-system tracing (`Idempotency-Key`, run id, step path).
+- Maker typed authoring still keeps a raw JSON escape hatch for advanced nested custom payloads, but common object, array, and scalar HTTP request bodies are now typed in the canvas.
+- Provider-native signing flows are still not implemented in the editor; outbound credential presets currently map to secret-backed headers and generate secret-reference strings under the hood.
 
 ### Power-Automate Style Canvas
 

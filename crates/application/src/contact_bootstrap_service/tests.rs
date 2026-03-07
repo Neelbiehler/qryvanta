@@ -13,8 +13,9 @@ use qryvanta_domain::{
 };
 
 use crate::{
-    ContactBootstrapService, MetadataRepository, RecordListQuery, RuntimeRecordQuery,
-    TenantRepository, UniqueFieldValue,
+    ClaimedRuntimeRecordWorkflowEvent, ContactBootstrapService, MetadataRepository,
+    RecordListQuery, RuntimeRecordQuery, RuntimeRecordWorkflowEventInput, TenantRepository,
+    UniqueFieldValue,
 };
 
 struct FakeMetadataRepository {
@@ -568,6 +569,7 @@ impl MetadataRepository for FakeMetadataRepository {
         data: Value,
         _unique_values: Vec<UniqueFieldValue>,
         _created_by_subject: &str,
+        _workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<RuntimeRecord> {
         let generated_record_id = Uuid::new_v4().to_string();
         self.create_runtime_record_with_id(
@@ -577,6 +579,7 @@ impl MetadataRepository for FakeMetadataRepository {
             data,
             Vec::new(),
             "bootstrap",
+            None,
         )
         .await
     }
@@ -589,6 +592,7 @@ impl MetadataRepository for FakeMetadataRepository {
         data: Value,
         _unique_values: Vec<UniqueFieldValue>,
         _created_by_subject: &str,
+        _workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<RuntimeRecord> {
         let record = RuntimeRecord::new(record_id, entity_logical_name, data)?;
         self.runtime_records.lock().await.insert(
@@ -609,6 +613,7 @@ impl MetadataRepository for FakeMetadataRepository {
         _record_id: &str,
         _data: Value,
         _unique_values: Vec<UniqueFieldValue>,
+        _workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<RuntimeRecord> {
         Err(AppError::Internal(
             "update_runtime_record is not used in contact bootstrap tests".to_owned(),
@@ -656,12 +661,44 @@ impl MetadataRepository for FakeMetadataRepository {
         tenant_id: TenantId,
         entity_logical_name: &str,
         record_id: &str,
+        _workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<()> {
         self.runtime_records.lock().await.remove(&(
             tenant_id,
             entity_logical_name.to_owned(),
             record_id.to_owned(),
         ));
+        Ok(())
+    }
+
+    async fn claim_runtime_record_workflow_events(
+        &self,
+        _worker_id: &str,
+        _limit: usize,
+        _lease_seconds: u32,
+        _tenant_filter: Option<TenantId>,
+    ) -> AppResult<Vec<ClaimedRuntimeRecordWorkflowEvent>> {
+        Ok(Vec::new())
+    }
+
+    async fn complete_runtime_record_workflow_event(
+        &self,
+        _tenant_id: TenantId,
+        _event_id: &str,
+        _worker_id: &str,
+        _lease_token: &str,
+    ) -> AppResult<()> {
+        Ok(())
+    }
+
+    async fn release_runtime_record_workflow_event(
+        &self,
+        _tenant_id: TenantId,
+        _event_id: &str,
+        _worker_id: &str,
+        _lease_token: &str,
+        _error_message: &str,
+    ) -> AppResult<()> {
         Ok(())
     }
 

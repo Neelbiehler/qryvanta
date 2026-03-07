@@ -103,6 +103,7 @@ async fn runtime_record_unique_constraint_conflict() {
                 field_value_hash: "same".to_owned(),
             }],
             "alice",
+            None,
         )
         .await;
     assert!(first.is_ok());
@@ -117,6 +118,7 @@ async fn runtime_record_unique_constraint_conflict() {
                 field_value_hash: "same".to_owned(),
             }],
             "alice",
+            None,
         )
         .await;
     assert!(second.is_err());
@@ -128,12 +130,12 @@ async fn list_runtime_records_honors_offset_and_limit() {
     let tenant_id = TenantId::new();
 
     let first = repository
-        .create_runtime_record(tenant_id, "contact", json!({}), Vec::new(), "alice")
+        .create_runtime_record(tenant_id, "contact", json!({}), Vec::new(), "alice", None)
         .await;
     assert!(first.is_ok());
 
     let second = repository
-        .create_runtime_record(tenant_id, "contact", json!({}), Vec::new(), "alice")
+        .create_runtime_record(tenant_id, "contact", json!({}), Vec::new(), "alice", None)
         .await;
     assert!(second.is_ok());
 
@@ -186,6 +188,7 @@ async fn runtime_record_queries_do_not_leak_across_tenants() {
             json!({"name": "Alice"}),
             Vec::new(),
             "alice",
+            None,
         )
         .await;
     assert!(left_record.is_ok());
@@ -243,7 +246,12 @@ async fn runtime_record_queries_do_not_leak_across_tenants() {
     assert!(!right_exists.unwrap_or(true));
 
     let right_delete = repository
-        .delete_runtime_record(right_tenant, "contact", left_record.record_id().as_str())
+        .delete_runtime_record(
+            right_tenant,
+            "contact",
+            left_record.record_id().as_str(),
+            None,
+        )
         .await;
     assert!(matches!(right_delete, Err(AppError::NotFound(_))));
 }
@@ -260,7 +268,8 @@ async fn query_runtime_records_filters_and_paginates() {
                 "contact",
                 json!({"name": "Alice", "active": true}),
                 Vec::new(),
-                "alice"
+                "alice",
+                None,
             )
             .await
             .is_ok()
@@ -272,7 +281,8 @@ async fn query_runtime_records_filters_and_paginates() {
                 "contact",
                 json!({"name": "Bob", "active": false}),
                 Vec::new(),
-                "alice"
+                "alice",
+                None,
             )
             .await
             .is_ok()
@@ -284,7 +294,8 @@ async fn query_runtime_records_filters_and_paginates() {
                 "contact",
                 json!({"name": "Carol", "active": true}),
                 Vec::new(),
-                "alice"
+                "alice",
+                None,
             )
             .await
             .is_ok()
@@ -420,6 +431,7 @@ async fn query_runtime_records_supports_link_entity_alias_filters_and_where_grou
             json!({"name": "Alice"}),
             Vec::new(),
             "alice",
+            None,
         )
         .await;
     assert!(alice_contact.is_ok());
@@ -432,6 +444,7 @@ async fn query_runtime_records_supports_link_entity_alias_filters_and_where_grou
             json!({"name": "Bob"}),
             Vec::new(),
             "alice",
+            None,
         )
         .await;
     assert!(bob_contact.is_ok());
@@ -445,6 +458,7 @@ async fn query_runtime_records_supports_link_entity_alias_filters_and_where_grou
                 json!({"title": "Alpha", "owner_contact_id": alice_contact.record_id().as_str()}),
                 Vec::new(),
                 "alice",
+                None,
             )
             .await
             .is_ok()
@@ -457,6 +471,7 @@ async fn query_runtime_records_supports_link_entity_alias_filters_and_where_grou
                 json!({"title": "Beta", "owner_contact_id": bob_contact.record_id().as_str()}),
                 Vec::new(),
                 "alice",
+                None,
             )
             .await
             .is_ok()
@@ -596,6 +611,7 @@ async fn relation_reference_check_detects_incoming_reference() {
             json!({"name": "Alice"}),
             Vec::new(),
             "alice",
+            None,
         )
         .await;
     assert!(contact_record.is_ok());
@@ -608,6 +624,7 @@ async fn relation_reference_check_detects_incoming_reference() {
             json!({"owner_contact_id": contact_record.record_id().as_str()}),
             Vec::new(),
             "alice",
+            None,
         )
         .await;
     assert!(deal_record.is_ok());
@@ -731,6 +748,7 @@ async fn relation_reference_check_does_not_leak_across_tenants() {
             json!({"name": "Alice"}),
             Vec::new(),
             "alice",
+            None,
         )
         .await;
     assert!(left_contact_record.is_ok());
@@ -744,6 +762,7 @@ async fn relation_reference_check_does_not_leak_across_tenants() {
                 json!({"owner_contact_id": left_contact_record.record_id().as_str()}),
                 Vec::new(),
                 "alice",
+                None,
             )
             .await
             .is_ok()
@@ -767,6 +786,7 @@ async fn relation_reference_check_does_not_leak_across_tenants() {
                 json!({"owner_contact_id": left_contact_record.record_id().as_str()}),
                 Vec::new(),
                 "alice",
+                None,
             )
             .await
             .is_ok()

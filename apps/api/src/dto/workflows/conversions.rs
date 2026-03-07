@@ -4,10 +4,9 @@ use qryvanta_application::{
 };
 use qryvanta_core::AppError;
 use qryvanta_domain::{
-    WorkflowAction, WorkflowConditionOperator, WorkflowDefinition, WorkflowStep, WorkflowTrigger,
+    WorkflowConditionOperator, WorkflowDefinition, WorkflowLifecycleState, WorkflowStep,
+    WorkflowTrigger,
 };
-
-use serde_json::Value;
 
 use super::types::{
     SaveWorkflowRequest, WorkflowConditionOperatorDto, WorkflowResponse,
@@ -52,6 +51,36 @@ impl TryFrom<SaveWorkflowRequest> for qryvanta_application::SaveWorkflowInput {
                     )
                 })?,
             },
+            "webhook_received" => WorkflowTrigger::WebhookReceived {
+                webhook_key: value.trigger_entity_logical_name.ok_or_else(|| {
+                    AppError::Validation(
+                        "trigger_entity_logical_name is required for webhook_received".to_owned(),
+                    )
+                })?,
+            },
+            "form_submitted" => WorkflowTrigger::FormSubmitted {
+                form_key: value.trigger_entity_logical_name.ok_or_else(|| {
+                    AppError::Validation(
+                        "trigger_entity_logical_name is required for form_submitted".to_owned(),
+                    )
+                })?,
+            },
+            "inbound_email_received" => WorkflowTrigger::InboundEmailReceived {
+                mailbox_key: value.trigger_entity_logical_name.ok_or_else(|| {
+                    AppError::Validation(
+                        "trigger_entity_logical_name is required for inbound_email_received"
+                            .to_owned(),
+                    )
+                })?,
+            },
+            "approval_event_received" => WorkflowTrigger::ApprovalEventReceived {
+                approval_key: value.trigger_entity_logical_name.ok_or_else(|| {
+                    AppError::Validation(
+                        "trigger_entity_logical_name is required for approval_event_received"
+                            .to_owned(),
+                    )
+                })?,
+            },
             _ => {
                 return Err(AppError::Validation(format!(
                     "unknown workflow trigger_type '{}'",
@@ -60,42 +89,20 @@ impl TryFrom<SaveWorkflowRequest> for qryvanta_application::SaveWorkflowInput {
             }
         };
 
-        let steps = value.steps.map(|workflow_steps| {
-            workflow_steps
-                .into_iter()
-                .map(WorkflowStep::from)
-                .collect::<Vec<WorkflowStep>>()
-        });
-
-        let action = if let Some(action_type) = value.action_type {
-            workflow_action_from_transport(
-                action_type.as_str(),
-                value.action_entity_logical_name,
-                value.action_payload,
-            )?
-        } else {
-            let Some(first_action) = steps
-                .as_ref()
-                .and_then(|workflow_steps| first_action_from_steps(workflow_steps.as_slice()))
-            else {
-                return Err(AppError::Validation(
-                    "workflow requires either action_type/action_payload or executable steps"
-                        .to_owned(),
-                ));
-            };
-
-            first_action
-        };
+        let steps = value
+            .steps
+            .into_iter()
+            .map(WorkflowStep::from)
+            .collect::<Vec<WorkflowStep>>();
 
         Ok(qryvanta_application::SaveWorkflowInput {
             logical_name: value.logical_name,
             display_name: value.display_name,
             description: value.description,
             trigger,
-            action,
             steps,
             max_attempts: value.max_attempts.unwrap_or(3),
-            is_enabled: value.is_enabled.unwrap_or(true),
+            is_enabled: true,
         })
     }
 }
@@ -125,21 +132,19 @@ impl From<WorkflowDefinition> for WorkflowResponse {
             WorkflowTrigger::ScheduleTick { schedule_key } => {
                 ("schedule_tick".to_owned(), Some(schedule_key.clone()))
             }
-        };
-
-        let (action_type, action_entity_logical_name, action_payload) = match value.action() {
-            WorkflowAction::LogMessage { message } => (
-                "log_message".to_owned(),
-                None,
-                serde_json::json!({"message": message}),
+            WorkflowTrigger::WebhookReceived { webhook_key } => {
+                ("webhook_received".to_owned(), Some(webhook_key.clone()))
+            }
+            WorkflowTrigger::FormSubmitted { form_key } => {
+                ("form_submitted".to_owned(), Some(form_key.clone()))
+            }
+            WorkflowTrigger::InboundEmailReceived { mailbox_key } => (
+                "inbound_email_received".to_owned(),
+                Some(mailbox_key.clone()),
             ),
-            WorkflowAction::CreateRuntimeRecord {
-                entity_logical_name,
-                data,
-            } => (
-                "create_runtime_record".to_owned(),
-                Some(entity_logical_name.clone()),
-                data.clone(),
+            WorkflowTrigger::ApprovalEventReceived { approval_key } => (
+                "approval_event_received".to_owned(),
+                Some(approval_key.clone()),
             ),
         };
 
@@ -149,15 +154,15 @@ impl From<WorkflowDefinition> for WorkflowResponse {
             description: value.description().map(ToOwned::to_owned),
             trigger_type,
             trigger_entity_logical_name,
-            action_type,
-            action_entity_logical_name,
-            action_payload,
             steps: value
-                .effective_steps()
-                .into_iter()
+                .steps()
+                .iter()
+                .cloned()
                 .map(WorkflowStepDto::from)
                 .collect(),
             max_attempts: value.max_attempts(),
+            lifecycle_state: workflow_lifecycle_state_str(value.lifecycle_state()).to_owned(),
+            published_version: value.published_version(),
             is_enabled: value.is_enabled(),
         }
     }
@@ -168,6 +173,7 @@ impl From<WorkflowRun> for WorkflowRunResponse {
         Self {
             run_id: value.run_id,
             workflow_logical_name: value.workflow_logical_name,
+            workflow_version: value.workflow_version,
             trigger_type: value.trigger_type,
             trigger_entity_logical_name: value.trigger_entity_logical_name,
             trigger_payload: value.trigger_payload,
@@ -177,6 +183,14 @@ impl From<WorkflowRun> for WorkflowRunResponse {
             started_at: value.started_at.to_rfc3339(),
             finished_at: value.finished_at.map(|timestamp| timestamp.to_rfc3339()),
         }
+    }
+}
+
+fn workflow_lifecycle_state_str(state: WorkflowLifecycleState) -> &'static str {
+    match state {
+        WorkflowLifecycleState::Draft => "draft",
+        WorkflowLifecycleState::Published => "published",
+        WorkflowLifecycleState::Disabled => "disabled",
     }
 }
 
@@ -279,6 +293,94 @@ impl From<WorkflowStepDto> for WorkflowStep {
                 entity_logical_name,
                 data,
             },
+            WorkflowStepDto::UpdateRuntimeRecord {
+                entity_logical_name,
+                record_id,
+                data,
+            } => Self::UpdateRuntimeRecord {
+                entity_logical_name,
+                record_id,
+                data,
+            },
+            WorkflowStepDto::DeleteRuntimeRecord {
+                entity_logical_name,
+                record_id,
+            } => Self::DeleteRuntimeRecord {
+                entity_logical_name,
+                record_id,
+            },
+            WorkflowStepDto::SendEmail {
+                to,
+                subject,
+                body,
+                html_body,
+            } => Self::SendEmail {
+                to,
+                subject,
+                body,
+                html_body,
+            },
+            WorkflowStepDto::HttpRequest {
+                method,
+                url,
+                headers,
+                header_secret_refs,
+                body,
+            } => Self::HttpRequest {
+                method,
+                url,
+                headers,
+                header_secret_refs,
+                body,
+            },
+            WorkflowStepDto::Webhook {
+                endpoint,
+                event,
+                headers,
+                header_secret_refs,
+                payload,
+            } => Self::Webhook {
+                endpoint,
+                event,
+                headers,
+                header_secret_refs,
+                payload,
+            },
+            WorkflowStepDto::AssignOwner {
+                entity_logical_name,
+                record_id,
+                owner_id,
+                reason,
+            } => Self::AssignOwner {
+                entity_logical_name,
+                record_id,
+                owner_id,
+                reason,
+            },
+            WorkflowStepDto::ApprovalRequest {
+                entity_logical_name,
+                record_id,
+                request_type,
+                requested_by,
+                approver_id,
+                reason,
+                payload,
+            } => Self::ApprovalRequest {
+                entity_logical_name,
+                record_id,
+                request_type,
+                requested_by,
+                approver_id,
+                reason,
+                payload,
+            },
+            WorkflowStepDto::Delay {
+                duration_ms,
+                reason,
+            } => Self::Delay {
+                duration_ms,
+                reason,
+            },
             WorkflowStepDto::Condition {
                 field_path,
                 operator,
@@ -311,6 +413,94 @@ impl From<WorkflowStep> for WorkflowStepDto {
                 entity_logical_name,
                 data,
             },
+            WorkflowStep::UpdateRuntimeRecord {
+                entity_logical_name,
+                record_id,
+                data,
+            } => Self::UpdateRuntimeRecord {
+                entity_logical_name,
+                record_id,
+                data,
+            },
+            WorkflowStep::DeleteRuntimeRecord {
+                entity_logical_name,
+                record_id,
+            } => Self::DeleteRuntimeRecord {
+                entity_logical_name,
+                record_id,
+            },
+            WorkflowStep::SendEmail {
+                to,
+                subject,
+                body,
+                html_body,
+            } => Self::SendEmail {
+                to,
+                subject,
+                body,
+                html_body,
+            },
+            WorkflowStep::HttpRequest {
+                method,
+                url,
+                headers,
+                header_secret_refs,
+                body,
+            } => Self::HttpRequest {
+                method,
+                url,
+                headers,
+                header_secret_refs,
+                body,
+            },
+            WorkflowStep::Webhook {
+                endpoint,
+                event,
+                headers,
+                header_secret_refs,
+                payload,
+            } => Self::Webhook {
+                endpoint,
+                event,
+                headers,
+                header_secret_refs,
+                payload,
+            },
+            WorkflowStep::AssignOwner {
+                entity_logical_name,
+                record_id,
+                owner_id,
+                reason,
+            } => Self::AssignOwner {
+                entity_logical_name,
+                record_id,
+                owner_id,
+                reason,
+            },
+            WorkflowStep::ApprovalRequest {
+                entity_logical_name,
+                record_id,
+                request_type,
+                requested_by,
+                approver_id,
+                reason,
+                payload,
+            } => Self::ApprovalRequest {
+                entity_logical_name,
+                record_id,
+                request_type,
+                requested_by,
+                approver_id,
+                reason,
+                payload,
+            },
+            WorkflowStep::Delay {
+                duration_ms,
+                reason,
+            } => Self::Delay {
+                duration_ms,
+                reason,
+            },
             WorkflowStep::Condition {
                 field_path,
                 operator,
@@ -330,77 +520,4 @@ impl From<WorkflowStep> for WorkflowStepDto {
             },
         }
     }
-}
-
-fn workflow_action_from_transport(
-    action_type: &str,
-    action_entity_logical_name: Option<String>,
-    action_payload: Option<Value>,
-) -> Result<WorkflowAction, AppError> {
-    match action_type {
-        "log_message" => {
-            let message = action_payload
-                .as_ref()
-                .and_then(Value::as_object)
-                .and_then(|payload| payload.get("message"))
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    AppError::Validation(
-                        "log_message action_payload must include string field 'message'".to_owned(),
-                    )
-                })?;
-
-            Ok(WorkflowAction::LogMessage {
-                message: message.to_owned(),
-            })
-        }
-        "create_runtime_record" => Ok(WorkflowAction::CreateRuntimeRecord {
-            entity_logical_name: action_entity_logical_name.ok_or_else(|| {
-                AppError::Validation(
-                    "action_entity_logical_name is required for create_runtime_record".to_owned(),
-                )
-            })?,
-            data: action_payload.unwrap_or_else(|| serde_json::json!({})),
-        }),
-        _ => Err(AppError::Validation(format!(
-            "unknown workflow action_type '{}'",
-            action_type
-        ))),
-    }
-}
-
-fn first_action_from_steps(steps: &[WorkflowStep]) -> Option<WorkflowAction> {
-    for step in steps {
-        match step {
-            WorkflowStep::LogMessage { message } => {
-                return Some(WorkflowAction::LogMessage {
-                    message: message.clone(),
-                });
-            }
-            WorkflowStep::CreateRuntimeRecord {
-                entity_logical_name,
-                data,
-            } => {
-                return Some(WorkflowAction::CreateRuntimeRecord {
-                    entity_logical_name: entity_logical_name.clone(),
-                    data: data.clone(),
-                });
-            }
-            WorkflowStep::Condition {
-                then_steps,
-                else_steps,
-                ..
-            } => {
-                if let Some(action) = first_action_from_steps(then_steps.as_slice()) {
-                    return Some(action);
-                }
-
-                if let Some(action) = first_action_from_steps(else_steps.as_slice()) {
-                    return Some(action);
-                }
-            }
-        }
-    }
-
-    None
 }

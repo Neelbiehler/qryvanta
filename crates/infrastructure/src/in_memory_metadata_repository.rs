@@ -2,9 +2,11 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use qryvanta_application::{
-    MetadataRepository, RecordListQuery, RuntimeRecordConditionGroup, RuntimeRecordConditionNode,
-    RuntimeRecordFilter, RuntimeRecordJoinType, RuntimeRecordLogicalMode, RuntimeRecordOperator,
-    RuntimeRecordQuery, RuntimeRecordSort, RuntimeRecordSortDirection, UniqueFieldValue,
+    ClaimedRuntimeRecordWorkflowEvent, MetadataRepository, RecordListQuery,
+    RuntimeRecordConditionGroup, RuntimeRecordConditionNode, RuntimeRecordFilter,
+    RuntimeRecordJoinType, RuntimeRecordLogicalMode, RuntimeRecordOperator, RuntimeRecordQuery,
+    RuntimeRecordSort, RuntimeRecordSortDirection, RuntimeRecordWorkflowEventInput,
+    UniqueFieldValue,
 };
 use qryvanta_core::TenantId;
 use qryvanta_core::{AppError, AppResult};
@@ -31,6 +33,7 @@ pub struct InMemoryMetadataRepository {
     runtime_records: RwLock<HashMap<(TenantId, String, String), RuntimeRecord>>,
     record_owners: RwLock<HashMap<(TenantId, String, String), String>>,
     unique_values: RwLock<HashMap<(TenantId, String, String, String), String>>,
+    runtime_workflow_events: RwLock<HashMap<String, InMemoryRuntimeWorkflowEvent>>,
 }
 
 impl InMemoryMetadataRepository {
@@ -50,8 +53,30 @@ impl InMemoryMetadataRepository {
             runtime_records: RwLock::new(HashMap::new()),
             record_owners: RwLock::new(HashMap::new()),
             unique_values: RwLock::new(HashMap::new()),
+            runtime_workflow_events: RwLock::new(HashMap::new()),
         }
     }
+}
+
+#[derive(Debug, Clone)]
+struct InMemoryRuntimeWorkflowEvent {
+    event_id: String,
+    tenant_id: TenantId,
+    trigger: qryvanta_domain::WorkflowTrigger,
+    record_id: String,
+    payload: Value,
+    emitted_by_subject: String,
+    status: InMemoryRuntimeWorkflowEventStatus,
+    leased_by: Option<String>,
+    lease_token: Option<String>,
+    attempt_count: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InMemoryRuntimeWorkflowEventStatus {
+    Pending,
+    Leased,
+    Completed,
 }
 
 mod components;
@@ -343,6 +368,7 @@ impl MetadataRepository for InMemoryMetadataRepository {
         data: Value,
         unique_values: Vec<UniqueFieldValue>,
         created_by_subject: &str,
+        workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<RuntimeRecord> {
         self.create_runtime_record_impl(
             tenant_id,
@@ -350,6 +376,7 @@ impl MetadataRepository for InMemoryMetadataRepository {
             data,
             unique_values,
             created_by_subject,
+            workflow_event,
         )
         .await
     }
@@ -362,6 +389,7 @@ impl MetadataRepository for InMemoryMetadataRepository {
         data: Value,
         unique_values: Vec<UniqueFieldValue>,
         created_by_subject: &str,
+        workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<RuntimeRecord> {
         self.create_runtime_record_with_id_impl(
             tenant_id,
@@ -370,6 +398,7 @@ impl MetadataRepository for InMemoryMetadataRepository {
             data,
             unique_values,
             created_by_subject,
+            workflow_event,
         )
         .await
     }
@@ -381,6 +410,7 @@ impl MetadataRepository for InMemoryMetadataRepository {
         record_id: &str,
         data: Value,
         unique_values: Vec<UniqueFieldValue>,
+        workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<RuntimeRecord> {
         self.update_runtime_record_impl(
             tenant_id,
@@ -388,6 +418,7 @@ impl MetadataRepository for InMemoryMetadataRepository {
             record_id,
             data,
             unique_values,
+            workflow_event,
         )
         .await
     }
@@ -427,9 +458,60 @@ impl MetadataRepository for InMemoryMetadataRepository {
         tenant_id: TenantId,
         entity_logical_name: &str,
         record_id: &str,
+        workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<()> {
-        self.delete_runtime_record_impl(tenant_id, entity_logical_name, record_id)
+        self.delete_runtime_record_impl(tenant_id, entity_logical_name, record_id, workflow_event)
             .await
+    }
+
+    async fn claim_runtime_record_workflow_events(
+        &self,
+        worker_id: &str,
+        limit: usize,
+        lease_seconds: u32,
+        tenant_filter: Option<TenantId>,
+    ) -> AppResult<Vec<ClaimedRuntimeRecordWorkflowEvent>> {
+        self.claim_runtime_record_workflow_events_impl(
+            worker_id,
+            limit,
+            lease_seconds,
+            tenant_filter,
+        )
+        .await
+    }
+
+    async fn complete_runtime_record_workflow_event(
+        &self,
+        tenant_id: TenantId,
+        event_id: &str,
+        worker_id: &str,
+        lease_token: &str,
+    ) -> AppResult<()> {
+        self.complete_runtime_record_workflow_event_impl(
+            tenant_id,
+            event_id,
+            worker_id,
+            lease_token,
+        )
+        .await
+    }
+
+    async fn release_runtime_record_workflow_event(
+        &self,
+        tenant_id: TenantId,
+        event_id: &str,
+        worker_id: &str,
+        lease_token: &str,
+        error_message: &str,
+    ) -> AppResult<()> {
+        self.release_runtime_record_workflow_event_impl(
+            tenant_id,
+            event_id,
+            worker_id,
+            lease_token,
+            error_message,
+        )
+        .await
     }
 
     async fn runtime_record_exists(

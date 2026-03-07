@@ -7,6 +7,8 @@ use super::execution::{
     WorkflowQueueStats, WorkflowQueueStatsQuery, WorkflowRun, WorkflowRunAttempt,
     WorkflowRunListQuery, WorkflowWorkerHeartbeatInput,
 };
+use super::schedule::{ClaimedWorkflowScheduleTick, WorkflowScheduledTrigger};
+use chrono::{DateTime, Utc};
 
 /// Repository port for workflow definitions and execution history.
 #[async_trait]
@@ -28,12 +30,80 @@ pub trait WorkflowRepository: Send + Sync {
         logical_name: &str,
     ) -> AppResult<Option<WorkflowDefinition>>;
 
+    /// Returns the active published workflow snapshot by logical name.
+    async fn find_published_workflow(
+        &self,
+        tenant_id: TenantId,
+        logical_name: &str,
+    ) -> AppResult<Option<WorkflowDefinition>>;
+
+    /// Returns one immutable published workflow snapshot by logical name and version.
+    async fn find_published_workflow_version(
+        &self,
+        tenant_id: TenantId,
+        logical_name: &str,
+        version: i32,
+    ) -> AppResult<Option<WorkflowDefinition>>;
+
+    /// Publishes the current draft workflow as the next immutable version.
+    async fn publish_workflow(
+        &self,
+        tenant_id: TenantId,
+        logical_name: &str,
+        published_by: &str,
+    ) -> AppResult<WorkflowDefinition>;
+
+    /// Disables the currently published workflow without changing the draft.
+    async fn disable_workflow(
+        &self,
+        tenant_id: TenantId,
+        logical_name: &str,
+    ) -> AppResult<WorkflowDefinition>;
+
     /// Lists enabled workflows matching a trigger shape.
     async fn list_enabled_workflows_for_trigger(
         &self,
         tenant_id: TenantId,
         trigger: &WorkflowTrigger,
     ) -> AppResult<Vec<WorkflowDefinition>>;
+
+    /// Lists distinct enabled schedule trigger sources across tenant scope.
+    async fn list_enabled_schedule_triggers(
+        &self,
+        tenant_filter: Option<TenantId>,
+    ) -> AppResult<Vec<WorkflowScheduledTrigger>>;
+
+    /// Claims one persisted schedule tick slot when pending or expired.
+    async fn claim_schedule_tick(
+        &self,
+        tenant_id: TenantId,
+        schedule_key: &str,
+        slot_key: &str,
+        scheduled_for: DateTime<Utc>,
+        worker_id: &str,
+        lease_seconds: u32,
+    ) -> AppResult<Option<ClaimedWorkflowScheduleTick>>;
+
+    /// Marks one leased schedule tick as completed.
+    async fn complete_schedule_tick(
+        &self,
+        tenant_id: TenantId,
+        schedule_key: &str,
+        slot_key: &str,
+        worker_id: &str,
+        lease_token: &str,
+    ) -> AppResult<()>;
+
+    /// Releases one leased schedule tick back to pending.
+    async fn release_schedule_tick(
+        &self,
+        tenant_id: TenantId,
+        schedule_key: &str,
+        slot_key: &str,
+        worker_id: &str,
+        lease_token: &str,
+        error_message: &str,
+    ) -> AppResult<()>;
 
     /// Creates a new workflow run record in running state.
     async fn create_run(

@@ -51,6 +51,7 @@ impl ContactBootstrapService {
                 payload,
                 Vec::new(),
                 subject,
+                None,
             )
             .await?;
 

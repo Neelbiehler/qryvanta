@@ -9,11 +9,17 @@ struct PublishRunAuditDetail {
     requested_entities: usize,
     requested_apps: usize,
     #[serde(default)]
+    requested_workflows: usize,
+    #[serde(default)]
     requested_entity_logical_names: Vec<String>,
     #[serde(default)]
     requested_app_logical_names: Vec<String>,
+    #[serde(default)]
+    requested_workflow_logical_names: Vec<String>,
     published_entities: Vec<String>,
     validated_apps: Vec<String>,
+    #[serde(default)]
+    published_workflows: Vec<String>,
     issue_count: usize,
     is_publishable: bool,
 }
@@ -37,6 +43,7 @@ pub(super) fn map_workspace_publish_history_entries(
             subject: entry.subject,
             requested_entities: detail.requested_entities,
             requested_apps: detail.requested_apps,
+            requested_workflows: detail.requested_workflows,
             requested_entity_logical_names: if detail.requested_entity_logical_names.is_empty() {
                 detail.published_entities.clone()
             } else {
@@ -47,8 +54,15 @@ pub(super) fn map_workspace_publish_history_entries(
             } else {
                 detail.requested_app_logical_names
             },
+            requested_workflow_logical_names: if detail.requested_workflow_logical_names.is_empty()
+            {
+                detail.published_workflows.clone()
+            } else {
+                detail.requested_workflow_logical_names
+            },
             published_entities: detail.published_entities,
             validated_apps: detail.validated_apps,
+            published_workflows: detail.published_workflows,
             issue_count: detail.issue_count,
             is_publishable: detail.is_publishable,
         });

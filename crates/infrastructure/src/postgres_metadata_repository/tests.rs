@@ -1,7 +1,7 @@
 use qryvanta_application::{
     MetadataRepository, RecordListQuery, RuntimeRecordConditionGroup, RuntimeRecordConditionNode,
     RuntimeRecordFilter, RuntimeRecordJoinType, RuntimeRecordLink, RuntimeRecordLogicalMode,
-    RuntimeRecordOperator, RuntimeRecordQuery,
+    RuntimeRecordOperator, RuntimeRecordQuery, RuntimeRecordWorkflowEventInput,
 };
 use qryvanta_core::{AppError, TenantId};
 use qryvanta_domain::{
@@ -181,6 +181,7 @@ async fn runtime_record_queries_are_tenant_scoped() {
             json!({"name": "Alice"}),
             Vec::new(),
             "alice",
+            None,
         )
         .await;
     assert!(left_record.is_ok());
@@ -238,7 +239,12 @@ async fn runtime_record_queries_are_tenant_scoped() {
     assert!(!right_exists.unwrap_or(true));
 
     let right_delete = repository
-        .delete_runtime_record(right_tenant, "contact", left_record.record_id().as_str())
+        .delete_runtime_record(
+            right_tenant,
+            "contact",
+            left_record.record_id().as_str(),
+            None,
+        )
         .await;
     assert!(matches!(right_delete, Err(AppError::NotFound(_))));
 }
@@ -320,6 +326,104 @@ async fn metadata_components_are_tenant_scoped() {
 }
 
 #[tokio::test]
+async fn runtime_record_workflow_events_can_be_released_reclaimed_and_completed() {
+    let Some(pool) = test_pool().await else {
+        return;
+    };
+
+    let repository = PostgresMetadataRepository::new(pool.clone());
+    let tenant_id = TenantId::new();
+    ensure_tenant(&pool, tenant_id, "Runtime Workflow Events Tenant").await;
+
+    let entity = EntityDefinition::new("contact", "Contact").unwrap_or_else(|_| unreachable!());
+    assert!(repository.save_entity(tenant_id, entity).await.is_ok());
+
+    let created = repository
+        .create_runtime_record(
+            tenant_id,
+            "contact",
+            json!({"name": "Alice"}),
+            Vec::new(),
+            "alice",
+            Some(RuntimeRecordWorkflowEventInput {
+                trigger: qryvanta_domain::WorkflowTrigger::RuntimeRecordCreated {
+                    entity_logical_name: "contact".to_owned(),
+                },
+                record_id: "pending".to_owned(),
+                payload: json!({
+                    "name": "Alice",
+                    "event": "created"
+                }),
+                emitted_by_subject: "alice".to_owned(),
+            }),
+        )
+        .await
+        .unwrap_or_else(|_| unreachable!());
+
+    let first_claim = repository
+        .claim_runtime_record_workflow_events("worker-1", 10, 60, Some(tenant_id))
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    assert_eq!(first_claim.len(), 1);
+    assert_eq!(
+        first_claim[0].trigger,
+        qryvanta_domain::WorkflowTrigger::RuntimeRecordCreated {
+            entity_logical_name: "contact".to_owned(),
+        }
+    );
+    assert_eq!(first_claim[0].record_id, created.record_id().as_str());
+
+    assert!(
+        repository
+            .release_runtime_record_workflow_event(
+                tenant_id,
+                first_claim[0].event_id.as_str(),
+                "worker-1",
+                first_claim[0].lease_token.as_str(),
+                "transient failure",
+            )
+            .await
+            .is_ok()
+    );
+
+    let second_claim = repository
+        .claim_runtime_record_workflow_events("worker-2", 10, 60, Some(tenant_id))
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    assert_eq!(second_claim.len(), 1);
+    assert_eq!(second_claim[0].event_id, first_claim[0].event_id);
+    assert_ne!(second_claim[0].lease_token, first_claim[0].lease_token);
+
+    let stale_complete = repository
+        .complete_runtime_record_workflow_event(
+            tenant_id,
+            first_claim[0].event_id.as_str(),
+            "worker-1",
+            first_claim[0].lease_token.as_str(),
+        )
+        .await;
+    assert!(matches!(stale_complete, Err(AppError::Conflict(_))));
+
+    assert!(
+        repository
+            .complete_runtime_record_workflow_event(
+                tenant_id,
+                second_claim[0].event_id.as_str(),
+                "worker-2",
+                second_claim[0].lease_token.as_str(),
+            )
+            .await
+            .is_ok()
+    );
+
+    let final_claim = repository
+        .claim_runtime_record_workflow_events("worker-3", 10, 60, Some(tenant_id))
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    assert!(final_claim.is_empty());
+}
+
+#[tokio::test]
 async fn query_runtime_records_filters_and_paginates() {
     let Some(pool) = test_pool().await else {
         return;
@@ -346,6 +450,7 @@ async fn query_runtime_records_filters_and_paginates() {
                 json!({"name": "Alice", "active": true}),
                 Vec::new(),
                 "alice",
+                None,
             )
             .await
             .is_ok()
@@ -358,6 +463,7 @@ async fn query_runtime_records_filters_and_paginates() {
                 json!({"name": "Bob", "active": false}),
                 Vec::new(),
                 "alice",
+                None,
             )
             .await
             .is_ok()
@@ -370,6 +476,7 @@ async fn query_runtime_records_filters_and_paginates() {
                 json!({"name": "Carol", "active": true}),
                 Vec::new(),
                 "alice",
+                None,
             )
             .await
             .is_ok()
@@ -510,6 +617,7 @@ async fn query_runtime_records_supports_link_entity_alias_filters_and_where_grou
             json!({"name": "Alice"}),
             Vec::new(),
             "alice",
+            None,
         )
         .await;
     assert!(alice_contact.is_ok());
@@ -522,6 +630,7 @@ async fn query_runtime_records_supports_link_entity_alias_filters_and_where_grou
             json!({"name": "Bob"}),
             Vec::new(),
             "alice",
+            None,
         )
         .await;
     assert!(bob_contact.is_ok());
@@ -535,6 +644,7 @@ async fn query_runtime_records_supports_link_entity_alias_filters_and_where_grou
                 json!({"title": "Alpha", "owner_contact_id": alice_contact.record_id().as_str()}),
                 Vec::new(),
                 "alice",
+                None,
             )
             .await
             .is_ok()
@@ -547,6 +657,7 @@ async fn query_runtime_records_supports_link_entity_alias_filters_and_where_grou
                 json!({"title": "Beta", "owner_contact_id": bob_contact.record_id().as_str()}),
                 Vec::new(),
                 "alice",
+                None,
             )
             .await
             .is_ok()
@@ -713,6 +824,7 @@ async fn relation_reference_check_does_not_leak_across_tenants() {
             json!({"name": "Alice"}),
             Vec::new(),
             "alice",
+            None,
         )
         .await;
     assert!(left_contact_record.is_ok());
@@ -726,6 +838,7 @@ async fn relation_reference_check_does_not_leak_across_tenants() {
                 json!({"owner_contact_id": left_contact_record.record_id().as_str()}),
                 Vec::new(),
                 "alice",
+                None,
             )
             .await
             .is_ok()
@@ -749,6 +862,7 @@ async fn relation_reference_check_does_not_leak_across_tenants() {
                 json!({"owner_contact_id": left_contact_record.record_id().as_str()}),
                 Vec::new(),
                 "alice",
+                None,
             )
             .await
             .is_ok()

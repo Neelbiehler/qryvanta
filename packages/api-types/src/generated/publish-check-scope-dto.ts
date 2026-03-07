@@ -3,4 +3,4 @@
 /**
  * Publish check issue scope.
  */
-export type PublishCheckScopeDto = "entity" | "app";
+export type PublishCheckScopeDto = "entity" | "app" | "workflow";

@@ -163,41 +163,72 @@ fn resolve_optional_secret(
         if trimmed_reference.is_empty() {
             return Ok(None);
         }
-
-        let command = parse_secret_reference(trimmed_reference)?;
-        let output = Command::new(command.program)
-            .args(command.args.iter().map(String::as_str))
-            .output()
-            .map_err(|error| {
-                AppError::Validation(format!(
-                    "failed to execute secret resolver for {name}: {}: {error}",
-                    command.program
-                ))
-            })?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let stderr = stderr.trim();
-            return Err(AppError::Validation(format!(
-                "secret resolver for {name} exited with status {}{}",
-                output.status,
-                if stderr.is_empty() {
-                    String::new()
-                } else {
-                    format!(": {stderr}")
+        return resolve_secret_reference(trimmed_reference)
+            .map(Some)
+            .map_err(|error| match error {
+                AppError::Validation(message) => {
+                    AppError::Validation(format!("failed to resolve {name}: {message}"))
                 }
-            )));
-        }
-
-        let stdout = String::from_utf8(output.stdout).map_err(|error| {
-            AppError::Validation(format!(
-                "secret resolver for {name} returned non-UTF-8 output: {error}"
-            ))
-        })?;
-        return Ok(Some(strip_trailing_line_endings(stdout)));
+                other => other,
+            });
     }
 
     Ok(None)
+}
+
+/// Validates a standalone secret reference format without resolving it.
+pub fn validate_secret_reference(reference: &str) -> AppResult<()> {
+    let trimmed_reference = reference.trim();
+    if trimmed_reference.is_empty() {
+        return Err(AppError::Validation(
+            "secret reference must not be empty".to_owned(),
+        ));
+    }
+
+    parse_secret_reference(trimmed_reference).map(|_| ())
+}
+
+/// Resolves one standalone secret reference through the configured CLI integration.
+pub fn resolve_secret_reference(reference: &str) -> AppResult<String> {
+    let trimmed_reference = reference.trim();
+    if trimmed_reference.is_empty() {
+        return Err(AppError::Validation(
+            "secret reference must not be empty".to_owned(),
+        ));
+    }
+
+    let command = parse_secret_reference(trimmed_reference)?;
+    let output = Command::new(command.program)
+        .args(command.args.iter().map(String::as_str))
+        .output()
+        .map_err(|error| {
+            AppError::Validation(format!(
+                "failed to execute secret resolver '{}': {error}",
+                command.program
+            ))
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = stderr.trim();
+        return Err(AppError::Validation(format!(
+            "secret resolver exited with status {}{}",
+            output.status,
+            if stderr.is_empty() {
+                String::new()
+            } else {
+                format!(": {stderr}")
+            }
+        )));
+    }
+
+    let stdout = String::from_utf8(output.stdout).map_err(|error| {
+        AppError::Validation(format!(
+            "secret resolver returned non-UTF-8 output: {error}"
+        ))
+    })?;
+
+    Ok(strip_trailing_line_endings(stdout))
 }
 
 fn strip_trailing_line_endings(mut value: String) -> String {
@@ -332,6 +363,7 @@ mod tests {
     use super::{
         SecretFingerprintRecord, detect_reused_secret_fingerprints, parse_secret_reference,
         resolve_optional_secret, secret_fingerprint, strip_trailing_line_endings,
+        validate_secret_reference,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -517,6 +549,18 @@ mod tests {
     #[test]
     fn rejects_unsupported_secret_reference_schemes() {
         let result = parse_secret_reference("azure-kv://vault/secret");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn validates_supported_secret_references() {
+        let result = validate_secret_reference("op://vault/item/password");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn rejects_blank_secret_references() {
+        let result = validate_secret_reference("   ");
         assert!(result.is_err());
     }
 }

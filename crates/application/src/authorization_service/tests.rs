@@ -147,6 +147,30 @@ async fn resolve_accessible_surfaces_returns_matching_surfaces() {
 }
 
 #[tokio::test]
+async fn resolve_accessible_surfaces_includes_maker_for_workflow_only_grants() {
+    let tenant_id = TenantId::new();
+    let repository = FakeAuthorizationRepository {
+        map: HashMap::from([(
+            (tenant_id, "alice".to_owned()),
+            vec![Permission::WorkflowRead],
+        )]),
+        runtime_field_grants: HashMap::new(),
+        temporary_permission_grants: HashMap::new(),
+    };
+    let service = AuthorizationService::new(
+        Arc::new(repository),
+        Arc::new(FakeAuditRepository::default()),
+    );
+
+    let surfaces = service
+        .resolve_accessible_surfaces(tenant_id, "alice")
+        .await
+        .unwrap_or_default();
+
+    assert_eq!(surfaces, vec![Surface::Maker]);
+}
+
+#[tokio::test]
 async fn resolve_accessible_surfaces_empty_for_no_permissions() {
     let tenant_id = TenantId::new();
     let repository = FakeAuthorizationRepository {

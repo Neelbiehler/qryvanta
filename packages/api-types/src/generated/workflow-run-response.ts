@@ -3,4 +3,4 @@
 /**
  * API representation of one workflow run.
  */
-export type WorkflowRunResponse = { run_id: string, workflow_logical_name: string, trigger_type: string, trigger_entity_logical_name: string | null, trigger_payload: Record<string, unknown>, status: string, attempts: number, dead_letter_reason: string | null, started_at: string, finished_at: string | null, };
+export type WorkflowRunResponse = { run_id: string, workflow_logical_name: string, workflow_version: number, trigger_type: string, trigger_entity_logical_name: string | null, trigger_payload: Record<string, unknown>, status: string, attempts: number, dead_letter_reason: string | null, started_at: string, finished_at: string | null, };

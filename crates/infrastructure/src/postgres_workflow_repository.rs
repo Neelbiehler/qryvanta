@@ -1,14 +1,16 @@
 use crate::{begin_tenant_transaction, begin_workflow_worker_transaction};
 use async_trait::async_trait;
 use qryvanta_application::{
-    ClaimedWorkflowJob, CompleteWorkflowRunInput, CreateWorkflowRunInput, WorkflowClaimPartition,
-    WorkflowQueueStats, WorkflowQueueStatsQuery, WorkflowRepository, WorkflowRun,
-    WorkflowRunAttempt, WorkflowRunAttemptStatus, WorkflowRunListQuery, WorkflowRunStatus,
-    WorkflowRunStepTrace, WorkflowWorkerHeartbeatInput,
+    ClaimedWorkflowJob, ClaimedWorkflowScheduleTick, CompleteWorkflowRunInput,
+    CreateWorkflowRunInput, WorkflowClaimPartition, WorkflowQueueStats, WorkflowQueueStatsQuery,
+    WorkflowRepository, WorkflowRun, WorkflowRunAttempt, WorkflowRunAttemptStatus,
+    WorkflowRunListQuery, WorkflowRunStatus, WorkflowRunStepTrace, WorkflowScheduledTrigger,
+    WorkflowWorkerHeartbeatInput,
 };
 use qryvanta_core::{AppError, AppResult, TenantId};
 use qryvanta_domain::{
-    WorkflowAction, WorkflowDefinition, WorkflowDefinitionInput, WorkflowStep, WorkflowTrigger,
+    WorkflowDefinition, WorkflowDefinitionInput, WorkflowLifecycleState, WorkflowStep,
+    WorkflowTrigger,
 };
 use serde_json::Value;
 use sqlx::{FromRow, PgPool};
@@ -34,18 +36,17 @@ struct WorkflowDefinitionRow {
     description: Option<String>,
     trigger_type: String,
     trigger_entity_logical_name: Option<String>,
-    action_type: String,
-    action_entity_logical_name: Option<String>,
-    action_payload: Value,
-    action_steps: Option<Value>,
+    steps: Value,
     max_attempts: i16,
-    is_enabled: bool,
+    lifecycle_state: String,
+    current_published_version: Option<i32>,
 }
 
 #[derive(Debug, FromRow)]
 struct WorkflowRunRow {
     id: uuid::Uuid,
     workflow_logical_name: String,
+    workflow_version: i32,
     trigger_type: String,
     trigger_entity_logical_name: Option<String>,
     trigger_payload: Value,
@@ -71,6 +72,7 @@ struct ClaimedWorkflowJobRow {
     job_id: uuid::Uuid,
     tenant_id: uuid::Uuid,
     run_id: uuid::Uuid,
+    workflow_version: i32,
     lease_token: String,
     trigger_payload: Value,
     logical_name: String,
@@ -78,12 +80,10 @@ struct ClaimedWorkflowJobRow {
     description: Option<String>,
     trigger_type: String,
     trigger_entity_logical_name: Option<String>,
-    action_type: String,
-    action_entity_logical_name: Option<String>,
-    action_payload: Value,
-    action_steps: Option<Value>,
+    steps: Value,
     max_attempts: i16,
-    is_enabled: bool,
+    lifecycle_state: String,
+    current_published_version: Option<i32>,
 }
 
 #[derive(Debug, FromRow)]
@@ -93,6 +93,22 @@ struct WorkflowQueueStatsRow {
     completed_jobs: i64,
     failed_jobs: i64,
     expired_leases: i64,
+}
+
+#[derive(Debug, FromRow)]
+struct WorkflowScheduledTriggerRow {
+    tenant_id: uuid::Uuid,
+    schedule_key: String,
+}
+
+#[derive(Debug, FromRow)]
+struct ClaimedWorkflowScheduleTickRow {
+    tenant_id: uuid::Uuid,
+    schedule_key: String,
+    slot_key: String,
+    scheduled_for: chrono::DateTime<chrono::Utc>,
+    leased_by: String,
+    lease_token: String,
 }
 
 mod definitions;
@@ -124,6 +140,43 @@ impl WorkflowRepository for PostgresWorkflowRepository {
         self.find_workflow_impl(tenant_id, logical_name).await
     }
 
+    async fn find_published_workflow(
+        &self,
+        tenant_id: TenantId,
+        logical_name: &str,
+    ) -> AppResult<Option<WorkflowDefinition>> {
+        self.find_published_workflow_impl(tenant_id, logical_name)
+            .await
+    }
+
+    async fn find_published_workflow_version(
+        &self,
+        tenant_id: TenantId,
+        logical_name: &str,
+        version: i32,
+    ) -> AppResult<Option<WorkflowDefinition>> {
+        self.find_published_workflow_version_impl(tenant_id, logical_name, version)
+            .await
+    }
+
+    async fn publish_workflow(
+        &self,
+        tenant_id: TenantId,
+        logical_name: &str,
+        published_by: &str,
+    ) -> AppResult<WorkflowDefinition> {
+        self.publish_workflow_impl(tenant_id, logical_name, published_by)
+            .await
+    }
+
+    async fn disable_workflow(
+        &self,
+        tenant_id: TenantId,
+        logical_name: &str,
+    ) -> AppResult<WorkflowDefinition> {
+        self.disable_workflow_impl(tenant_id, logical_name).await
+    }
+
     async fn list_enabled_workflows_for_trigger(
         &self,
         tenant_id: TenantId,
@@ -143,6 +196,66 @@ impl WorkflowRepository for PostgresWorkflowRepository {
 
     async fn enqueue_run_job(&self, tenant_id: TenantId, run_id: &str) -> AppResult<()> {
         self.enqueue_run_job_impl(tenant_id, run_id).await
+    }
+
+    async fn list_enabled_schedule_triggers(
+        &self,
+        tenant_filter: Option<TenantId>,
+    ) -> AppResult<Vec<WorkflowScheduledTrigger>> {
+        self.list_enabled_schedule_triggers_impl(tenant_filter)
+            .await
+    }
+
+    async fn claim_schedule_tick(
+        &self,
+        tenant_id: TenantId,
+        schedule_key: &str,
+        slot_key: &str,
+        scheduled_for: chrono::DateTime<chrono::Utc>,
+        worker_id: &str,
+        lease_seconds: u32,
+    ) -> AppResult<Option<ClaimedWorkflowScheduleTick>> {
+        self.claim_schedule_tick_impl(
+            tenant_id,
+            schedule_key,
+            slot_key,
+            scheduled_for,
+            worker_id,
+            lease_seconds,
+        )
+        .await
+    }
+
+    async fn complete_schedule_tick(
+        &self,
+        tenant_id: TenantId,
+        schedule_key: &str,
+        slot_key: &str,
+        worker_id: &str,
+        lease_token: &str,
+    ) -> AppResult<()> {
+        self.complete_schedule_tick_impl(tenant_id, schedule_key, slot_key, worker_id, lease_token)
+            .await
+    }
+
+    async fn release_schedule_tick(
+        &self,
+        tenant_id: TenantId,
+        schedule_key: &str,
+        slot_key: &str,
+        worker_id: &str,
+        lease_token: &str,
+        error_message: &str,
+    ) -> AppResult<()> {
+        self.release_schedule_tick_impl(
+            tenant_id,
+            schedule_key,
+            slot_key,
+            worker_id,
+            lease_token,
+            error_message,
+        )
+        .await
     }
 
     async fn claim_jobs(
@@ -230,7 +343,7 @@ impl WorkflowRepository for PostgresWorkflowRepository {
 }
 
 fn workflow_definition_from_row(row: WorkflowDefinitionRow) -> AppResult<WorkflowDefinition> {
-    WorkflowDefinition::new(WorkflowDefinitionInput {
+    let workflow = WorkflowDefinition::new(WorkflowDefinitionInput {
         logical_name: row.logical_name,
         display_name: row.display_name,
         description: row.description,
@@ -238,40 +351,27 @@ fn workflow_definition_from_row(row: WorkflowDefinitionRow) -> AppResult<Workflo
             row.trigger_type.as_str(),
             row.trigger_entity_logical_name.as_deref(),
         )?,
-        action: workflow_action_from_parts(
-            row.action_type.as_str(),
-            row.action_entity_logical_name.as_deref(),
-            row.action_payload,
-        )?,
-        steps: workflow_steps_from_json(row.action_steps)?,
+        steps: workflow_steps_from_json(row.steps)?,
         max_attempts: u16::try_from(row.max_attempts).map_err(|error| {
             AppError::Validation(format!("invalid workflow max_attempts value: {error}"))
         })?,
-        is_enabled: row.is_enabled,
+    })?;
+
+    workflow.with_publish_state(
+        WorkflowLifecycleState::parse(row.lifecycle_state.as_str())?,
+        row.current_published_version,
+    )
+}
+
+fn workflow_steps_to_json(steps: &[WorkflowStep]) -> AppResult<Value> {
+    serde_json::to_value(steps).map_err(|error| {
+        AppError::Validation(format!("failed to serialize workflow steps: {error}"))
     })
 }
 
-fn workflow_steps_to_json(steps: Option<&[WorkflowStep]>) -> AppResult<Option<Value>> {
-    let Some(steps) = steps else {
-        return Ok(None);
-    };
-
-    serde_json::to_value(steps).map(Some).map_err(|error| {
-        AppError::Validation(format!(
-            "failed to serialize workflow action_steps: {error}"
-        ))
-    })
-}
-
-fn workflow_steps_from_json(value: Option<Value>) -> AppResult<Option<Vec<WorkflowStep>>> {
-    let Some(value) = value else {
-        return Ok(None);
-    };
-
-    serde_json::from_value(value).map(Some).map_err(|error| {
-        AppError::Validation(format!(
-            "failed to deserialize workflow action_steps: {error}"
-        ))
+fn workflow_steps_from_json(value: Value) -> AppResult<Vec<WorkflowStep>> {
+    serde_json::from_value(value).map_err(|error| {
+        AppError::Validation(format!("failed to deserialize workflow steps: {error}"))
     })
 }
 
@@ -304,22 +404,16 @@ fn workflow_trigger_parts(trigger: &WorkflowTrigger) -> (&'static str, Option<&s
         WorkflowTrigger::ScheduleTick { schedule_key } => {
             ("schedule_tick", Some(schedule_key.as_str()))
         }
-    }
-}
-
-fn workflow_action_parts(action: &WorkflowAction) -> (&'static str, Option<&str>, Value) {
-    match action {
-        WorkflowAction::LogMessage { message } => {
-            ("log_message", None, serde_json::json!({"message": message}))
+        WorkflowTrigger::WebhookReceived { webhook_key } => {
+            ("webhook_received", Some(webhook_key.as_str()))
         }
-        WorkflowAction::CreateRuntimeRecord {
-            entity_logical_name,
-            data,
-        } => (
-            "create_runtime_record",
-            Some(entity_logical_name.as_str()),
-            data.clone(),
-        ),
+        WorkflowTrigger::FormSubmitted { form_key } => ("form_submitted", Some(form_key.as_str())),
+        WorkflowTrigger::InboundEmailReceived { mailbox_key } => {
+            ("inbound_email_received", Some(mailbox_key.as_str()))
+        }
+        WorkflowTrigger::ApprovalEventReceived { approval_key } => {
+            ("approval_event_received", Some(approval_key.as_str()))
+        }
     }
 }
 
@@ -376,47 +470,54 @@ fn workflow_trigger_from_parts(
                 schedule_key: schedule_key.to_owned(),
             })
         }
-        _ => Err(AppError::Validation(format!(
-            "unknown workflow trigger_type '{trigger_type}'"
-        ))),
-    }
-}
-
-fn workflow_action_from_parts(
-    action_type: &str,
-    action_entity_logical_name: Option<&str>,
-    action_payload: Value,
-) -> AppResult<WorkflowAction> {
-    match action_type {
-        "log_message" => {
-            let message = action_payload
-                .as_object()
-                .and_then(|payload| payload.get("message"))
-                .and_then(Value::as_str)
-                .ok_or_else(|| {
-                    AppError::Validation(
-                        "log_message action payload requires string field 'message'".to_owned(),
-                    )
-                })?;
-
-            Ok(WorkflowAction::LogMessage {
-                message: message.to_owned(),
-            })
-        }
-        "create_runtime_record" => {
-            let entity_logical_name = action_entity_logical_name.ok_or_else(|| {
+        "webhook_received" => {
+            let webhook_key = trigger_entity_logical_name.ok_or_else(|| {
                 AppError::Validation(
-                    "create_runtime_record action requires action_entity_logical_name".to_owned(),
+                    "webhook_received trigger requires trigger_entity_logical_name".to_owned(),
                 )
             })?;
 
-            Ok(WorkflowAction::CreateRuntimeRecord {
-                entity_logical_name: entity_logical_name.to_owned(),
-                data: action_payload,
+            Ok(WorkflowTrigger::WebhookReceived {
+                webhook_key: webhook_key.to_owned(),
+            })
+        }
+        "form_submitted" => {
+            let form_key = trigger_entity_logical_name.ok_or_else(|| {
+                AppError::Validation(
+                    "form_submitted trigger requires trigger_entity_logical_name".to_owned(),
+                )
+            })?;
+
+            Ok(WorkflowTrigger::FormSubmitted {
+                form_key: form_key.to_owned(),
+            })
+        }
+        "inbound_email_received" => {
+            let mailbox_key = trigger_entity_logical_name.ok_or_else(|| {
+                AppError::Validation(
+                    "inbound_email_received trigger requires trigger_entity_logical_name"
+                        .to_owned(),
+                )
+            })?;
+
+            Ok(WorkflowTrigger::InboundEmailReceived {
+                mailbox_key: mailbox_key.to_owned(),
+            })
+        }
+        "approval_event_received" => {
+            let approval_key = trigger_entity_logical_name.ok_or_else(|| {
+                AppError::Validation(
+                    "approval_event_received trigger requires trigger_entity_logical_name"
+                        .to_owned(),
+                )
+            })?;
+
+            Ok(WorkflowTrigger::ApprovalEventReceived {
+                approval_key: approval_key.to_owned(),
             })
         }
         _ => Err(AppError::Validation(format!(
-            "unknown workflow action_type '{action_type}'"
+            "unknown workflow trigger_type '{trigger_type}'"
         ))),
     }
 }
@@ -429,18 +530,17 @@ fn claimed_workflow_job_from_row(row: ClaimedWorkflowJobRow) -> AppResult<Claime
         description: row.description,
         trigger_type: row.trigger_type,
         trigger_entity_logical_name: row.trigger_entity_logical_name,
-        action_type: row.action_type,
-        action_entity_logical_name: row.action_entity_logical_name,
-        action_payload: row.action_payload,
-        action_steps: row.action_steps,
+        steps: row.steps,
         max_attempts: row.max_attempts,
-        is_enabled: row.is_enabled,
+        lifecycle_state: row.lifecycle_state,
+        current_published_version: row.current_published_version,
     })?;
 
     Ok(ClaimedWorkflowJob {
         job_id: row.job_id.to_string(),
         tenant_id: TenantId::from_uuid(tenant_uuid),
         run_id: row.run_id.to_string(),
+        workflow_version: row.workflow_version,
         workflow,
         trigger_payload: row.trigger_payload,
         lease_token: row.lease_token,
@@ -451,6 +551,7 @@ fn workflow_run_from_row(row: WorkflowRunRow) -> AppResult<WorkflowRun> {
     Ok(WorkflowRun {
         run_id: row.id.to_string(),
         workflow_logical_name: row.workflow_logical_name,
+        workflow_version: row.workflow_version,
         trigger_type: row.trigger_type,
         trigger_entity_logical_name: row.trigger_entity_logical_name,
         trigger_payload: row.trigger_payload,

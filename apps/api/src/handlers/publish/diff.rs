@@ -2,9 +2,12 @@ use std::collections::BTreeMap;
 
 use qryvanta_domain::{
     EntityFieldDefinition, FormDefinition, PublishedEntitySchema, ViewDefinition,
+    WorkflowDefinition,
 };
 
-use crate::dto::{PublishFieldDiffItemResponse, PublishSurfaceDeltaItemResponse};
+use crate::dto::{
+    PublishFieldDiffItemResponse, PublishSurfaceDeltaItemResponse, WorkflowPublishDiffResponse,
+};
 
 pub(super) fn compute_field_diff(
     draft_fields: &[EntityFieldDefinition],
@@ -203,6 +206,39 @@ pub(super) fn compute_view_surface_delta(
             }
         })
         .collect()
+}
+
+pub(super) fn compute_workflow_diff(
+    draft_workflow: &WorkflowDefinition,
+    published_workflow: Option<&WorkflowDefinition>,
+) -> WorkflowPublishDiffResponse {
+    let published_workflow_exists = published_workflow.is_some();
+    let published_trigger_type =
+        published_workflow.map(|workflow| workflow.trigger().trigger_type().to_owned());
+    let published_step_count = published_workflow
+        .map(|workflow| workflow.steps().len())
+        .unwrap_or(0);
+    let has_changes = published_workflow
+        .map(|workflow| {
+            workflow.display_name() != draft_workflow.display_name()
+                || workflow.description() != draft_workflow.description()
+                || workflow.trigger() != draft_workflow.trigger()
+                || workflow.steps() != draft_workflow.steps()
+                || workflow.max_attempts() != draft_workflow.max_attempts()
+        })
+        .unwrap_or(true);
+
+    WorkflowPublishDiffResponse {
+        workflow_logical_name: draft_workflow.logical_name().as_str().to_owned(),
+        lifecycle_state: draft_workflow.lifecycle_state().as_str().to_owned(),
+        published_version: draft_workflow.published_version(),
+        published_workflow_exists,
+        draft_trigger_type: draft_workflow.trigger().trigger_type().to_owned(),
+        published_trigger_type,
+        draft_step_count: draft_workflow.steps().len(),
+        published_step_count,
+        has_changes,
+    }
 }
 
 fn count_form_field_placements(form: &FormDefinition) -> usize {

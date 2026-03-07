@@ -7,7 +7,11 @@ import {
   type RetryWorkflowStepStrategyDto,
   type WorkflowRunAttemptResponse,
 } from "@/lib/api";
-import { parseJsonObject } from "@/components/automation/workflow-studio/model";
+import {
+  createDraftObjectFieldsFromValue,
+  parseDraftObjectFields,
+  type DraftObjectField,
+} from "@/components/automation/workflow-studio/model";
 
 type UseWorkflowExecutionInput = {
   selectedWorkflow: string;
@@ -24,8 +28,8 @@ export function useWorkflowExecution({
   onErrorMessage,
   onRefresh,
 }: UseWorkflowExecutionInput) {
-  const [executePayload, setExecutePayload] = useState(
-    JSON.stringify({ manual: true }, null, 2),
+  const [executePayloadFields, setExecutePayloadFields] = useState<DraftObjectField[]>(
+    createDraftObjectFieldsFromValue({ manual: true }),
   );
   const [attemptsByRun, setAttemptsByRun] = useState<
     Record<string, WorkflowRunAttemptResponse[]>
@@ -45,7 +49,10 @@ export function useWorkflowExecution({
     onResetMessages();
     setIsExecuting(true);
     try {
-      const triggerPayload = parseJsonObject(executePayload, "Trigger payload");
+      const triggerPayload = parseDraftObjectFields(
+        executePayloadFields,
+        "Trigger payload",
+      );
       const payload: ExecuteWorkflowRequest = {
         trigger_payload: triggerPayload,
       };
@@ -169,8 +176,8 @@ export function useWorkflowExecution({
   }
 
   return {
-    executePayload,
-    setExecutePayload,
+    executePayloadFields,
+    setExecutePayloadFields,
     attemptsByRun,
     expandedRunId,
     loadingAttemptsRunId,

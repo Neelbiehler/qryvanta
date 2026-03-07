@@ -3,6 +3,7 @@ use super::*;
 mod query;
 mod read;
 mod relations;
+mod workflow_events;
 mod write;
 
 fn runtime_record_storage_key(
@@ -75,4 +76,21 @@ fn collect_runtime_records_for_scope(
             },
         )
         .collect()
+}
+
+fn normalized_runtime_record_workflow_payload(
+    mut payload: Value,
+    entity_logical_name: &str,
+    record_id: &str,
+) -> Value {
+    if let Some(payload_object) = payload.as_object_mut() {
+        payload_object.insert(
+            "entity_logical_name".to_owned(),
+            Value::String(entity_logical_name.to_owned()),
+        );
+        payload_object.insert("record_id".to_owned(), Value::String(record_id.to_owned()));
+        payload_object.insert("id".to_owned(), Value::String(record_id.to_owned()));
+    }
+
+    payload
 }

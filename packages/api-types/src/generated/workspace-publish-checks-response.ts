@@ -4,4 +4,4 @@ import type { PublishCheckIssueResponse } from "./publish-check-issue-response";
 /**
  * Workspace-level publish checks response.
  */
-export type WorkspacePublishChecksResponse = { is_publishable: boolean, checked_entities: number, checked_apps: number, issues: Array<PublishCheckIssueResponse>, };
+export type WorkspacePublishChecksResponse = { is_publishable: boolean, checked_entities: number, checked_apps: number, checked_workflows: number, issues: Array<PublishCheckIssueResponse>, };

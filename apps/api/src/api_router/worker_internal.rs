@@ -12,6 +12,10 @@ pub(super) fn build_worker_internal_routes(app_state: AppState) -> Router<AppSta
             post(handlers::worker::claim_workflow_jobs_handler),
         )
         .route(
+            "/api/internal/worker/runtime-events/drain",
+            post(handlers::worker::drain_runtime_record_workflow_events_handler),
+        )
+        .route(
             "/api/internal/worker/heartbeat",
             post(handlers::worker::worker_heartbeat_handler),
         )

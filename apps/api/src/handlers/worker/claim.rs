@@ -20,12 +20,12 @@ pub struct ClaimedWorkflowJobResponse {
     pub lease_token: String,
     pub tenant_id: String,
     pub run_id: String,
+    pub workflow_version: i32,
     pub workflow_logical_name: String,
     pub workflow_display_name: String,
     pub workflow_description: Option<String>,
     pub workflow_trigger: WorkflowTrigger,
-    pub workflow_action: WorkflowAction,
-    pub workflow_steps: Option<Vec<WorkflowStep>>,
+    pub workflow_steps: Vec<WorkflowStep>,
     pub workflow_max_attempts: u16,
     pub workflow_is_enabled: bool,
     pub trigger_payload: Value,
@@ -95,12 +95,12 @@ pub async fn claim_workflow_jobs_handler(
             lease_token: job.lease_token,
             tenant_id: job.tenant_id.to_string(),
             run_id: job.run_id,
+            workflow_version: job.workflow_version,
             workflow_logical_name: job.workflow.logical_name().as_str().to_owned(),
             workflow_display_name: job.workflow.display_name().as_str().to_owned(),
             workflow_description: job.workflow.description().map(ToOwned::to_owned),
             workflow_trigger: job.workflow.trigger().clone(),
-            workflow_action: job.workflow.action().clone(),
-            workflow_steps: job.workflow.steps().map(ToOwned::to_owned),
+            workflow_steps: job.workflow.steps().to_owned(),
             workflow_max_attempts: job.workflow.max_attempts(),
             workflow_is_enabled: job.workflow.is_enabled(),
             trigger_payload: job.trigger_payload,
@@ -110,7 +110,7 @@ pub async fn claim_workflow_jobs_handler(
     Ok(Json(ClaimedWorkflowJobsResponse { jobs }))
 }
 
-fn parse_tenant_id(value: &str) -> Result<qryvanta_core::TenantId, AppError> {
+pub(super) fn parse_tenant_id(value: &str) -> Result<qryvanta_core::TenantId, AppError> {
     let tenant_uuid = uuid::Uuid::parse_str(value).map_err(|error| {
         AppError::Validation(format!("invalid worker tenant_id '{}': {error}", value))
     })?;

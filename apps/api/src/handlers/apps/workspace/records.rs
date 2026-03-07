@@ -62,11 +62,10 @@ pub async fn workspace_create_record_handler(
 
     if let Err(error) = state
         .workflow_service
-        .dispatch_runtime_record_created(
+        .drain_runtime_record_workflow_events_inline(
             &user,
-            entity_logical_name.as_str(),
-            record.record_id().as_str(),
-            record.data(),
+            state.workflow_worker_max_claim_limit,
+            state.workflow_worker_default_lease_seconds,
         )
         .await
     {
@@ -76,7 +75,7 @@ pub async fn workspace_create_record_handler(
             app_logical_name = %app_logical_name,
             entity_logical_name = %entity_logical_name,
             record_id = %record.record_id().as_str(),
-            "workflow dispatch failed after workspace record creation"
+            "runtime workflow event drain failed after workspace record creation"
         );
     }
 
@@ -181,17 +180,6 @@ pub async fn workspace_update_record_handler(
     Path((app_logical_name, entity_logical_name, record_id)): Path<(String, String, String)>,
     Json(payload): Json<UpdateRuntimeRecordRequest>,
 ) -> ApiResult<Json<RuntimeRecordResponse>> {
-    let previous_record = state
-        .app_service
-        .get_record(
-            &user,
-            app_logical_name.as_str(),
-            entity_logical_name.as_str(),
-            record_id.as_str(),
-        )
-        .await
-        .ok();
-
     let record = state
         .app_service
         .update_record(
@@ -205,14 +193,10 @@ pub async fn workspace_update_record_handler(
 
     if let Err(error) = state
         .workflow_service
-        .dispatch_runtime_record_updated(
+        .drain_runtime_record_workflow_events_inline(
             &user,
-            entity_logical_name.as_str(),
-            record.record_id().as_str(),
-            previous_record
-                .as_ref()
-                .map(|runtime_record| runtime_record.data()),
-            record.data(),
+            state.workflow_worker_max_claim_limit,
+            state.workflow_worker_default_lease_seconds,
         )
         .await
     {
@@ -222,7 +206,7 @@ pub async fn workspace_update_record_handler(
             app_logical_name = %app_logical_name,
             entity_logical_name = %entity_logical_name,
             record_id = %record.record_id().as_str(),
-            "workflow dispatch failed after workspace record update"
+            "runtime workflow event drain failed after workspace record update"
         );
     }
 
@@ -234,17 +218,6 @@ pub async fn workspace_delete_record_handler(
     Extension(user): Extension<UserIdentity>,
     Path((app_logical_name, entity_logical_name, record_id)): Path<(String, String, String)>,
 ) -> ApiResult<StatusCode> {
-    let deleted_record = state
-        .app_service
-        .get_record(
-            &user,
-            app_logical_name.as_str(),
-            entity_logical_name.as_str(),
-            record_id.as_str(),
-        )
-        .await
-        .ok();
-
     state
         .app_service
         .delete_record(
@@ -257,13 +230,10 @@ pub async fn workspace_delete_record_handler(
 
     if let Err(error) = state
         .workflow_service
-        .dispatch_runtime_record_deleted(
+        .drain_runtime_record_workflow_events_inline(
             &user,
-            entity_logical_name.as_str(),
-            record_id.as_str(),
-            deleted_record
-                .as_ref()
-                .map(|runtime_record| runtime_record.data()),
+            state.workflow_worker_max_claim_limit,
+            state.workflow_worker_default_lease_seconds,
         )
         .await
     {
@@ -273,7 +243,7 @@ pub async fn workspace_delete_record_handler(
             app_logical_name = %app_logical_name,
             entity_logical_name = %entity_logical_name,
             record_id = %record_id,
-            "workflow dispatch failed after workspace record deletion"
+            "runtime workflow event drain failed after workspace record deletion"
         );
     }
 

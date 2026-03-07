@@ -54,6 +54,8 @@ impl Surface {
                 Permission::MetadataEntityCreate,
                 Permission::MetadataFieldRead,
                 Permission::MetadataFieldWrite,
+                Permission::WorkflowRead,
+                Permission::WorkflowManage,
             ],
             Self::Worker => &[
                 Permission::RuntimeRecordRead,
@@ -92,6 +94,10 @@ pub enum Permission {
     MetadataFieldRead,
     /// Allows updating metadata field definitions.
     MetadataFieldWrite,
+    /// Allows reading workflow definitions and run history.
+    WorkflowRead,
+    /// Allows saving, publishing, disabling, and executing workflows.
+    WorkflowManage,
     /// Allows reading runtime records.
     RuntimeRecordRead,
     /// Allows reading only runtime records owned by the subject.
@@ -117,6 +123,8 @@ impl Permission {
             Self::MetadataEntityCreate => "metadata.entity.create",
             Self::MetadataFieldRead => "metadata.field.read",
             Self::MetadataFieldWrite => "metadata.field.write",
+            Self::WorkflowRead => "workflow.read",
+            Self::WorkflowManage => "workflow.manage",
             Self::RuntimeRecordRead => "runtime.record.read",
             Self::RuntimeRecordReadOwn => "runtime.record.read.own",
             Self::RuntimeRecordWrite => "runtime.record.write",
@@ -135,6 +143,8 @@ impl Permission {
             Permission::MetadataEntityCreate,
             Permission::MetadataFieldRead,
             Permission::MetadataFieldWrite,
+            Permission::WorkflowRead,
+            Permission::WorkflowManage,
             Permission::RuntimeRecordRead,
             Permission::RuntimeRecordReadOwn,
             Permission::RuntimeRecordWrite,
@@ -162,6 +172,8 @@ impl FromStr for Permission {
             "metadata.entity.create" => Ok(Self::MetadataEntityCreate),
             "metadata.field.read" => Ok(Self::MetadataFieldRead),
             "metadata.field.write" => Ok(Self::MetadataFieldWrite),
+            "workflow.read" => Ok(Self::WorkflowRead),
+            "workflow.manage" => Ok(Self::WorkflowManage),
             "runtime.record.read" => Ok(Self::RuntimeRecordRead),
             "runtime.record.read.own" => Ok(Self::RuntimeRecordReadOwn),
             "runtime.record.write" => Ok(Self::RuntimeRecordWrite),
@@ -188,6 +200,10 @@ pub enum AuditAction {
     AppRoleEntityPermissionSaved,
     /// Emitted when a workflow definition is created or updated.
     WorkflowSaved,
+    /// Emitted when a workflow draft is published.
+    WorkflowPublished,
+    /// Emitted when a published workflow is disabled.
+    WorkflowDisabled,
     /// Emitted when a workflow run reaches a terminal state.
     WorkflowRunCompleted,
     /// Emitted when an entity definition is created.
@@ -235,6 +251,8 @@ impl AuditAction {
             Self::AppEntityBound => "app.entity.bound",
             Self::AppRoleEntityPermissionSaved => "app.role_entity_permission.saved",
             Self::WorkflowSaved => "workflow.saved",
+            Self::WorkflowPublished => "workflow.published",
+            Self::WorkflowDisabled => "workflow.disabled",
             Self::WorkflowRunCompleted => "workflow.run.completed",
             Self::MetadataEntityCreated => "metadata.entity.created",
             Self::MetadataFieldSaved => "metadata.field.saved",

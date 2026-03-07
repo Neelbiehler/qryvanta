@@ -1,6 +1,129 @@
+use crate::RuntimeRecordWorkflowEventDrainResult;
+
 use super::*;
 
 impl WorkflowService {
+    /// Drains one inline tenant-scoped batch of pending runtime-record workflow events.
+    pub async fn drain_runtime_record_workflow_events_inline(
+        &self,
+        actor: &UserIdentity,
+        limit: usize,
+        lease_seconds: u32,
+    ) -> AppResult<RuntimeRecordWorkflowEventDrainResult> {
+        if self.execution_mode != WorkflowExecutionMode::Inline {
+            return Ok(RuntimeRecordWorkflowEventDrainResult::default());
+        }
+
+        let worker_id = format!("inline-runtime-events:{}", actor.subject());
+        self.drain_runtime_record_workflow_events(
+            worker_id.as_str(),
+            limit,
+            lease_seconds,
+            Some(actor.tenant_id()),
+        )
+        .await
+    }
+
+    /// Drains one worker-scoped batch of pending runtime-record workflow events.
+    pub async fn drain_runtime_record_workflow_events_for_worker(
+        &self,
+        worker_id: &str,
+        limit: usize,
+        lease_seconds: u32,
+        tenant_filter: Option<TenantId>,
+    ) -> AppResult<RuntimeRecordWorkflowEventDrainResult> {
+        self.drain_runtime_record_workflow_events(worker_id, limit, lease_seconds, tenant_filter)
+            .await
+    }
+
+    async fn drain_runtime_record_workflow_events(
+        &self,
+        worker_id: &str,
+        limit: usize,
+        lease_seconds: u32,
+        tenant_filter: Option<TenantId>,
+    ) -> AppResult<RuntimeRecordWorkflowEventDrainResult> {
+        if worker_id.trim().is_empty() {
+            return Err(AppError::Validation(
+                "worker_id must not be empty".to_owned(),
+            ));
+        }
+
+        if limit == 0 {
+            return Err(AppError::Validation(
+                "limit must be greater than zero".to_owned(),
+            ));
+        }
+
+        if lease_seconds == 0 {
+            return Err(AppError::Validation(
+                "lease_seconds must be greater than zero".to_owned(),
+            ));
+        }
+
+        let claimed_events = self
+            .runtime_record_service
+            .claim_runtime_record_workflow_events(worker_id, limit, lease_seconds, tenant_filter)
+            .await?;
+        let claimed_count = u32::try_from(claimed_events.len()).unwrap_or(u32::MAX);
+        let mut result = RuntimeRecordWorkflowEventDrainResult {
+            claimed_events: claimed_count,
+            dispatched_workflows: 0,
+            released_events: 0,
+        };
+
+        for event in claimed_events {
+            match self
+                .process_claimed_runtime_record_workflow_event(worker_id, &event)
+                .await
+            {
+                Ok(dispatched_workflows) => {
+                    self.runtime_record_service
+                        .complete_runtime_record_workflow_event(
+                            event.tenant_id,
+                            event.event_id.as_str(),
+                            worker_id,
+                            event.lease_token.as_str(),
+                        )
+                        .await?;
+                    result.dispatched_workflows = result
+                        .dispatched_workflows
+                        .saturating_add(u32::try_from(dispatched_workflows).unwrap_or(u32::MAX));
+                }
+                Err(error) => {
+                    self.runtime_record_service
+                        .release_runtime_record_workflow_event(
+                            event.tenant_id,
+                            event.event_id.as_str(),
+                            worker_id,
+                            event.lease_token.as_str(),
+                            error.to_string().as_str(),
+                        )
+                        .await?;
+                    result.released_events = result.released_events.saturating_add(1);
+                }
+            }
+        }
+
+        Ok(result)
+    }
+
+    async fn process_claimed_runtime_record_workflow_event(
+        &self,
+        _worker_id: &str,
+        event: &ClaimedRuntimeRecordWorkflowEvent,
+    ) -> AppResult<usize> {
+        let actor = UserIdentity::new(
+            event.emitted_by_subject.clone(),
+            event.emitted_by_subject.clone(),
+            None,
+            event.tenant_id,
+        );
+
+        self.dispatch_trigger(&actor, event.trigger.clone(), event.payload.clone())
+            .await
+    }
+
     /// Claims queued workflow jobs for one worker.
     pub async fn claim_jobs_for_worker(
         &self,

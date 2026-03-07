@@ -15,7 +15,8 @@ use uuid::Uuid;
 pub use auth::UserIdentity;
 pub use secret::{
     SecretFingerprintRecord, detect_reused_secret_fingerprints, optional_secret,
-    required_non_empty_secret, required_secret, secret_fingerprint,
+    required_non_empty_secret, required_secret, resolve_secret_reference, secret_fingerprint,
+    validate_secret_reference,
 };
 
 /// Result type used across Qryvanta crates.

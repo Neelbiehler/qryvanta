@@ -4,4 +4,4 @@ import type { PublishCheckIssueResponse } from "./publish-check-issue-response";
 /**
  * Result payload for selective workspace publish execution.
  */
-export type RunWorkspacePublishResponse = { is_publishable: boolean, requested_entities: number, requested_apps: number, published_entities: Array<string>, validated_apps: Array<string>, issues: Array<PublishCheckIssueResponse>, };
+export type RunWorkspacePublishResponse = { is_publishable: boolean, requested_entities: number, requested_apps: number, requested_workflows: number, published_entities: Array<string>, validated_apps: Array<string>, published_workflows: Array<string>, issues: Array<PublishCheckIssueResponse>, };

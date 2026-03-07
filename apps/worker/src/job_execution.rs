@@ -1,6 +1,6 @@
 use qryvanta_application::WorkflowService;
 use qryvanta_core::AppResult;
-use qryvanta_domain::{WorkflowAction, WorkflowDefinition, WorkflowStep};
+use qryvanta_domain::{WorkflowDefinition, WorkflowStep};
 use tracing::{info, warn};
 
 use crate::ClaimedWorkflowJobResponse;
@@ -154,23 +154,21 @@ pub(crate) async fn execute_claimed_jobs(
 }
 
 fn workflow_has_mutating_effects(workflow: &WorkflowDefinition) -> bool {
-    if action_is_mutating(workflow.action()) {
-        return true;
-    }
-
-    workflow
-        .steps()
-        .is_some_and(|steps| steps.iter().any(step_is_mutating))
-}
-
-fn action_is_mutating(action: &WorkflowAction) -> bool {
-    matches!(action, WorkflowAction::CreateRuntimeRecord { .. })
+    workflow.steps().iter().any(step_is_mutating)
 }
 
 fn step_is_mutating(step: &WorkflowStep) -> bool {
     match step {
         WorkflowStep::LogMessage { .. } => false,
-        WorkflowStep::CreateRuntimeRecord { .. } => true,
+        WorkflowStep::CreateRuntimeRecord { .. }
+        | WorkflowStep::UpdateRuntimeRecord { .. }
+        | WorkflowStep::DeleteRuntimeRecord { .. }
+        | WorkflowStep::SendEmail { .. }
+        | WorkflowStep::HttpRequest { .. }
+        | WorkflowStep::Webhook { .. }
+        | WorkflowStep::AssignOwner { .. }
+        | WorkflowStep::ApprovalRequest { .. } => true,
+        WorkflowStep::Delay { .. } => false,
         WorkflowStep::Condition {
             then_steps,
             else_steps,

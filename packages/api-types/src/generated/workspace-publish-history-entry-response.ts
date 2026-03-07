@@ -3,4 +3,4 @@
 /**
  * One persisted workspace publish run history entry.
  */
-export type WorkspacePublishHistoryEntryResponse = { run_id: string, run_at: string, subject: string, requested_entities: number, requested_apps: number, requested_entity_logical_names: Array<string>, requested_app_logical_names: Array<string>, published_entities: Array<string>, validated_apps: Array<string>, issue_count: number, is_publishable: boolean, };
+export type WorkspacePublishHistoryEntryResponse = { run_id: string, run_at: string, subject: string, requested_entities: number, requested_apps: number, requested_workflows: number, requested_entity_logical_names: Array<string>, requested_app_logical_names: Array<string>, requested_workflow_logical_names: Array<string>, published_entities: Array<string>, validated_apps: Array<string>, published_workflows: Array<string>, issue_count: number, is_publishable: boolean, };

@@ -5,6 +5,20 @@ description: Production setup and troubleshooting guide for workflow triggers an
 
 Use this runbook when enabling workflow automations that trigger from runtime events and call external systems.
 
+## Draft And Publish Operations
+
+Workflows are now draft-first:
+
+- `POST /api/workflows` saves the editable draft definition.
+- `POST /api/workflows/{workflow_logical_name}/publish` snapshots that draft as the next immutable published version and makes it active.
+- `POST /api/workflows/{workflow_logical_name}/disable` stops future dispatch while keeping the latest published version for history and rollback-oriented operations.
+
+Operational notes:
+
+- Draft changes do not execute until a publish happens.
+- Manual execution and trigger dispatch resolve the current published version only.
+- Each workflow run stores the published `workflow_version` used at dispatch time, so queued workers and step retry keep using the same snapshot even if a newer draft or publish exists later.
+
 ## Trigger Coverage
 
 Backend runtime supports these trigger types:
@@ -14,12 +28,30 @@ Backend runtime supports these trigger types:
 - `runtime_record_updated`
 - `runtime_record_deleted`
 - `schedule_tick`
+- `webhook_received`
+- `form_submitted`
+- `inbound_email_received`
+- `approval_event_received`
 
-`runtime_record_*` triggers dispatch automatically during runtime API and workspace record mutations.
+`runtime_record_*` triggers are written to a transactional outbox during runtime API and workspace record mutations. Inline mode drains that outbox immediately after the write path returns. Queued mode drains it through the authenticated worker control loop before workers claim execution jobs.
+
+Current chaining rule:
+
+- Runtime writes emitted by workflow execution do not trigger additional workflows.
+- This is intentional for now so platform writes cannot recurse until bounded depth and loop-detection semantics are available.
 
 ## Schedule Trigger Operations
 
-Schedule triggers can be dispatched by calling:
+Queued workers now include a built-in scheduler pass before runtime-event drain and job claim. For each enabled `schedule_tick` workflow trigger, the worker derives the current due UTC slot, claims it in `workflow_schedule_ticks`, and dispatches the workflow exactly once for that slot.
+
+Built-in slot formats:
+
+- `hourly`
+- `daily`
+- `daily_utc_HHMM`
+- `weekday_utc_HHMM`
+
+The protected API dispatch endpoint remains available for manual backfill, replay, or custom scheduler integration:
 
 - `POST /api/workflows/triggers/schedule/dispatch`
 
@@ -38,8 +70,9 @@ Request body:
 
 Notes:
 
+- Built-in scheduling currently evaluates UTC schedule keys only.
 - Endpoint requires authenticated protected API access.
-- Use stable schedule keys like `hourly`, `daily`, or tenant-specific keys such as `tenant_a_daily_0900_utc`.
+- Use stable schedule keys like `hourly`, `daily`, `daily_utc_0900`, or `weekday_utc_1730`.
 - `payload.tick_at` (or legacy alias `payload.tick`) should be RFC3339; runtime normalizes to UTC.
 - Workflow trigger payload includes deterministic schedule fields:
   - `tick_at_utc`
@@ -49,13 +82,142 @@ Notes:
   - `clock_skew_tolerance_seconds`
   - `clock_skew_within_tolerance`
 
+## Webhook Trigger Operations
+
+Native webhook ingress is now available at:
+
+- `POST /api/public/workflows/webhooks/{tenant_id}/{webhook_key}`
+
+Request body:
+
+```json
+{
+  "customer_id": "cust-1",
+  "event_type": "customer.created"
+}
+```
+
+Runtime wraps the inbound request into a workflow trigger payload with:
+
+- `event` = `webhook_received`
+- `webhook_key`
+- `request.method`
+- `request.headers`
+- `request.query`
+- `payload`
+- `data`
+
+Notes:
+
+- The endpoint is tenant-scoped by path and workflow-scoped by `webhook_key`.
+- It is intentionally public so external systems can post directly.
+- Inline credential-bearing outbound headers (`authorization`, `x-api-key`, `cookie`, and similar token headers) are blocked at workflow publish time unless they are configured through `header_secret_refs`.
+- `header_secret_refs` resolve supported secret-manager references (`op://`, `aws-sm://`, `aws-ssm://`, `vault://`, `gcp-sm://`) at dispatch time. Maker now exposes typed secret-header presets, `Authorization` format selectors (`Raw`, `Bearer`, `Basic`), and provider-aware secret-ref builders for common outbound auth headers, but provider-specific signing flows are still not implemented.
+- In Maker, webhook payloads now use typed field-row editors for common object payloads; nested subdocuments still use per-field `JSON` values when needed.
+
+## Form Trigger Operations
+
+Native form ingress is now available at:
+
+- `POST /api/public/workflows/forms/{tenant_id}/{form_key}`
+
+Request body:
+
+```json
+{
+  "email": "alice@example.com",
+  "source": "landing_page"
+}
+```
+
+Runtime wraps the inbound request into a workflow trigger payload with:
+
+- `event` = `form_submitted`
+- `form_key`
+- `request.method`
+- `request.headers`
+- `request.query`
+- `payload`
+- `data`
+
+Notes:
+
+- The endpoint is tenant-scoped by path and workflow-scoped by `form_key`.
+- It is intended for public intake forms and embedding scenarios where authenticated maker/worker context is not available.
+- Secret validation, CAPTCHA, abuse throttling, and field/schema binding are not implemented yet for public form ingress; keep perimeter controls in front of broad exposure.
+
+## Inbound Email Trigger Operations
+
+Native inbound email ingress is now available at:
+
+- `POST /api/public/workflows/email/{tenant_id}/{mailbox_key}`
+
+Request body:
+
+```json
+{
+  "from": "alice@example.com",
+  "subject": "Need help",
+  "text_body": "Please assist."
+}
+```
+
+Runtime wraps the inbound request into a workflow trigger payload with:
+
+- `event` = `inbound_email_received`
+- `mailbox_key`
+- `request.method`
+- `request.headers`
+- `request.query`
+- `payload`
+- `data`
+
+Notes:
+
+- The endpoint is tenant-scoped by path and workflow-scoped by `mailbox_key`.
+- It is intended for mail gateway forwarding or inbound processing adapters that can POST normalized JSON payloads.
+- Signature verification, mailbox authentication, MIME parsing, attachment storage, and abuse controls are not implemented yet in this slice; add those before production exposure.
+
+## Approval Trigger Operations
+
+Native approval ingress is now available at:
+
+- `POST /api/public/workflows/approvals/{tenant_id}/{approval_key}`
+
+Request body:
+
+```json
+{
+  "request_id": "req-1",
+  "status": "approved",
+  "approver_id": "manager-7",
+  "comment": "looks good"
+}
+```
+
+Runtime wraps the inbound request into a workflow trigger payload with:
+
+- `event` = `approval_event_received`
+- `approval_key`
+- `request.method`
+- `request.headers`
+- `request.query`
+- `payload`
+- `data`
+
+Notes:
+
+- The endpoint is tenant-scoped by path and workflow-scoped by `approval_key`.
+- It is intended for approval UIs or external decision services that POST approval outcomes back into workflow automation.
+- Request authentication, approval state validation, replay protection, and linkage to platform approval records are not implemented yet in this slice; add those before production exposure.
+
 ## Outbound Integration Actions
 
-Workflow runtime dispatches these integration entities through external adapters:
+Workflow runtime dispatches these native integration actions through external adapters:
 
-- `integration_http_request`
-- `webhook_dispatch`
-- `email_outbox`
+- `http_request`
+- `webhook`
+- `send_email`
 
 ### HTTP and Webhook Dispatch Behavior
 
@@ -69,9 +231,34 @@ Workflow runtime dispatches these integration entities through external adapters
 
 ### Email Dispatch Behavior
 
-- `email_outbox` actions use the platform email provider.
+- `send_email` actions use the platform email provider.
 - `EMAIL_PROVIDER=smtp` requires valid `SMTP_*` environment values.
 - Worker process falls back to console email if SMTP config is invalid; treat this as a misconfiguration in production and alert immediately.
+
+## Native Platform Actions
+
+Workflow runtime also supports native platform-side actions without disguising them as workflow-authored create-record steps:
+
+- `update_runtime_record`
+- `delete_runtime_record`
+- `assign_owner`
+- `approval_request`
+- `delay`
+
+Operational notes:
+
+- `update_runtime_record` and `delete_runtime_record` execute through unchecked metadata-service writes inside workflow execution.
+- `assign_owner` currently persists a `record_assignment` platform record internally.
+- `approval_request` currently persists an `approval_request` platform record internally.
+- `delay` is a bounded in-worker pause step. It is not yet a durable scheduler-backed wait primitive, so reserve it for short waits and use queued workers in production.
+
+Maker editor notes:
+
+- Create-record, update-record, webhook-payload, and approval-payload steps now use typed field-row editors instead of whole-object JSON textareas.
+- Condition steps now use typed comparison controls (`Text`, `Number`, `Boolean`, `Null`, `JSON`) instead of a raw JSON value field.
+- The test tab now provides typed sample trigger payload editing plus trigger-aware sample presets, so operators can dry-run published workflows without hand-writing a full payload blob first.
+- Common object-shaped steps now render a local JSON preview card in the inspector to show the effective payload/request shape before execution.
+- HTTP request steps now support `No body`, typed object-body editing, typed array/scalar bodies, or raw JSON mode. Raw JSON is now reserved for advanced nested custom payloads.
 
 ## Idempotency and Retries
 
@@ -121,10 +308,11 @@ Operational guidance:
 ## Production Readiness Checklist
 
 1. Run API and worker in queued mode for non-trivial automation throughput.
-2. Verify SMTP credentials and sender domain alignment before enabling `email_outbox` actions.
+2. Verify SMTP credentials and sender domain alignment before enabling `send_email` actions.
 3. Ensure outbound firewall rules allow required webhook/API targets.
 4. Confirm downstream systems enforce idempotency keys.
-5. Monitor workflow run retries, dead letters, and worker heartbeat freshness.
+5. Monitor runtime trigger outbox drain health, schedule tick drain health, workflow queue depth, and worker heartbeat freshness.
+6. Monitor workflow run retries and dead letters.
 
 ## Incident Triage
 

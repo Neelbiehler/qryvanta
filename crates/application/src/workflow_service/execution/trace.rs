@@ -11,13 +11,7 @@ impl WorkflowService {
     ) -> Result<Vec<WorkflowRunStepTrace>, WorkflowExecutionErrorWithTrace> {
         let mut traces = Vec::new();
 
-        if let Some(steps) = workflow.steps() {
-            self.execute_steps_with_trace(actor, steps, context, "", &mut traces)
-                .await?;
-            return Ok(traces);
-        }
-
-        self.execute_action_with_trace(actor, workflow.action(), context, "0", &mut traces)
+        self.execute_steps_with_trace(actor, workflow.steps(), context, "", &mut traces)
             .await?;
         Ok(traces)
     }
@@ -30,38 +24,19 @@ impl WorkflowService {
         step_path: &str,
         traces: &mut Vec<WorkflowRunStepTrace>,
     ) -> AppResult<()> {
-        let Some(steps) = workflow.steps() else {
-            return self.execute_action(actor, workflow.action()).await;
-        };
-
-        let step = Self::step_by_path(steps, step_path)?;
+        let step = Self::step_by_path(workflow.steps(), step_path)?;
         match step {
-            WorkflowStep::LogMessage { message } => self
-                .execute_action_with_trace(
-                    actor,
-                    &WorkflowAction::LogMessage {
-                        message: message.clone(),
-                    },
-                    context,
-                    step_path,
-                    traces,
-                )
-                .await
-                .map_err(|error| error.error),
-            WorkflowStep::CreateRuntimeRecord {
-                entity_logical_name,
-                data,
-            } => self
-                .execute_action_with_trace(
-                    actor,
-                    &WorkflowAction::CreateRuntimeRecord {
-                        entity_logical_name: entity_logical_name.clone(),
-                        data: data.clone(),
-                    },
-                    context,
-                    step_path,
-                    traces,
-                )
+            WorkflowStep::LogMessage { .. }
+            | WorkflowStep::CreateRuntimeRecord { .. }
+            | WorkflowStep::UpdateRuntimeRecord { .. }
+            | WorkflowStep::DeleteRuntimeRecord { .. }
+            | WorkflowStep::SendEmail { .. }
+            | WorkflowStep::HttpRequest { .. }
+            | WorkflowStep::Webhook { .. }
+            | WorkflowStep::AssignOwner { .. }
+            | WorkflowStep::ApprovalRequest { .. }
+            | WorkflowStep::Delay { .. } => self
+                .execute_step_with_trace(actor, step, context, step_path, traces)
                 .await
                 .map_err(|error| error.error),
             WorkflowStep::Condition {
@@ -151,28 +126,19 @@ impl WorkflowService {
                 };
 
                 match step {
-                    WorkflowStep::LogMessage { message } => {
-                        self.execute_action_with_trace(
+                    WorkflowStep::LogMessage { .. }
+                    | WorkflowStep::CreateRuntimeRecord { .. }
+                    | WorkflowStep::UpdateRuntimeRecord { .. }
+                    | WorkflowStep::DeleteRuntimeRecord { .. }
+                    | WorkflowStep::SendEmail { .. }
+                    | WorkflowStep::HttpRequest { .. }
+                    | WorkflowStep::Webhook { .. }
+                    | WorkflowStep::AssignOwner { .. }
+                    | WorkflowStep::ApprovalRequest { .. }
+                    | WorkflowStep::Delay { .. } => {
+                        self.execute_step_with_trace(
                             actor,
-                            &WorkflowAction::LogMessage {
-                                message: message.clone(),
-                            },
-                            context,
-                            step_path.as_str(),
-                            traces,
-                        )
-                        .await?;
-                    }
-                    WorkflowStep::CreateRuntimeRecord {
-                        entity_logical_name,
-                        data,
-                    } => {
-                        self.execute_action_with_trace(
-                            actor,
-                            &WorkflowAction::CreateRuntimeRecord {
-                                entity_logical_name: entity_logical_name.clone(),
-                                data: data.clone(),
-                            },
+                            step,
                             context,
                             step_path.as_str(),
                             traces,
@@ -260,27 +226,27 @@ impl WorkflowService {
         })
     }
 
-    pub(super) async fn execute_action_with_trace(
+    pub(super) async fn execute_step_with_trace(
         &self,
         actor: &UserIdentity,
-        action: &WorkflowAction,
+        step: &WorkflowStep,
         context: WorkflowExecutionContext<'_>,
         step_path: &str,
         traces: &mut Vec<WorkflowRunStepTrace>,
     ) -> Result<(), WorkflowExecutionErrorWithTrace> {
-        let resolved_action = Self::interpolate_action(action, context).map_err(|error| {
+        let resolved_step = Self::interpolate_step(step, context).map_err(|error| {
             WorkflowExecutionErrorWithTrace {
                 error,
                 step_traces: traces.clone(),
             }
         })?;
-        let step_type = resolved_action.action_type().to_owned();
+        let step_type = resolved_step.step_type().to_owned();
         let input_payload = context.trigger_payload.clone();
-        let output_payload = match &resolved_action {
-            WorkflowAction::LogMessage { message } => {
+        let output_payload = match &resolved_step {
+            WorkflowStep::LogMessage { message } => {
                 serde_json::json!({ "message": message })
             }
-            WorkflowAction::CreateRuntimeRecord {
+            WorkflowStep::CreateRuntimeRecord {
                 entity_logical_name,
                 data,
             } => {
@@ -289,11 +255,123 @@ impl WorkflowService {
                     "data": data,
                 })
             }
+            WorkflowStep::UpdateRuntimeRecord {
+                entity_logical_name,
+                record_id,
+                data,
+            } => {
+                serde_json::json!({
+                    "entity_logical_name": entity_logical_name,
+                    "record_id": record_id,
+                    "data": data,
+                })
+            }
+            WorkflowStep::DeleteRuntimeRecord {
+                entity_logical_name,
+                record_id,
+            } => {
+                serde_json::json!({
+                    "entity_logical_name": entity_logical_name,
+                    "record_id": record_id,
+                })
+            }
+            WorkflowStep::SendEmail {
+                to,
+                subject,
+                body,
+                html_body,
+            } => {
+                serde_json::json!({
+                    "to": to,
+                    "subject": subject,
+                    "body": body,
+                    "html_body": html_body,
+                })
+            }
+            WorkflowStep::HttpRequest {
+                method,
+                url,
+                headers,
+                header_secret_refs,
+                body,
+            } => {
+                serde_json::json!({
+                    "method": method,
+                    "url": url,
+                    "headers": redact_sensitive_workflow_headers(headers.as_ref()),
+                    "header_secret_refs": redact_workflow_header_secret_refs(header_secret_refs.as_ref()),
+                    "body": body,
+                })
+            }
+            WorkflowStep::Webhook {
+                endpoint,
+                event,
+                headers,
+                header_secret_refs,
+                payload,
+            } => {
+                serde_json::json!({
+                    "endpoint": endpoint,
+                    "event": event,
+                    "headers": redact_sensitive_workflow_headers(headers.as_ref()),
+                    "header_secret_refs": redact_workflow_header_secret_refs(header_secret_refs.as_ref()),
+                    "payload": payload,
+                })
+            }
+            WorkflowStep::AssignOwner {
+                entity_logical_name,
+                record_id,
+                owner_id,
+                reason,
+            } => {
+                serde_json::json!({
+                    "entity_logical_name": entity_logical_name,
+                    "record_id": record_id,
+                    "owner_id": owner_id,
+                    "reason": reason,
+                })
+            }
+            WorkflowStep::ApprovalRequest {
+                entity_logical_name,
+                record_id,
+                request_type,
+                requested_by,
+                approver_id,
+                reason,
+                payload,
+            } => {
+                serde_json::json!({
+                    "entity_logical_name": entity_logical_name,
+                    "record_id": record_id,
+                    "request_type": request_type,
+                    "requested_by": requested_by,
+                    "approver_id": approver_id,
+                    "reason": reason,
+                    "payload": payload,
+                })
+            }
+            WorkflowStep::Delay {
+                duration_ms,
+                reason,
+            } => {
+                serde_json::json!({
+                    "duration_ms": duration_ms,
+                    "reason": reason,
+                })
+            }
+            WorkflowStep::Condition { .. } => {
+                return Err(WorkflowExecutionErrorWithTrace {
+                    error: AppError::Validation(
+                        "condition step cannot execute as an action".to_owned(),
+                    ),
+                    step_traces: traces.clone(),
+                });
+            }
         };
 
         let started_at = Instant::now();
         match self
-            .execute_resolved_action(actor, &resolved_action, context, step_path)
+            .execute_resolved_step(actor, &resolved_step, context, step_path)
             .await
         {
             Ok(()) => {

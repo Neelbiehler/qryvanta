@@ -1,4 +1,6 @@
 use super::*;
+use crate::RuntimeRecordWorkflowEventInput;
+use qryvanta_domain::WorkflowTrigger;
 
 impl MetadataService {
     /// Creates a runtime record using the latest published entity schema.
@@ -38,9 +40,16 @@ impl MetadataService {
             .create_runtime_record(
                 actor.tenant_id(),
                 entity_logical_name,
-                normalized_data,
+                normalized_data.clone(),
                 unique_values,
                 actor.subject(),
+                Self::runtime_record_workflow_event_input(
+                    actor,
+                    WorkflowTrigger::RuntimeRecordCreated {
+                        entity_logical_name: entity_logical_name.to_owned(),
+                    },
+                    record_payload_for_created(entity_logical_name, &normalized_data, None),
+                ),
             )
             .await?;
 
@@ -99,9 +108,16 @@ impl MetadataService {
             .create_runtime_record(
                 actor.tenant_id(),
                 entity_logical_name,
-                normalized_data,
+                normalized_data.clone(),
                 unique_values,
                 actor.subject(),
+                Self::runtime_record_workflow_event_input(
+                    actor,
+                    WorkflowTrigger::RuntimeRecordCreated {
+                        entity_logical_name: entity_logical_name.to_owned(),
+                    },
+                    record_payload_for_created(entity_logical_name, &normalized_data, None),
+                ),
             )
             .await?;
 
@@ -190,8 +206,20 @@ impl MetadataService {
                 actor.tenant_id(),
                 entity_logical_name,
                 record_id,
-                normalized_data,
+                normalized_data.clone(),
                 unique_values,
+                Self::runtime_record_workflow_event_input(
+                    actor,
+                    WorkflowTrigger::RuntimeRecordUpdated {
+                        entity_logical_name: entity_logical_name.to_owned(),
+                    },
+                    record_payload_for_updated(
+                        entity_logical_name,
+                        record_id,
+                        Some(existing_record.data()),
+                        &normalized_data,
+                    ),
+                ),
             )
             .await?;
 
@@ -283,8 +311,20 @@ impl MetadataService {
                 actor.tenant_id(),
                 entity_logical_name,
                 record_id,
-                normalized_data,
+                normalized_data.clone(),
                 unique_values,
+                Self::runtime_record_workflow_event_input(
+                    actor,
+                    WorkflowTrigger::RuntimeRecordUpdated {
+                        entity_logical_name: entity_logical_name.to_owned(),
+                    },
+                    record_payload_for_updated(
+                        entity_logical_name,
+                        record_id,
+                        Some(existing_record.data()),
+                        &normalized_data,
+                    ),
+                ),
             )
             .await?;
 
@@ -336,17 +376,16 @@ impl MetadataService {
         self.published_schema_for_runtime(actor.tenant_id(), entity_logical_name)
             .await?;
 
-        let record_exists = self
+        let existing_record = self
             .repository
             .find_runtime_record(actor.tenant_id(), entity_logical_name, record_id)
-            .await?
-            .is_some();
-        if !record_exists {
+            .await?;
+        let Some(existing_record) = existing_record else {
             return Err(AppError::NotFound(format!(
                 "runtime record '{}' does not exist for entity '{}'",
                 record_id, entity_logical_name
             )));
-        }
+        };
 
         if self
             .repository
@@ -360,7 +399,22 @@ impl MetadataService {
         }
 
         self.repository
-            .delete_runtime_record(actor.tenant_id(), entity_logical_name, record_id)
+            .delete_runtime_record(
+                actor.tenant_id(),
+                entity_logical_name,
+                record_id,
+                Self::runtime_record_workflow_event_input(
+                    actor,
+                    WorkflowTrigger::RuntimeRecordDeleted {
+                        entity_logical_name: entity_logical_name.to_owned(),
+                    },
+                    record_payload_for_deleted(
+                        entity_logical_name,
+                        record_id,
+                        Some(existing_record.data()),
+                    ),
+                ),
+            )
             .await?;
 
         self.audit_repository
@@ -413,17 +467,16 @@ impl MetadataService {
         self.published_schema_for_runtime(actor.tenant_id(), entity_logical_name)
             .await?;
 
-        let record_exists = self
+        let existing_record = self
             .repository
             .find_runtime_record(actor.tenant_id(), entity_logical_name, record_id)
-            .await?
-            .is_some();
-        if !record_exists {
+            .await?;
+        let Some(existing_record) = existing_record else {
             return Err(AppError::NotFound(format!(
                 "runtime record '{}' does not exist for entity '{}'",
                 record_id, entity_logical_name
             )));
-        }
+        };
 
         if self
             .repository
@@ -437,7 +490,22 @@ impl MetadataService {
         }
 
         self.repository
-            .delete_runtime_record(actor.tenant_id(), entity_logical_name, record_id)
+            .delete_runtime_record(
+                actor.tenant_id(),
+                entity_logical_name,
+                record_id,
+                Self::runtime_record_workflow_event_input(
+                    actor,
+                    WorkflowTrigger::RuntimeRecordDeleted {
+                        entity_logical_name: entity_logical_name.to_owned(),
+                    },
+                    record_payload_for_deleted(
+                        entity_logical_name,
+                        record_id,
+                        Some(existing_record.data()),
+                    ),
+                ),
+            )
             .await?;
 
         self.audit_repository
@@ -456,4 +524,99 @@ impl MetadataService {
 
         Ok(())
     }
+
+    fn runtime_record_workflow_event_input(
+        actor: &UserIdentity,
+        trigger: WorkflowTrigger,
+        payload: Value,
+    ) -> Option<RuntimeRecordWorkflowEventInput> {
+        if is_internal_workflow_subject(actor.subject()) {
+            return None;
+        }
+
+        let record_id = payload
+            .get("record_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned();
+
+        Some(RuntimeRecordWorkflowEventInput {
+            trigger,
+            record_id,
+            payload,
+            emitted_by_subject: actor.subject().to_owned(),
+        })
+    }
+}
+
+fn is_internal_workflow_subject(subject: &str) -> bool {
+    subject == "workflow-runtime" || subject.starts_with("workflow-worker:")
+}
+
+fn record_payload_for_created(
+    entity_logical_name: &str,
+    record_data: &Value,
+    record_id_override: Option<&str>,
+) -> Value {
+    let record_id = record_id_override
+        .map(ToOwned::to_owned)
+        .or_else(|| {
+            record_data
+                .get("id")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned)
+        })
+        .unwrap_or_default();
+    let mut payload = serde_json::json!({
+        "entity_logical_name": entity_logical_name,
+        "record_id": record_id,
+        "id": record_id,
+        "record": record_data,
+        "data": record_data,
+        "event": "created",
+    });
+
+    if let Some(payload_object) = payload.as_object_mut()
+        && let Some(record_object) = record_data.as_object()
+    {
+        for (key, value) in record_object {
+            payload_object
+                .entry(key.clone())
+                .or_insert_with(|| value.clone());
+        }
+    }
+
+    payload
+}
+
+fn record_payload_for_updated(
+    entity_logical_name: &str,
+    record_id: &str,
+    previous_data: Option<&Value>,
+    current_data: &Value,
+) -> Value {
+    serde_json::json!({
+        "entity_logical_name": entity_logical_name,
+        "record_id": record_id,
+        "id": record_id,
+        "event": "updated",
+        "previous": previous_data,
+        "record": current_data,
+        "data": current_data,
+    })
+}
+
+fn record_payload_for_deleted(
+    entity_logical_name: &str,
+    record_id: &str,
+    deleted_data: Option<&Value>,
+) -> Value {
+    serde_json::json!({
+        "entity_logical_name": entity_logical_name,
+        "record_id": record_id,
+        "id": record_id,
+        "event": "deleted",
+        "record": deleted_data,
+        "data": deleted_data,
+    })
 }

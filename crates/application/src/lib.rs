@@ -74,13 +74,15 @@ pub use user_service::{
     AuthOutcome, PasswordHasher, RegisterParams, UserRecord, UserRepository, UserService,
 };
 pub use workflow_ports::{
-    ClaimedWorkflowJob, CompleteWorkflowRunInput, CreateWorkflowRunInput, SaveWorkflowInput,
-    WorkflowActionDispatchRequest, WorkflowActionDispatchType, WorkflowActionDispatcher,
-    WorkflowClaimPartition, WorkflowExecutionMode, WorkflowQueueStats, WorkflowQueueStatsCache,
+    ClaimedRuntimeRecordWorkflowEvent, ClaimedWorkflowJob, ClaimedWorkflowScheduleTick,
+    CompleteWorkflowRunInput, CreateWorkflowRunInput, RuntimeRecordWorkflowEventDrainResult,
+    RuntimeRecordWorkflowEventInput, SaveWorkflowInput, WorkflowActionDispatchRequest,
+    WorkflowActionDispatchType, WorkflowActionDispatcher, WorkflowClaimPartition,
+    WorkflowDelayService, WorkflowExecutionMode, WorkflowQueueStats, WorkflowQueueStatsCache,
     WorkflowQueueStatsQuery, WorkflowRepository, WorkflowRun, WorkflowRunAttempt,
     WorkflowRunAttemptStatus, WorkflowRunListQuery, WorkflowRunReplay,
     WorkflowRunReplayTimelineEvent, WorkflowRunStatus, WorkflowRunStepTrace,
-    WorkflowRuntimeRecordService, WorkflowWorkerHeartbeatInput, WorkflowWorkerLease,
-    WorkflowWorkerLeaseCoordinator,
+    WorkflowRuntimeRecordService, WorkflowScheduleTickDrainResult, WorkflowScheduledTrigger,
+    WorkflowWorkerHeartbeatInput, WorkflowWorkerLease, WorkflowWorkerLeaseCoordinator,
 };
 pub use workflow_service::WorkflowService;

@@ -4,6 +4,8 @@ import { useCallback, type FormEvent, useEffect, useMemo, useRef, useState } fro
 import { useRouter } from "next/navigation";
 
 import type {
+  FieldResponse,
+  PublishedSchemaResponse,
   WorkflowResponse,
   WorkflowRunResponse,
   WorkflowStepDto,
@@ -22,6 +24,7 @@ import {
   cloneWorkflowSteps,
   collectWorkflowValidationIssues,
   createDraftFromTransport,
+  createDraftObjectFieldsFromValue,
   createDraftStep,
   createTemplateStep,
   dynamicTokensForStep,
@@ -130,10 +133,16 @@ function useWorkflowStudioPanelContent({
     setTriggerEntityLogicalName,
     maxAttempts,
     setMaxAttempts,
-    isEnabled,
-    setIsEnabled,
+    workflowLifecycleState,
+    setWorkflowLifecycleState,
+    publishedVersion,
+    setPublishedVersion,
     isSaving,
+    isPublishing,
+    isDisabling,
     saveWorkflow,
+    publishWorkflow,
+    disableWorkflow,
   } = useWorkflowEditor({
     onResetMessages: resetMessages,
     onStatusMessage: setStatusMessage,
@@ -144,11 +153,12 @@ function useWorkflowStudioPanelContent({
   const {
     runtimeEntities,
     publishedSchemasByEntity,
+    loadPublishedSchemaForEntity,
   } = useRuntimeSchemas(triggerType, triggerEntityLogicalName);
 
   const {
-    executePayload,
-    setExecutePayload,
+    executePayloadFields,
+    setExecutePayloadFields,
     attemptsByRun,
     expandedRunId,
     loadingAttemptsRunId,
@@ -233,6 +243,137 @@ function useWorkflowStudioPanelContent({
     () => workflows.find((workflow) => workflow.logical_name === selectedWorkflow) ?? null,
     [selectedWorkflow, workflows],
   );
+  const selectedWorkflowTriggerType = (selectedWorkflowDefinition?.trigger_type ??
+    triggerType) as TriggerType;
+  const selectedWorkflowTriggerEntityLogicalName =
+    selectedWorkflowDefinition?.trigger_entity_logical_name ?? triggerEntityLogicalName;
+  const selectedWorkflowTriggerSchema = useMemo(() => {
+    const normalized = selectedWorkflowTriggerEntityLogicalName?.trim() ?? "";
+    if (normalized.length === 0) {
+      return null;
+    }
+
+    return publishedSchemasByEntity[normalized] ?? null;
+  }, [publishedSchemasByEntity, selectedWorkflowTriggerEntityLogicalName]);
+  const buildSuggestedTestPayload = useCallback(
+    (
+      workflowTriggerType: TriggerType,
+      workflowTriggerSchema: PublishedSchemaResponse | null,
+    ): Record<string, unknown> => {
+      function sampleValueForField(field: FieldResponse): unknown {
+        if (field.default_value !== null) {
+          return field.default_value;
+        }
+
+        switch (field.field_type) {
+          case "number":
+          case "integer":
+          case "decimal":
+            return field.min_value ?? 1;
+          case "boolean":
+            return true;
+          case "date":
+            return "2026-03-07";
+          case "datetime":
+          case "timestamp":
+            return "2026-03-07T09:00:00Z";
+          case "email":
+            return "alice@example.com";
+          case "relation":
+          case "lookup":
+            return "rec_test_123";
+          case "json":
+            return { source: "maker_test" };
+          default:
+            return `${field.logical_name}_sample`;
+        }
+      }
+
+      if (workflowTriggerType === "schedule_tick") {
+        return {
+          tick_at: "2026-03-07T09:00:00Z",
+          timezone: "UTC",
+          source: "maker_test",
+        };
+      }
+
+      if (workflowTriggerType === "webhook_received") {
+        return {
+          event_type: "workflow.test",
+          request_id: "evt_test_123",
+          data: { source: "maker_test" },
+        };
+      }
+
+      if (workflowTriggerType === "form_submitted") {
+        return {
+          email: "alice@example.com",
+          source: "landing_page",
+          consent: true,
+        };
+      }
+
+      if (workflowTriggerType === "inbound_email_received") {
+        return {
+          from: "alice@example.com",
+          subject: "Need help",
+          text_body: "Please assist.",
+        };
+      }
+
+      if (workflowTriggerType === "approval_event_received") {
+        return {
+          request_id: "req_test_123",
+          status: "approved",
+          approver_id: "manager_7",
+          comment: "Looks good",
+        };
+      }
+
+      if (
+        (workflowTriggerType === "runtime_record_created" ||
+          workflowTriggerType === "runtime_record_updated" ||
+          workflowTriggerType === "runtime_record_deleted") &&
+        workflowTriggerSchema
+      ) {
+        const preferredFields = workflowTriggerSchema.fields
+          .filter((field) => field.logical_name !== "id")
+          .slice(0, 8);
+
+        if (preferredFields.length === 0) {
+          return { record_id: "rec_test_123" };
+        }
+
+        return preferredFields.reduce<Record<string, unknown>>((acc, field) => {
+          acc[field.logical_name] = sampleValueForField(field);
+          return acc;
+        }, {});
+      }
+
+      return { manual: true };
+    },
+    [],
+  );
+  useEffect(() => {
+    if (!selectedWorkflowTriggerEntityLogicalName) {
+      return;
+    }
+
+    void loadPublishedSchemaForEntity(selectedWorkflowTriggerEntityLogicalName);
+  }, [loadPublishedSchemaForEntity, selectedWorkflowTriggerEntityLogicalName]);
+
+  useEffect(() => {
+    const nextPayload = buildSuggestedTestPayload(
+      selectedWorkflowTriggerType,
+      selectedWorkflowTriggerSchema,
+    );
+    setExecutePayloadFields(createDraftObjectFieldsFromValue(nextPayload));
+  }, [
+    buildSuggestedTestPayload,
+    selectedWorkflowTriggerSchema,
+    selectedWorkflowTriggerType,
+    setExecutePayloadFields,
+  ]);
   const runsForSelectedWorkflow = useMemo(() => {
     return runs
       .filter((run) => run.workflow_logical_name === selectedWorkflow)
@@ -584,20 +725,10 @@ function useWorkflowStudioPanelContent({
     setTriggerType(workflow.trigger_type as TriggerType);
     setTriggerEntityLogicalName(workflow.trigger_entity_logical_name ?? "");
     setMaxAttempts(String(workflow.max_attempts));
-    setIsEnabled(workflow.is_enabled);
+    setWorkflowLifecycleState(workflow.lifecycle_state);
+    setPublishedVersion(workflow.published_version ?? null);
 
-    const transportSteps = Array.isArray(workflow.steps)
-      ? workflow.steps
-      : [
-          {
-            type: workflow.action_type,
-            entity_logical_name: workflow.action_entity_logical_name,
-            message: (workflow.action_payload as { message?: string }).message,
-            data: workflow.action_payload,
-          } as unknown as WorkflowStepDto,
-        ];
-
-    const draftSteps = transportSteps.map((step) => createDraftFromTransport(step, createId));
+    const draftSteps = workflow.steps.map((step) => createDraftFromTransport(step, createId));
     setSteps(draftSteps);
 
     const firstStepId = draftSteps.at(0)?.id ?? null;
@@ -637,6 +768,18 @@ function useWorkflowStudioPanelContent({
       return;
     }
     await saveWorkflow(steps);
+  }
+
+  async function handlePublishWorkflow() {
+    if (validationErrorCount > 0) {
+      setErrorMessage("Resolve flow checker errors before publishing.");
+      return;
+    }
+    await publishWorkflow(steps);
+  }
+
+  async function handleDisableWorkflow() {
+    await disableWorkflow();
   }
 
   function handleExecutionWorkflowChange(nextWorkflow: string) {
@@ -880,8 +1023,8 @@ function useWorkflowStudioPanelContent({
         onDescriptionChange={setDescription}
         maxAttempts={maxAttempts}
         onMaxAttemptsChange={setMaxAttempts}
-        isEnabled={isEnabled}
-        onEnabledChange={setIsEnabled}
+        workflowLifecycleState={workflowLifecycleState}
+        publishedVersion={publishedVersion}
         catalogQuery={catalogQuery}
         onCatalogQueryChange={setCatalogQuery}
         catalogCategory={catalogCategory}
@@ -892,12 +1035,28 @@ function useWorkflowStudioPanelContent({
         onInsertTemplate={insertTemplateFromCatalog}
         onAddRootStep={addRootStep}
         isSaving={isSaving}
+        isPublishing={isPublishing}
+        isDisabling={isDisabling}
+        onPublishWorkflow={handlePublishWorkflow}
+        onDisableWorkflow={handleDisableWorkflow}
         onExecuteWorkflow={handleExecuteWorkflow}
         onExecutionWorkflowChange={handleExecutionWorkflowChange}
         workflows={workflows}
         selectedWorkflow={selectedWorkflow}
-        executePayload={executePayload}
-        onExecutePayloadChange={setExecutePayload}
+        selectedWorkflowDefinition={selectedWorkflowDefinition}
+        selectedWorkflowTriggerSchema={selectedWorkflowTriggerSchema}
+        executePayloadFields={executePayloadFields}
+        onExecutePayloadFieldsChange={setExecutePayloadFields}
+        onLoadSuggestedExecutePayload={() =>
+          setExecutePayloadFields(
+            createDraftObjectFieldsFromValue(
+              buildSuggestedTestPayload(
+                selectedWorkflowTriggerType,
+                selectedWorkflowTriggerSchema,
+              ),
+            ),
+          )
+        }
         isExecuting={isExecuting}
         validationIssues={validationIssues}
         validationErrorCount={validationErrorCount}

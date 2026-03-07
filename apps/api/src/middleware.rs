@@ -188,7 +188,24 @@ pub async fn require_same_origin_for_mutations(
     request: Request,
     next: Next,
 ) -> ApiResult<Response> {
-    if request.uri().path().starts_with("/api/internal/worker/") {
+    if request.uri().path().starts_with("/api/internal/worker/")
+        || request
+            .uri()
+            .path()
+            .starts_with("/api/public/workflows/webhooks/")
+        || request
+            .uri()
+            .path()
+            .starts_with("/api/public/workflows/forms/")
+        || request
+            .uri()
+            .path()
+            .starts_with("/api/public/workflows/email/")
+        || request
+            .uri()
+            .path()
+            .starts_with("/api/public/workflows/approvals/")
+    {
         return Ok(next.run(request).await);
     }
 

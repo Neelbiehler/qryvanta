@@ -352,10 +352,13 @@ async fn record_workspace_publish_run_writes_audit_event() {
             WorkspacePublishRunAuditInput {
                 requested_entities: 2,
                 requested_apps: 1,
+                requested_workflows: 0,
                 requested_entity_logical_names: vec!["contact".to_owned(), "account".to_owned()],
                 requested_app_logical_names: vec!["sales".to_owned()],
+                requested_workflow_logical_names: Vec::new(),
                 published_entities: vec!["contact".to_owned(), "account".to_owned()],
                 validated_apps: vec!["sales".to_owned()],
+                published_workflows: Vec::new(),
                 issue_count: 0,
                 is_publishable: true,
             },

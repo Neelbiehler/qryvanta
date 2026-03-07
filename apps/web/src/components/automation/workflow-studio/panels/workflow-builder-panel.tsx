@@ -6,9 +6,11 @@ import { Play, Search, Settings2 } from "lucide-react";
 import type { WorkflowResponse } from "@/lib/api";
 import type {
   CatalogInsertMode,
+  DraftObjectField,
   DraftWorkflowStep,
   FlowTemplateCategory,
   FlowTemplateId,
+  TriggerType,
   WorkflowValidationIssue,
 } from "@/components/automation/workflow-studio/model";
 import {
@@ -31,8 +33,8 @@ type WorkflowBuilderPanelProps = {
   onDescriptionChange: (value: string) => void;
   maxAttempts: string;
   onMaxAttemptsChange: (value: string) => void;
-  isEnabled: boolean;
-  onEnabledChange: (value: boolean) => void;
+  workflowLifecycleState: WorkflowResponse["lifecycle_state"];
+  publishedVersion: number | null;
   catalogQuery: string;
   onCatalogQueryChange: (value: string) => void;
   catalogCategory: "all" | FlowTemplateCategory;
@@ -43,12 +45,19 @@ type WorkflowBuilderPanelProps = {
   onInsertTemplate: (templateId: FlowTemplateId) => void;
   onAddRootStep: (stepType: DraftWorkflowStep["type"]) => void;
   isSaving: boolean;
+  isPublishing: boolean;
+  isDisabling: boolean;
+  onPublishWorkflow: () => void;
+  onDisableWorkflow: () => void;
   onExecuteWorkflow: (event: FormEvent<HTMLFormElement>) => void;
   onExecutionWorkflowChange: (workflowLogicalName: string) => void;
   workflows: WorkflowResponse[];
   selectedWorkflow: string;
-  executePayload: string;
-  onExecutePayloadChange: (value: string) => void;
+  selectedWorkflowDefinition: WorkflowResponse | null;
+  selectedWorkflowTriggerSchema: { fields: Array<{ logical_name: string; display_name: string; field_type: string }> } | null;
+  executePayloadFields: DraftObjectField[];
+  onExecutePayloadFieldsChange: (fields: DraftObjectField[]) => void;
+  onLoadSuggestedExecutePayload: () => void;
   isExecuting: boolean;
   validationIssues: WorkflowValidationIssue[];
   validationErrorCount: number;
@@ -66,8 +75,8 @@ export function WorkflowBuilderPanel({
   onDescriptionChange,
   maxAttempts,
   onMaxAttemptsChange,
-  isEnabled,
-  onEnabledChange,
+  workflowLifecycleState,
+  publishedVersion,
   catalogQuery,
   onCatalogQueryChange,
   catalogCategory,
@@ -76,12 +85,19 @@ export function WorkflowBuilderPanel({
   onInsertTemplate,
   onAddRootStep,
   isSaving,
+  isPublishing,
+  isDisabling,
+  onPublishWorkflow,
+  onDisableWorkflow,
   onExecuteWorkflow,
   onExecutionWorkflowChange,
   workflows,
   selectedWorkflow,
-  executePayload,
-  onExecutePayloadChange,
+  selectedWorkflowDefinition,
+  selectedWorkflowTriggerSchema,
+  executePayloadFields,
+  onExecutePayloadFieldsChange,
+  onLoadSuggestedExecutePayload,
   isExecuting,
   validationIssues,
   validationErrorCount,
@@ -134,21 +150,28 @@ export function WorkflowBuilderPanel({
             onDescriptionChange={onDescriptionChange}
             maxAttempts={maxAttempts}
             onMaxAttemptsChange={onMaxAttemptsChange}
-            isEnabled={isEnabled}
-            onEnabledChange={onEnabledChange}
+            workflowLifecycleState={workflowLifecycleState}
+            publishedVersion={publishedVersion}
             isSaving={isSaving}
+            isPublishing={isPublishing}
+            isDisabling={isDisabling}
             validationIssues={validationIssues}
             validationErrorCount={validationErrorCount}
             onFocusValidationIssue={onFocusValidationIssue}
             onSaveWorkflow={onSaveWorkflow}
+            onPublishWorkflow={onPublishWorkflow}
+            onDisableWorkflow={onDisableWorkflow}
           />
         )}
         {activeTab === "test" && (
           <TestTab
             workflows={workflows}
             selectedWorkflow={selectedWorkflow}
-            executePayload={executePayload}
-            onExecutePayloadChange={onExecutePayloadChange}
+            selectedWorkflowDefinition={selectedWorkflowDefinition}
+            selectedWorkflowTriggerSchema={selectedWorkflowTriggerSchema}
+            executePayloadFields={executePayloadFields}
+            onExecutePayloadFieldsChange={onExecutePayloadFieldsChange}
+            onLoadSuggestedExecutePayload={onLoadSuggestedExecutePayload}
             isExecuting={isExecuting}
             onExecuteWorkflow={onExecuteWorkflow}
             onExecutionWorkflowChange={onExecutionWorkflowChange}

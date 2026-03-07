@@ -20,6 +20,7 @@ use crate::dto::{PublishCheckCategoryDto, PublishCheckScopeDto};
 pub struct PublishState {
     pub app_service: qryvanta_application::AppService,
     pub metadata_service: qryvanta_application::MetadataService,
+    pub workflow_service: qryvanta_application::WorkflowService,
     pub security_admin_service: qryvanta_application::SecurityAdminService,
 }
 
@@ -28,6 +29,7 @@ impl FromRef<AppState> for PublishState {
         Self {
             app_service: input.app_service.clone(),
             metadata_service: input.metadata_service.clone(),
+            workflow_service: input.workflow_service.clone(),
             security_admin_service: input.security_admin_service.clone(),
         }
     }

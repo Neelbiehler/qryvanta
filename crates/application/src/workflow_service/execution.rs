@@ -27,6 +27,12 @@ impl WorkflowService {
                 actor.tenant_id(),
                 CreateWorkflowRunInput {
                     workflow_logical_name: workflow.logical_name().as_str().to_owned(),
+                    workflow_version: workflow.published_version().ok_or_else(|| {
+                        AppError::Conflict(format!(
+                            "workflow '{}' must be published before execution",
+                            workflow.logical_name().as_str()
+                        ))
+                    })?,
                     trigger_type: workflow.trigger().trigger_type().to_owned(),
                     trigger_entity_logical_name: workflow
                         .trigger()
@@ -53,6 +59,12 @@ impl WorkflowService {
                 actor.tenant_id(),
                 CreateWorkflowRunInput {
                     workflow_logical_name: workflow.logical_name().as_str().to_owned(),
+                    workflow_version: workflow.published_version().ok_or_else(|| {
+                        AppError::Conflict(format!(
+                            "workflow '{}' must be published before execution",
+                            workflow.logical_name().as_str()
+                        ))
+                    })?,
                     trigger_type: workflow.trigger().trigger_type().to_owned(),
                     trigger_entity_logical_name: workflow
                         .trigger()

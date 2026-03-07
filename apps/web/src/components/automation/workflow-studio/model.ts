@@ -22,8 +22,11 @@ export type TriggerType =
   | "runtime_record_created"
   | "runtime_record_updated"
   | "runtime_record_deleted"
-  | "schedule_tick";
-export type ActionType = "log_message" | "create_runtime_record";
+  | "schedule_tick"
+  | "webhook_received"
+  | "form_submitted"
+  | "inbound_email_received"
+  | "approval_event_received";
 export type InspectorNode = "trigger" | "step";
 
 export type DraftLogStep = {
@@ -36,7 +39,101 @@ export type DraftCreateStep = {
   id: string;
   type: "create_runtime_record";
   entityLogicalName: string;
-  dataJson: string;
+  dataFields: DraftObjectField[];
+};
+
+export type DraftUpdateStep = {
+  id: string;
+  type: "update_runtime_record";
+  entityLogicalName: string;
+  recordId: string;
+  dataFields: DraftObjectField[];
+};
+
+export type DraftDeleteStep = {
+  id: string;
+  type: "delete_runtime_record";
+  entityLogicalName: string;
+  recordId: string;
+};
+
+export type DraftSendEmailStep = {
+  id: string;
+  type: "send_email";
+  to: string;
+  subject: string;
+  body: string;
+  htmlBody: string;
+};
+
+export type DraftValueKind = "string" | "number" | "boolean" | "null" | "json";
+
+export type DraftObjectField = {
+  id: string;
+  key: string;
+  valueKind: DraftValueKind;
+  value: string;
+};
+
+export type DraftArrayItem = {
+  id: string;
+  valueKind: DraftValueKind;
+  value: string;
+};
+
+export type DraftHttpBodyMode = "none" | "object" | "array" | "scalar" | "json";
+
+export type DraftHttpRequestStep = {
+  id: string;
+  type: "http_request";
+  method: string;
+  url: string;
+  headersJson: string;
+  headerSecretRefsJson: string;
+  bodyMode: DraftHttpBodyMode;
+  bodyFields: DraftObjectField[];
+  bodyArrayItems: DraftArrayItem[];
+  bodyScalarKind: DraftValueKind;
+  bodyScalarValue: string;
+  bodyJson: string;
+};
+
+export type DraftWebhookStep = {
+  id: string;
+  type: "webhook";
+  endpoint: string;
+  event: string;
+  headersJson: string;
+  headerSecretRefsJson: string;
+  payloadFields: DraftObjectField[];
+};
+
+export type DraftAssignOwnerStep = {
+  id: string;
+  type: "assign_owner";
+  entityLogicalName: string;
+  recordId: string;
+  ownerId: string;
+  reason: string;
+};
+
+export type DraftApprovalRequestStep = {
+  id: string;
+  type: "approval_request";
+  entityLogicalName: string;
+  recordId: string;
+  requestType: string;
+  requestedBy: string;
+  approverId: string;
+  reason: string;
+  payloadFields: DraftObjectField[];
+};
+
+export type DraftDelayStep = {
+  id: string;
+  type: "delay";
+  durationMs: string;
+  reason: string;
 };
 
 export type DraftConditionStep = {
@@ -44,7 +141,8 @@ export type DraftConditionStep = {
   type: "condition";
   fieldPath: string;
   operator: WorkflowConditionOperatorDto;
-  valueJson: string;
+  valueKind: DraftValueKind;
+  valueText: string;
   thenLabel: string;
   elseLabel: string;
   thenSteps: DraftWorkflowStep[];
@@ -54,6 +152,14 @@ export type DraftConditionStep = {
 export type DraftWorkflowStep =
   | DraftLogStep
   | DraftCreateStep
+  | DraftUpdateStep
+  | DraftDeleteStep
+  | DraftSendEmailStep
+  | DraftHttpRequestStep
+  | DraftWebhookStep
+  | DraftAssignOwnerStep
+  | DraftApprovalRequestStep
+  | DraftDelayStep
   | DraftConditionStep;
 
 export type CanvasHistorySnapshot = {
@@ -103,6 +209,10 @@ export const TRIGGER_OPTIONS: Array<{
   { value: "runtime_record_updated", label: "Record updated" },
   { value: "runtime_record_deleted", label: "Record deleted" },
   { value: "schedule_tick", label: "Schedule tick" },
+  { value: "webhook_received", label: "Webhook received" },
+  { value: "form_submitted", label: "Form submitted" },
+  { value: "inbound_email_received", label: "Inbound email" },
+  { value: "approval_event_received", label: "Approval event" },
 ];
 
 export const RUNTIME_TRIGGER_ENTITY_PRESETS: Array<{
@@ -142,12 +252,149 @@ export function parseJsonObject(
   return parsed as Record<string, unknown>;
 }
 
+export function parseJsonStringMap(
+  value: string,
+  fieldLabel: string,
+): Record<string, string> {
+  const parsed = parseJsonObject(value, fieldLabel);
+
+  for (const [key, entry] of Object.entries(parsed)) {
+    if (typeof entry !== "string") {
+      throw new Error(`${fieldLabel} field "${key}" must be a string.`);
+    }
+  }
+
+  return parsed as Record<string, string>;
+}
+
 export function parseJsonValue(value: string, fieldLabel: string): unknown {
   try {
     return JSON.parse(value) as unknown;
   } catch {
     throw new Error(`${fieldLabel} must be valid JSON.`);
   }
+}
+
+export function createDraftFieldId(): string {
+  return `draft_field_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function inferDraftValueKind(value: unknown): DraftValueKind {
+  if (value === null) {
+    return "null";
+  }
+  if (typeof value === "string") {
+    return "string";
+  }
+  if (typeof value === "number") {
+    return "number";
+  }
+  if (typeof value === "boolean") {
+    return "boolean";
+  }
+  return "json";
+}
+
+function stringifyDraftValue(value: unknown): string {
+  if (value === null) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return JSON.stringify(value, null, 2);
+}
+
+export function createDraftObjectField(
+  key = "",
+  value: unknown = "",
+  id = createDraftFieldId(),
+): DraftObjectField {
+  return {
+    id,
+    key,
+    valueKind: inferDraftValueKind(value),
+    value: stringifyDraftValue(value),
+  };
+}
+
+export function createDraftObjectFieldsFromValue(
+  value: Record<string, unknown>,
+): DraftObjectField[] {
+  return Object.entries(value).map(([key, entry]) => createDraftObjectField(key, entry));
+}
+
+export function createDraftArrayItem(
+  value: unknown = "",
+  id = createDraftFieldId(),
+): DraftArrayItem {
+  return {
+    id,
+    valueKind: inferDraftValueKind(value),
+    value: stringifyDraftValue(value),
+  };
+}
+
+export function createDraftArrayItemsFromValue(value: unknown[]): DraftArrayItem[] {
+  return value.map((entry) => createDraftArrayItem(entry));
+}
+
+export function parseDraftValue(
+  valueKind: DraftValueKind,
+  value: string,
+  fieldLabel: string,
+): unknown {
+  if (valueKind === "string") {
+    return value;
+  }
+
+  if (valueKind === "number") {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+      throw new Error(`${fieldLabel} must be a valid number.`);
+    }
+    return parsed;
+  }
+
+  if (valueKind === "boolean") {
+    if (value !== "true" && value !== "false") {
+      throw new Error(`${fieldLabel} must be true or false.`);
+    }
+    return value === "true";
+  }
+
+  if (valueKind === "null") {
+    return null;
+  }
+
+  return parseJsonValue(value, fieldLabel);
+}
+
+export function parseDraftObjectFields(
+  fields: DraftObjectField[],
+  fieldLabel: string,
+): Record<string, unknown> {
+  return fields.reduce<Record<string, unknown>>((acc, field, index) => {
+    const key = field.key.trim();
+    if (key.length === 0) {
+      return acc;
+    }
+
+    acc[key] = parseDraftValue(field.valueKind, field.value, `${fieldLabel} field "${key}"`);
+    return acc;
+  }, {});
+}
+
+export function parseDraftArrayItems(
+  items: DraftArrayItem[],
+  fieldLabel: string,
+): unknown[] {
+  return items.map((item, index) =>
+    parseDraftValue(item.valueKind, item.value, `${fieldLabel} item ${index + 1}`),
+  );
 }
 
 export function isTypingElement(target: EventTarget | null): boolean {
@@ -179,11 +426,51 @@ export function summarizeStep(step: DraftWorkflowStep): string {
       return step.entityLogicalName.trim().length > 0
         ? `Create: ${step.entityLogicalName}`
         : "Create runtime record";
+    case "update_runtime_record":
+      return step.entityLogicalName.trim().length > 0
+        ? `Update: ${step.entityLogicalName} ${step.recordId || ""}`.trim()
+        : "Update record";
+    case "delete_runtime_record":
+      return step.entityLogicalName.trim().length > 0
+        ? `Delete: ${step.entityLogicalName} ${step.recordId || ""}`.trim()
+        : "Delete record";
+    case "send_email":
+      return step.subject.trim().length > 0
+        ? `Email: ${step.subject}`
+        : "Send email";
+    case "http_request":
+      return step.url.trim().length > 0 ? `HTTP: ${step.method} ${step.url}` : "HTTP request";
+    case "webhook":
+      return step.event.trim().length > 0
+        ? `Webhook: ${step.event}`
+        : "Webhook dispatch";
+    case "assign_owner":
+      return step.ownerId.trim().length > 0
+        ? `Assign owner: ${step.ownerId}`
+        : "Assign owner";
+    case "approval_request":
+      return step.requestType.trim().length > 0
+        ? `Approval: ${step.requestType}`
+        : "Approval request";
+    case "delay":
+      return step.durationMs.trim().length > 0
+        ? `Delay: ${step.durationMs} ms`
+        : "Delay";
     case "condition":
       return `${step.fieldPath || "[field path]"} ${step.operator}`;
     default:
       return "Step";
   }
+}
+
+function isJsonObjectValue(
+  value: unknown,
+): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isJsonArrayValue(value: unknown): value is unknown[] {
+  return Array.isArray(value);
 }
 
 
@@ -465,6 +752,38 @@ function stepTokenLabel(step: DraftWorkflowStep): string {
     return `Create record (${step.entityLogicalName || step.id})`;
   }
 
+  if (step.type === "update_runtime_record") {
+    return `Update record (${step.entityLogicalName || step.id})`;
+  }
+
+  if (step.type === "delete_runtime_record") {
+    return `Delete record (${step.entityLogicalName || step.id})`;
+  }
+
+  if (step.type === "send_email") {
+    return `Send email (${step.subject || step.id})`;
+  }
+
+  if (step.type === "http_request") {
+    return `HTTP request (${step.url || step.id})`;
+  }
+
+  if (step.type === "webhook") {
+    return `Webhook (${step.event || step.id})`;
+  }
+
+  if (step.type === "assign_owner") {
+    return `Assign owner (${step.ownerId || step.id})`;
+  }
+
+  if (step.type === "approval_request") {
+    return `Approval request (${step.requestType || step.id})`;
+  }
+
+  if (step.type === "delay") {
+    return `Delay (${step.durationMs || step.id})`;
+  }
+
   return `Condition (${step.id})`;
 }
 
@@ -528,6 +847,22 @@ export function duplicateStepWithNewIds(
   }
 
   if (step.type === "create_runtime_record") {
+    return {
+      ...step,
+      id: createId(),
+    };
+  }
+
+  if (
+    step.type === "update_runtime_record" ||
+    step.type === "delete_runtime_record" ||
+    step.type === "send_email" ||
+    step.type === "http_request" ||
+    step.type === "webhook" ||
+    step.type === "assign_owner" ||
+    step.type === "approval_request" ||
+    step.type === "delay"
+  ) {
     return {
       ...step,
       id: createId(),
@@ -629,20 +964,373 @@ export function collectWorkflowValidationIssues(
         }
 
         try {
-          const parsed = JSON.parse(step.dataJson) as unknown;
+          parseDraftObjectFields(step.dataFields, "Create record step data");
+        } catch {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "Create record step data contains an invalid field value.",
+          });
+        }
+        continue;
+      }
+
+      if (step.type === "update_runtime_record") {
+        if (step.entityLogicalName.trim().length === 0) {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "Update record step is missing an entity logical name.",
+          });
+        }
+        if (step.recordId.trim().length === 0) {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "Update record step requires a record id.",
+          });
+        }
+        try {
+          parseDraftObjectFields(step.dataFields, "Update record step data");
+        } catch {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "Update record step data contains an invalid field value.",
+          });
+        }
+        continue;
+      }
+
+      if (step.type === "delete_runtime_record") {
+        if (step.entityLogicalName.trim().length === 0) {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "Delete record step is missing an entity logical name.",
+          });
+        }
+        if (step.recordId.trim().length === 0) {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "Delete record step requires a record id.",
+          });
+        }
+        continue;
+      }
+
+      if (step.type === "send_email") {
+        if (step.to.trim().length === 0) {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "Send email step requires a recipient address.",
+          });
+        }
+
+        if (step.subject.trim().length === 0) {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "Send email step requires a subject.",
+          });
+        }
+
+        if (step.body.trim().length === 0) {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "Send email step requires a message body.",
+          });
+        }
+
+        continue;
+      }
+
+      if (step.type === "http_request") {
+        if (step.method.trim().length === 0) {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "HTTP request step requires a method.",
+          });
+        }
+
+        if (step.url.trim().length === 0) {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "HTTP request step requires a URL.",
+          });
+        }
+
+        try {
+          const parsed = JSON.parse(step.headersJson) as unknown;
           const isObject = parsed && typeof parsed === "object" && !Array.isArray(parsed);
           if (!isObject) {
             addIssue({
               stepId: step.id,
               level: "error",
-              message: "Create record step data must be a JSON object.",
+              message: "HTTP request headers must be a JSON object.",
             });
+          } else {
+            for (const [key, value] of Object.entries(
+              parsed as Record<string, unknown>,
+            )) {
+              if (typeof value !== "string") {
+                addIssue({
+                  stepId: step.id,
+                  level: "error",
+                  message: `HTTP request header "${key}" must be a string.`,
+                });
+              }
+            }
           }
         } catch {
           addIssue({
             stepId: step.id,
             level: "error",
-            message: "Create record step data contains invalid JSON.",
+            message: "HTTP request headers contain invalid JSON.",
+          });
+        }
+
+        try {
+          const parsed = JSON.parse(step.headerSecretRefsJson) as unknown;
+          const isObject = parsed && typeof parsed === "object" && !Array.isArray(parsed);
+          if (!isObject) {
+            addIssue({
+              stepId: step.id,
+              level: "error",
+              message: "HTTP request secret headers must be a JSON object.",
+            });
+          } else {
+            for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+              if (typeof value !== "string") {
+                addIssue({
+                  stepId: step.id,
+                  level: "error",
+                  message: `HTTP request secret header "${key}" must be a string.`,
+                });
+              }
+            }
+          }
+        } catch {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "HTTP request secret headers contain invalid JSON.",
+          });
+        }
+
+        if (step.bodyMode === "object") {
+          try {
+            parseDraftObjectFields(step.bodyFields, "HTTP request body");
+          } catch (error) {
+            addIssue({
+              stepId: step.id,
+              level: "error",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "HTTP request body contains an invalid field value.",
+            });
+          }
+        } else if (step.bodyMode === "array") {
+          try {
+            parseDraftArrayItems(step.bodyArrayItems, "HTTP request body");
+          } catch (error) {
+            addIssue({
+              stepId: step.id,
+              level: "error",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "HTTP request body contains an invalid array item.",
+            });
+          }
+        } else if (step.bodyMode === "scalar") {
+          try {
+            parseDraftValue(step.bodyScalarKind, step.bodyScalarValue, "HTTP request body");
+          } catch (error) {
+            addIssue({
+              stepId: step.id,
+              level: "error",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "HTTP request body contains an invalid scalar value.",
+            });
+          }
+        } else if (step.bodyMode === "json") {
+          try {
+            JSON.parse(step.bodyJson);
+          } catch {
+            addIssue({
+              stepId: step.id,
+              level: "error",
+              message: "HTTP request body must be valid JSON.",
+            });
+          }
+        }
+
+        continue;
+      }
+
+      if (step.type === "webhook") {
+        if (step.endpoint.trim().length === 0) {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "Webhook step requires an endpoint.",
+          });
+        }
+
+        if (step.event.trim().length === 0) {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "Webhook step requires an event name.",
+          });
+        }
+
+        try {
+          const parsed = JSON.parse(step.headersJson) as unknown;
+          const isObject = parsed && typeof parsed === "object" && !Array.isArray(parsed);
+          if (!isObject) {
+            addIssue({
+              stepId: step.id,
+              level: "error",
+              message: "Webhook headers must be a JSON object.",
+            });
+          } else {
+            for (const [key, value] of Object.entries(
+              parsed as Record<string, unknown>,
+            )) {
+              if (typeof value !== "string") {
+                addIssue({
+                  stepId: step.id,
+                  level: "error",
+                  message: `Webhook header "${key}" must be a string.`,
+                });
+              }
+            }
+          }
+        } catch {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "Webhook headers contain invalid JSON.",
+          });
+        }
+
+        try {
+          const parsed = JSON.parse(step.headerSecretRefsJson) as unknown;
+          const isObject = parsed && typeof parsed === "object" && !Array.isArray(parsed);
+          if (!isObject) {
+            addIssue({
+              stepId: step.id,
+              level: "error",
+              message: "Webhook secret headers must be a JSON object.",
+            });
+          } else {
+            for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+              if (typeof value !== "string") {
+                addIssue({
+                  stepId: step.id,
+                  level: "error",
+                  message: `Webhook secret header "${key}" must be a string.`,
+                });
+              }
+            }
+          }
+        } catch {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "Webhook secret headers contain invalid JSON.",
+          });
+        }
+
+        try {
+          parseDraftObjectFields(step.payloadFields, "Webhook payload");
+        } catch {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "Webhook payload contains an invalid field value.",
+          });
+        }
+
+        continue;
+      }
+
+      if (step.type === "assign_owner") {
+        if (step.entityLogicalName.trim().length === 0) {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "Assign owner step is missing an entity logical name.",
+          });
+        }
+        if (step.recordId.trim().length === 0) {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "Assign owner step requires a record id.",
+          });
+        }
+        if (step.ownerId.trim().length === 0) {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "Assign owner step requires an owner id.",
+          });
+        }
+        continue;
+      }
+
+      if (step.type === "approval_request") {
+        if (step.entityLogicalName.trim().length === 0) {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "Approval request step is missing an entity logical name.",
+          });
+        }
+        if (step.recordId.trim().length === 0) {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "Approval request step requires a record id.",
+          });
+        }
+        if (step.requestType.trim().length === 0) {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "Approval request step requires a request type.",
+          });
+        }
+        try {
+          parseDraftObjectFields(step.payloadFields, "Approval request payload");
+        } catch {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "Approval request payload contains an invalid field value.",
+          });
+        }
+        continue;
+      }
+
+      if (step.type === "delay") {
+        const parsed = Number.parseInt(step.durationMs, 10);
+        if (!Number.isFinite(parsed) || parsed <= 0) {
+          addIssue({
+            stepId: step.id,
+            level: "error",
+            message: "Delay step requires a positive duration in milliseconds.",
           });
         }
         continue;
@@ -658,12 +1346,12 @@ export function collectWorkflowValidationIssues(
 
       if (step.operator !== "exists") {
         try {
-          JSON.parse(step.valueJson);
+          parseDraftValue(step.valueKind, step.valueText, "Condition value");
         } catch {
           addIssue({
             stepId: step.id,
             level: "error",
-            message: "Condition value must be valid JSON for non-exists operators.",
+            message: "Condition value is invalid for the selected type.",
           });
         }
       }
@@ -699,50 +1387,20 @@ export function collectWorkflowValidationIssues(
       message:
         triggerType === "schedule_tick"
           ? "Schedule tick trigger requires a schedule key."
-          : "Runtime record trigger requires an entity logical name.",
+          : triggerType === "webhook_received"
+            ? "Webhook trigger requires a webhook key."
+            : triggerType === "form_submitted"
+              ? "Form trigger requires a form key."
+              : triggerType === "inbound_email_received"
+                ? "Inbound email trigger requires a mailbox key."
+                : triggerType === "approval_event_received"
+                  ? "Approval trigger requires an approval key."
+            : "Runtime record trigger requires an entity logical name.",
     });
   }
 
   validateBranch(steps);
   return issues;
-}
-
-export function firstActionFromSteps(
-  steps: WorkflowStepDto[],
-): {
-  actionType: ActionType;
-  actionEntityLogicalName: string | null;
-  actionPayload: Record<string, unknown>;
-} | null {
-  for (const step of steps) {
-    if (step.type === "log_message") {
-      return {
-        actionType: "log_message",
-        actionEntityLogicalName: null,
-        actionPayload: { message: step.message },
-      };
-    }
-
-    if (step.type === "create_runtime_record") {
-      return {
-        actionType: "create_runtime_record",
-        actionEntityLogicalName: step.entity_logical_name,
-        actionPayload: step.data,
-      };
-    }
-
-    const fromThen = firstActionFromSteps(step.then_steps);
-    if (fromThen) {
-      return fromThen;
-    }
-
-    const fromElse = firstActionFromSteps(step.else_steps);
-    if (fromElse) {
-      return fromElse;
-    }
-  }
-
-  return null;
 }
 
 export function createDraftFromTransport(
@@ -762,7 +1420,120 @@ export function createDraftFromTransport(
       id: createId(),
       type: "create_runtime_record",
       entityLogicalName: step.entity_logical_name,
-      dataJson: JSON.stringify(step.data, null, 2),
+      dataFields: createDraftObjectFieldsFromValue(step.data),
+    };
+  }
+
+  if (step.type === "update_runtime_record") {
+    return {
+      id: createId(),
+      type: "update_runtime_record",
+      entityLogicalName: step.entity_logical_name,
+      recordId: step.record_id,
+      dataFields: createDraftObjectFieldsFromValue(step.data),
+    };
+  }
+
+  if (step.type === "delete_runtime_record") {
+    return {
+      id: createId(),
+      type: "delete_runtime_record",
+      entityLogicalName: step.entity_logical_name,
+      recordId: step.record_id,
+    };
+  }
+
+  if (step.type === "send_email") {
+    return {
+      id: createId(),
+      type: "send_email",
+      to: step.to,
+      subject: step.subject,
+      body: step.body,
+      htmlBody: step.html_body ?? "",
+    };
+  }
+
+  if (step.type === "http_request") {
+    const bodyMode =
+      step.body == null
+        ? "none"
+        : isJsonObjectValue(step.body)
+          ? "object"
+          : isJsonArrayValue(step.body)
+            ? "array"
+            : "scalar";
+    const bodyFields = isJsonObjectValue(step.body)
+      ? createDraftObjectFieldsFromValue(step.body)
+      : [];
+    const bodyArrayItems = isJsonArrayValue(step.body)
+      ? createDraftArrayItemsFromValue(step.body)
+      : [];
+    return {
+      id: createId(),
+      type: "http_request",
+      method: step.method,
+      url: step.url,
+      headersJson: JSON.stringify(step.headers ?? {}, null, 2),
+      headerSecretRefsJson: JSON.stringify(step.header_secret_refs ?? {}, null, 2),
+      bodyMode,
+      bodyFields,
+      bodyArrayItems,
+      bodyScalarKind:
+        step.body != null && !isJsonObjectValue(step.body) && !isJsonArrayValue(step.body)
+          ? inferDraftValueKind(step.body)
+          : "string",
+      bodyScalarValue:
+        step.body != null && !isJsonObjectValue(step.body) && !isJsonArrayValue(step.body)
+          ? stringifyDraftValue(step.body)
+          : "",
+      bodyJson: JSON.stringify(step.body ?? null, null, 2),
+    };
+  }
+
+  if (step.type === "webhook") {
+    return {
+      id: createId(),
+      type: "webhook",
+      endpoint: step.endpoint,
+      event: step.event,
+      headersJson: JSON.stringify(step.headers ?? {}, null, 2),
+      headerSecretRefsJson: JSON.stringify(step.header_secret_refs ?? {}, null, 2),
+      payloadFields: createDraftObjectFieldsFromValue(step.payload),
+    };
+  }
+
+  if (step.type === "assign_owner") {
+    return {
+      id: createId(),
+      type: "assign_owner",
+      entityLogicalName: step.entity_logical_name,
+      recordId: step.record_id,
+      ownerId: step.owner_id,
+      reason: step.reason ?? "",
+    };
+  }
+
+  if (step.type === "approval_request") {
+    return {
+      id: createId(),
+      type: "approval_request",
+      entityLogicalName: step.entity_logical_name,
+      recordId: step.record_id,
+      requestType: step.request_type,
+      requestedBy: step.requested_by ?? "",
+      approverId: step.approver_id ?? "",
+      reason: step.reason ?? "",
+      payloadFields: createDraftObjectFieldsFromValue(step.payload ?? {}),
+    };
+  }
+
+  if (step.type === "delay") {
+    return {
+      id: createId(),
+      type: "delay",
+      durationMs: String(step.duration_ms),
+      reason: step.reason ?? "",
     };
   }
 
@@ -771,7 +1542,8 @@ export function createDraftFromTransport(
     type: "condition",
     fieldPath: step.field_path,
     operator: step.operator,
-    valueJson: step.operator === "exists" ? "null" : JSON.stringify(step.value ?? "", null, 2),
+    valueKind: step.operator === "exists" ? "null" : inferDraftValueKind(step.value ?? ""),
+    valueText: step.operator === "exists" ? "" : stringifyDraftValue(step.value ?? ""),
     thenLabel: step.then_label ?? "Yes",
     elseLabel: step.else_label ?? "No",
     thenSteps: step.then_steps.map((nestedStep) => createDraftFromTransport(nestedStep, createId)),

@@ -8,6 +8,7 @@ impl InMemoryMetadataRepository {
         data: Value,
         unique_values: Vec<UniqueFieldValue>,
         created_by_subject: &str,
+        workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<RuntimeRecord> {
         let generated_record_id = Uuid::new_v4().to_string();
         self.create_runtime_record_with_id_impl(
@@ -17,6 +18,7 @@ impl InMemoryMetadataRepository {
             data,
             unique_values,
             created_by_subject,
+            workflow_event,
         )
         .await
     }
@@ -29,6 +31,7 @@ impl InMemoryMetadataRepository {
         data: Value,
         unique_values: Vec<UniqueFieldValue>,
         created_by_subject: &str,
+        workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<RuntimeRecord> {
         let record = RuntimeRecord::new(record_id, entity_logical_name, data)?;
         let record_key =
@@ -67,6 +70,13 @@ impl InMemoryMetadataRepository {
             .write()
             .await
             .insert(record_key, created_by_subject.to_owned());
+        self.enqueue_runtime_record_workflow_event_impl(
+            tenant_id,
+            entity_logical_name,
+            record.record_id().as_str(),
+            workflow_event,
+        )
+        .await;
 
         Ok(record)
     }
@@ -78,6 +88,7 @@ impl InMemoryMetadataRepository {
         record_id: &str,
         data: Value,
         unique_values: Vec<UniqueFieldValue>,
+        workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<RuntimeRecord> {
         let record_key = runtime_record_storage_key(tenant_id, entity_logical_name, record_id);
 
@@ -111,6 +122,13 @@ impl InMemoryMetadataRepository {
             .write()
             .await
             .insert(record_key, updated.clone());
+        self.enqueue_runtime_record_workflow_event_impl(
+            tenant_id,
+            entity_logical_name,
+            record_id,
+            workflow_event,
+        )
+        .await;
 
         Ok(updated)
     }

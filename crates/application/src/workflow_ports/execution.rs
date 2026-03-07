@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use qryvanta_core::{AppError, AppResult, TenantId};
-use qryvanta_domain::{WorkflowAction, WorkflowDefinition, WorkflowStep, WorkflowTrigger};
+use qryvanta_domain::{WorkflowDefinition, WorkflowStep, WorkflowTrigger};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -24,10 +24,8 @@ pub struct SaveWorkflowInput {
     pub description: Option<String>,
     /// Trigger configuration.
     pub trigger: WorkflowTrigger,
-    /// Action configuration.
-    pub action: WorkflowAction,
-    /// Optional workflow canvas steps.
-    pub steps: Option<Vec<WorkflowStep>>,
+    /// Canonical workflow step graph.
+    pub steps: Vec<WorkflowStep>,
     /// Max execution attempts before dead-letter.
     pub max_attempts: u16,
     /// Whether workflow is enabled.
@@ -118,6 +116,8 @@ pub struct WorkflowRun {
     pub run_id: String,
     /// Workflow logical name.
     pub workflow_logical_name: String,
+    /// Published workflow version pinned to this run.
+    pub workflow_version: i32,
     /// Trigger type used for this run.
     pub trigger_type: String,
     /// Optional trigger entity scope.
@@ -217,6 +217,8 @@ pub struct WorkflowRunReplayTimelineEvent {
 pub struct CreateWorkflowRunInput {
     /// Workflow logical name.
     pub workflow_logical_name: String,
+    /// Published workflow version pinned to this run.
+    pub workflow_version: i32,
     /// Trigger type.
     pub trigger_type: String,
     /// Optional trigger entity scope.
@@ -247,6 +249,8 @@ pub struct ClaimedWorkflowJob {
     pub tenant_id: TenantId,
     /// Associated workflow run identifier.
     pub run_id: String,
+    /// Published workflow version pinned to this run.
+    pub workflow_version: i32,
     /// Workflow definition snapshot used for execution.
     pub workflow: WorkflowDefinition,
     /// Trigger payload captured when the run was enqueued.

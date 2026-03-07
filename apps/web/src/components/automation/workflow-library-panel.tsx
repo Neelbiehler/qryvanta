@@ -264,11 +264,17 @@ export function WorkflowLibraryPanel({ workflows, runs }: WorkflowLibraryPanelPr
                       <p className="truncate text-sm font-medium text-zinc-900">{workflow.display_name}</p>
                       <span className={cn(
                         "shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold",
-                        workflow.is_enabled
+                        workflow.lifecycle_state === "published"
                           ? "bg-emerald-100 text-emerald-700"
-                          : "bg-zinc-100 text-zinc-500",
+                          : workflow.lifecycle_state === "disabled"
+                            ? "bg-zinc-100 text-zinc-500"
+                            : "bg-amber-100 text-amber-700",
                       )}>
-                        {workflow.is_enabled ? "On" : "Off"}
+                        {workflow.lifecycle_state === "published"
+                          ? "Published"
+                          : workflow.lifecycle_state === "disabled"
+                            ? "Disabled"
+                            : "Draft"}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">

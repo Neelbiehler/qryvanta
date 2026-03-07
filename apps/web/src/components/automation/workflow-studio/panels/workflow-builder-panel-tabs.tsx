@@ -31,9 +31,14 @@ import { Button, Input, Label, Select, Textarea } from "@qryvanta/ui";
 import type { WorkflowResponse } from "@/lib/api";
 import {
   STEP_LIBRARY,
+  createDraftFieldId,
+  parseDraftObjectFields,
+  type DraftObjectField,
+  type DraftValueKind,
   type DraftWorkflowStep,
   type FlowTemplateCategory,
   type FlowTemplateId,
+  type TriggerType,
   type WorkflowValidationIssue,
 } from "@/components/automation/workflow-studio/model";
 
@@ -65,20 +70,29 @@ type DetailsTabProps = {
   onDescriptionChange: (value: string) => void;
   maxAttempts: string;
   onMaxAttemptsChange: (value: string) => void;
-  isEnabled: boolean;
-  onEnabledChange: (value: boolean) => void;
+  workflowLifecycleState: WorkflowResponse["lifecycle_state"];
+  publishedVersion: number | null;
   isSaving: boolean;
+  isPublishing: boolean;
+  isDisabling: boolean;
   validationIssues: WorkflowValidationIssue[];
   validationErrorCount: number;
   onFocusValidationIssue: (issue: WorkflowValidationIssue) => void;
   onSaveWorkflow: (event: FormEvent<HTMLFormElement>) => void;
+  onPublishWorkflow: () => void;
+  onDisableWorkflow: () => void;
 };
 
 type TestTabProps = {
   workflows: WorkflowResponse[];
   selectedWorkflow: string;
-  executePayload: string;
-  onExecutePayloadChange: (value: string) => void;
+  selectedWorkflowDefinition: WorkflowResponse | null;
+  selectedWorkflowTriggerSchema: {
+    fields: Array<{ logical_name: string; display_name: string; field_type: string }>;
+  } | null;
+  executePayloadFields: DraftObjectField[];
+  onExecutePayloadFieldsChange: (fields: DraftObjectField[]) => void;
+  onLoadSuggestedExecutePayload: () => void;
   isExecuting: boolean;
   onExecuteWorkflow: (event: FormEvent<HTMLFormElement>) => void;
   onExecutionWorkflowChange: (workflowLogicalName: string) => void;
@@ -117,6 +131,14 @@ const TEMPLATE_ICONS: Partial<Record<FlowTemplateId, LucideIcon>> = {
 const STEP_ICONS: Partial<Record<DraftWorkflowStep["type"], LucideIcon>> = {
   log_message: Database,
   create_runtime_record: CircleDotDashed,
+  update_runtime_record: Database,
+  delete_runtime_record: TriangleAlert,
+  send_email: Mail,
+  http_request: Globe,
+  webhook: ExternalLink,
+  assign_owner: UserRoundCheck,
+  approval_request: ShieldCheck,
+  delay: Clock3,
   condition: GitBranch,
 };
 
@@ -128,6 +150,146 @@ const CATEGORY_CHIPS: Array<{ value: "all" | FlowTemplateCategory; label: string
   { value: "operations", label: "Operations" },
   { value: "trigger", label: "Triggers" },
 ];
+
+function payloadValuePlaceholder(valueKind: DraftValueKind): string {
+  switch (valueKind) {
+    case "string":
+      return "value";
+    case "number":
+      return "42";
+    case "boolean":
+      return "true";
+    case "null":
+      return "null";
+    case "json":
+      return '{\n  "nested": true\n}';
+  }
+}
+
+function TriggerPayloadEditor({
+  fields,
+  onChange,
+}: {
+  fields: DraftObjectField[];
+  onChange: (fields: DraftObjectField[]) => void;
+}) {
+  function addField() {
+    onChange([
+      ...fields,
+      {
+        id: createDraftFieldId(),
+        key: "",
+        valueKind: "string",
+        value: "",
+      },
+    ]);
+  }
+
+  function updateField(
+    fieldId: string,
+    patch: Partial<Pick<DraftObjectField, "key" | "valueKind" | "value">>,
+  ) {
+    onChange(
+      fields.map((field) =>
+        field.id === fieldId
+          ? {
+              ...field,
+              ...patch,
+              value:
+                patch.valueKind && patch.valueKind !== field.valueKind
+                  ? patch.valueKind === "boolean"
+                    ? "true"
+                    : patch.valueKind === "null"
+                      ? ""
+                      : field.value
+                  : patch.value ?? field.value,
+            }
+          : field,
+      ),
+    );
+  }
+
+  function removeField(fieldId: string) {
+    onChange(fields.filter((field) => field.id !== fieldId));
+  }
+
+  return (
+    <div className="space-y-2 rounded-lg border border-zinc-200 bg-zinc-50/60 p-3">
+      <div className="flex items-center justify-between">
+        <Label htmlFor="wb_test_payload_key_0" className="text-xs">
+          Sample payload fields
+        </Label>
+        <Button type="button" size="sm" variant="outline" onClick={addField}>
+          Add field
+        </Button>
+      </div>
+      {fields.length === 0 ? (
+        <p className="text-[11px] text-zinc-500">No payload fields yet.</p>
+      ) : (
+        fields.map((field, index) => (
+          <div key={field.id} className="space-y-2 rounded-md border border-zinc-200 bg-white p-2.5">
+            <div className="grid grid-cols-[1.2fr_0.8fr_auto] gap-2">
+              <Input
+                id={`wb_test_payload_key_${index}`}
+                value={field.key}
+                onChange={(event) => updateField(field.id, { key: event.target.value })}
+                placeholder="field_name"
+              />
+              <Select
+                id={`wb_test_payload_kind_${index}`}
+                value={field.valueKind}
+                onChange={(event) =>
+                  updateField(field.id, {
+                    valueKind: event.target.value as DraftValueKind,
+                  })
+                }
+              >
+                <option value="string">Text</option>
+                <option value="number">Number</option>
+                <option value="boolean">Boolean</option>
+                <option value="null">Null</option>
+                <option value="json">JSON</option>
+              </Select>
+              <Button type="button" size="sm" variant="ghost" onClick={() => removeField(field.id)}>
+                Remove
+              </Button>
+            </div>
+            {field.valueKind === "boolean" ? (
+              <Select
+                id={`wb_test_payload_value_${index}`}
+                value={field.value === "false" ? "false" : "true"}
+                onChange={(event) => updateField(field.id, { value: event.target.value })}
+              >
+                <option value="true">True</option>
+                <option value="false">False</option>
+              </Select>
+            ) : field.valueKind === "null" ? (
+              <p className="rounded border border-dashed border-zinc-200 px-2.5 py-2 text-[11px] text-zinc-500">
+                This field will be sent as `null`.
+              </p>
+            ) : field.valueKind === "json" ? (
+              <Textarea
+                id={`wb_test_payload_value_${index}`}
+                className="font-mono text-xs"
+                rows={4}
+                value={field.value}
+                onChange={(event) => updateField(field.id, { value: event.target.value })}
+                placeholder={payloadValuePlaceholder(field.valueKind)}
+              />
+            ) : (
+              <Input
+                id={`wb_test_payload_value_${index}`}
+                value={field.value}
+                onChange={(event) => updateField(field.id, { value: event.target.value })}
+                placeholder={payloadValuePlaceholder(field.valueKind)}
+              />
+            )}
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
 
 export function TabButton({
   active,
@@ -259,14 +421,31 @@ export function DetailsTab({
   onDescriptionChange,
   maxAttempts,
   onMaxAttemptsChange,
-  isEnabled,
-  onEnabledChange,
+  workflowLifecycleState,
+  publishedVersion,
   isSaving,
+  isPublishing,
+  isDisabling,
   validationIssues,
   validationErrorCount,
   onFocusValidationIssue,
   onSaveWorkflow,
+  onPublishWorkflow,
+  onDisableWorkflow,
 }: DetailsTabProps) {
+  const lifecycleTone =
+    workflowLifecycleState === "published"
+      ? "bg-emerald-100 text-emerald-700"
+      : workflowLifecycleState === "disabled"
+        ? "bg-zinc-200 text-zinc-700"
+        : "bg-amber-100 text-amber-700";
+  const lifecycleLabel =
+    workflowLifecycleState === "published"
+      ? "Published"
+      : workflowLifecycleState === "disabled"
+        ? "Disabled"
+        : "Draft";
+
   return (
     <form className="space-y-4 p-3" onSubmit={onSaveWorkflow}>
       <div className="space-y-3">
@@ -321,23 +500,19 @@ export function DetailsTab({
               required
             />
           </div>
-          <label className="flex cursor-pointer items-center gap-2 self-end pb-0.5">
-            <div
-              role="switch"
-              aria-checked={isEnabled}
-              onClick={() => onEnabledChange(!isEnabled)}
-              className={`relative h-5 w-9 rounded-full transition-colors ${
-                isEnabled ? "bg-emerald-500" : "bg-zinc-300"
-              }`}
-            >
-              <span
-                className={`absolute left-0.5 top-0.5 size-4 rounded-full bg-white shadow transition-transform ${
-                  isEnabled ? "translate-x-4" : "translate-x-0"
-                }`}
-              />
+          <div className="space-y-1 self-end pb-0.5 text-right">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+              Release
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${lifecycleTone}`}>
+                {lifecycleLabel}
+              </span>
+              <span className="text-[11px] text-zinc-500">
+                {publishedVersion === null ? "No published version" : `v${publishedVersion}`}
+              </span>
             </div>
-            <span className="text-xs text-zinc-600">{isEnabled ? "On" : "Off"}</span>
-          </label>
+          </div>
         </div>
       </div>
 
@@ -371,13 +546,31 @@ export function DetailsTab({
         )}
       </div>
 
-      <div className="border-t border-zinc-100 pt-3">
+      <div className="space-y-2 border-t border-zinc-100 pt-3">
         <Button
           type="submit"
           className="w-full"
           disabled={isSaving || validationErrorCount > 0}
         >
-          {isSaving ? "Saving..." : validationErrorCount > 0 ? "Fix errors to save" : "Save flow"}
+          {isSaving ? "Saving..." : validationErrorCount > 0 ? "Fix errors to save" : "Save draft"}
+        </Button>
+        <Button
+          type="button"
+          className="w-full"
+          variant="outline"
+          disabled={isPublishing || validationErrorCount > 0}
+          onClick={onPublishWorkflow}
+        >
+          {isPublishing ? "Publishing..." : validationErrorCount > 0 ? "Fix errors to publish" : "Publish draft"}
+        </Button>
+        <Button
+          type="button"
+          className="w-full"
+          variant="ghost"
+          disabled={isDisabling || publishedVersion === null}
+          onClick={onDisableWorkflow}
+        >
+          {isDisabling ? "Disabling..." : "Disable published workflow"}
         </Button>
       </div>
     </form>
@@ -387,17 +580,53 @@ export function DetailsTab({
 export function TestTab({
   workflows,
   selectedWorkflow,
-  executePayload,
-  onExecutePayloadChange,
+  selectedWorkflowDefinition,
+  selectedWorkflowTriggerSchema,
+  executePayloadFields,
+  onExecutePayloadFieldsChange,
+  onLoadSuggestedExecutePayload,
   isExecuting,
   onExecuteWorkflow,
   onExecutionWorkflowChange,
 }: TestTabProps) {
+  let payloadPreview = "{}";
+  let payloadPreviewError: string | null = null;
+  try {
+    payloadPreview = JSON.stringify(
+      parseDraftObjectFields(executePayloadFields, "Trigger payload"),
+      null,
+      2,
+    );
+  } catch (error) {
+    payloadPreviewError =
+      error instanceof Error ? error.message : "Trigger payload contains invalid field values.";
+  }
+
+  const triggerType = (selectedWorkflowDefinition?.trigger_type ?? "manual") as TriggerType;
+  const triggerLabel =
+    triggerType === "runtime_record_created"
+      ? "Record created"
+      : triggerType === "runtime_record_updated"
+        ? "Record updated"
+        : triggerType === "runtime_record_deleted"
+          ? "Record deleted"
+          : triggerType === "schedule_tick"
+            ? "Schedule tick"
+            : triggerType === "webhook_received"
+              ? "Webhook received"
+              : triggerType === "form_submitted"
+                ? "Form submitted"
+                : triggerType === "inbound_email_received"
+                  ? "Inbound email"
+                  : triggerType === "approval_event_received"
+                    ? "Approval event"
+                    : "Manual";
+
   return (
     <form className="space-y-4 p-3" onSubmit={onExecuteWorkflow}>
       <div className="space-y-1">
         <p className="text-xs text-zinc-500">
-          Run this flow with a sample JSON payload to verify behavior before deploying.
+          Run this flow with a sample trigger payload to verify behavior before deploying.
         </p>
       </div>
       <div className="space-y-1">
@@ -417,24 +646,58 @@ export function TestTab({
           ))}
         </Select>
       </div>
+      <div className="space-y-2 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+              Trigger Shape
+            </p>
+            <p className="text-xs text-zinc-600">
+              {triggerLabel}
+              {selectedWorkflowDefinition?.trigger_entity_logical_name
+                ? ` · ${selectedWorkflowDefinition.trigger_entity_logical_name}`
+                : ""}
+            </p>
+          </div>
+          <Button type="button" size="sm" variant="outline" onClick={onLoadSuggestedExecutePayload}>
+            Load sample
+          </Button>
+        </div>
+        {selectedWorkflowTriggerSchema ? (
+          <p className="text-[11px] text-zinc-500">
+            Published fields:{" "}
+            {selectedWorkflowTriggerSchema.fields
+              .slice(0, 8)
+              .map((field) => field.display_name || field.logical_name)
+              .join(", ")}
+            {selectedWorkflowTriggerSchema.fields.length > 8 ? " ..." : ""}
+          </p>
+        ) : null}
+      </div>
+      <TriggerPayloadEditor
+        fields={executePayloadFields}
+        onChange={onExecutePayloadFieldsChange}
+      />
       <div className="space-y-1">
-        <Label htmlFor="wb_test_payload" className="text-xs">
-          Payload JSON
+        <Label htmlFor="wb_test_payload_preview" className="text-xs">
+          Payload preview
         </Label>
         <Textarea
-          id="wb_test_payload"
+          id="wb_test_payload_preview"
           className="font-mono text-xs"
-          value={executePayload}
-          onChange={(e) => onExecutePayloadChange(e.target.value)}
+          value={payloadPreview}
+          readOnly
           rows={8}
-          placeholder='{"key": "value"}'
         />
+        {payloadPreviewError ? (
+          <p className="text-[11px] text-red-600">{payloadPreviewError}</p>
+        ) : null}
       </div>
       <Button
         type="submit"
         variant="outline"
         className="w-full"
-        disabled={isExecuting || !selectedWorkflow}
+        disabled={isExecuting || !selectedWorkflow || payloadPreviewError !== null}
       >
         {isExecuting ? (
           <span className="flex items-center gap-2">

@@ -14,6 +14,7 @@ import {
   type EntityResponse,
   type RunWorkspacePublishRequest,
   type RunWorkspacePublishResponse,
+  type WorkflowResponse,
   type WorkspacePublishChecksResponse,
   type WorkspacePublishDiffRequest,
   type WorkspacePublishDiffResponse,
@@ -29,6 +30,7 @@ type StudioPublishCanvasProps = {
 type WorkspacePublishDraft = {
   entityLogicalNames: string[];
   appLogicalNames: string[];
+  workflowLogicalNames: string[];
 };
 
 type SelectionValidationState = {
@@ -42,15 +44,19 @@ type PublishRunHistoryEntry = {
   subject: string;
   requestedEntities: number;
   requestedApps: number;
+  requestedWorkflows: number;
   requestedEntityLogicalNames: string[];
   requestedAppLogicalNames: string[];
+  requestedWorkflowLogicalNames: string[];
   publishedEntities: string[];
   validatedApps: string[];
+  publishedWorkflows: string[];
   issueCount: number;
   isPublishable: boolean;
 };
 
 export function StudioPublishCanvas({ apps, entities, selectedApp }: StudioPublishCanvasProps) {
+  const [workflows, setWorkflows] = useState<WorkflowResponse[]>([]);
   const [isRunningPublishChecks, setIsRunningPublishChecks] = useState(false);
   const [publishCheckErrors, setPublishCheckErrors] = useState<string[]>([]);
   const [isRunningWorkspaceChecks, setIsRunningWorkspaceChecks] = useState(false);
@@ -60,10 +66,12 @@ export function StudioPublishCanvas({ apps, entities, selectedApp }: StudioPubli
   const [workspaceCheckSummary, setWorkspaceCheckSummary] = useState<{
     checkedEntities: number;
     checkedApps: number;
+    checkedWorkflows: number;
   } | null>(null);
   const [workspacePublishDraft, setWorkspacePublishDraft] = useState<WorkspacePublishDraft>({
     entityLogicalNames: entities.map((entity) => entity.logical_name),
     appLogicalNames: apps.map((app) => app.logical_name),
+    workflowLogicalNames: [],
   });
   const [selectionValidation, setSelectionValidation] = useState<SelectionValidationState>({
     selectionKey: null,
@@ -73,13 +81,17 @@ export function StudioPublishCanvas({ apps, entities, selectedApp }: StudioPubli
   const [publishDiff, setPublishDiff] = useState<{
     unknownEntityLogicalNames: string[];
     unknownAppLogicalNames: string[];
+    unknownWorkflowLogicalNames: string[];
     entityDiffs: WorkspacePublishDiffResponse["entity_diffs"];
     appDiffs: WorkspacePublishDiffResponse["app_diffs"];
+    workflowDiffs: WorkspacePublishDiffResponse["workflow_diffs"];
   }>({
     unknownEntityLogicalNames: [],
     unknownAppLogicalNames: [],
+    unknownWorkflowLogicalNames: [],
     entityDiffs: [],
     appDiffs: [],
+    workflowDiffs: [],
   });
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -89,8 +101,13 @@ export function StudioPublishCanvas({ apps, entities, selectedApp }: StudioPubli
       JSON.stringify({
         entityLogicalNames: [...workspacePublishDraft.entityLogicalNames].sort(),
         appLogicalNames: [...workspacePublishDraft.appLogicalNames].sort(),
+        workflowLogicalNames: [...workspacePublishDraft.workflowLogicalNames].sort(),
       }),
-    [workspacePublishDraft.appLogicalNames, workspacePublishDraft.entityLogicalNames],
+    [
+      workspacePublishDraft.appLogicalNames,
+      workspacePublishDraft.entityLogicalNames,
+      workspacePublishDraft.workflowLogicalNames,
+    ],
   );
 
   useEffect(() => {
@@ -103,8 +120,12 @@ export function StudioPublishCanvas({ apps, entities, selectedApp }: StudioPubli
         current.appLogicalNames,
         apps.map((app) => app.logical_name),
       ),
+      workflowLogicalNames: reconcileSelections(
+        current.workflowLogicalNames,
+        workflows.map((workflow) => workflow.logical_name),
+      ),
     }));
-  }, [apps, entities]);
+  }, [apps, entities, workflows]);
 
   useEffect(() => {
     setSelectionValidation((current) =>
@@ -115,10 +136,26 @@ export function StudioPublishCanvas({ apps, entities, selectedApp }: StudioPubli
   }, [workspaceSelectionKey]);
 
   useEffect(() => {
+    void refreshWorkflows();
     void refreshPublishHistory();
     void refreshPublishDiff();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function refreshWorkflows(): Promise<void> {
+    try {
+      const response = await apiFetch("/api/workflows");
+      if (!response.ok) {
+        setWorkflows([]);
+        return;
+      }
+
+      const loadedWorkflows = (await response.json()) as WorkflowResponse[];
+      setWorkflows(loadedWorkflows);
+    } catch {
+      setWorkflows([]);
+    }
+  }
 
   async function refreshPublishHistory(): Promise<void> {
     try {
@@ -136,10 +173,13 @@ export function StudioPublishCanvas({ apps, entities, selectedApp }: StudioPubli
           subject: entry.subject,
           requestedEntities: entry.requested_entities,
           requestedApps: entry.requested_apps,
+          requestedWorkflows: entry.requested_workflows,
           requestedEntityLogicalNames: entry.requested_entity_logical_names,
           requestedAppLogicalNames: entry.requested_app_logical_names,
+          requestedWorkflowLogicalNames: entry.requested_workflow_logical_names,
           publishedEntities: entry.published_entities,
           validatedApps: entry.validated_apps,
+          publishedWorkflows: entry.published_workflows,
           issueCount: entry.issue_count,
           isPublishable: entry.is_publishable,
         })),
@@ -154,6 +194,7 @@ export function StudioPublishCanvas({ apps, entities, selectedApp }: StudioPubli
       const payload: WorkspacePublishDiffRequest = {
         entity_logical_names: workspacePublishDraft.entityLogicalNames,
         app_logical_names: workspacePublishDraft.appLogicalNames,
+        workflow_logical_names: workspacePublishDraft.workflowLogicalNames,
       };
 
       const response = await apiFetch("/api/publish/diff", {
@@ -164,8 +205,10 @@ export function StudioPublishCanvas({ apps, entities, selectedApp }: StudioPubli
         setPublishDiff({
           unknownEntityLogicalNames: [],
           unknownAppLogicalNames: [],
+          unknownWorkflowLogicalNames: [],
           entityDiffs: [],
           appDiffs: [],
+          workflowDiffs: [],
         });
         return;
       }
@@ -174,15 +217,19 @@ export function StudioPublishCanvas({ apps, entities, selectedApp }: StudioPubli
       setPublishDiff({
         unknownEntityLogicalNames: result.unknown_entity_logical_names,
         unknownAppLogicalNames: result.unknown_app_logical_names,
+        unknownWorkflowLogicalNames: result.unknown_workflow_logical_names,
         entityDiffs: result.entity_diffs,
         appDiffs: result.app_diffs,
+        workflowDiffs: result.workflow_diffs,
       });
     } catch {
       setPublishDiff({
         unknownEntityLogicalNames: [],
         unknownAppLogicalNames: [],
+        unknownWorkflowLogicalNames: [],
         entityDiffs: [],
         appDiffs: [],
+        workflowDiffs: [],
       });
     }
   }
@@ -238,6 +285,7 @@ export function StudioPublishCanvas({ apps, entities, selectedApp }: StudioPubli
       setWorkspaceCheckSummary({
         checkedEntities: payload.checked_entities,
         checkedApps: payload.checked_apps,
+        checkedWorkflows: payload.checked_workflows,
       });
       setStatusMessage(payload.is_publishable ? "Workspace checks passed." : "Workspace checks found issues.");
       await refreshPublishDiff();
@@ -258,6 +306,7 @@ export function StudioPublishCanvas({ apps, entities, selectedApp }: StudioPubli
       const payload: RunWorkspacePublishRequest = {
         entity_logical_names: workspacePublishDraft.entityLogicalNames,
         app_logical_names: workspacePublishDraft.appLogicalNames,
+        workflow_logical_names: workspacePublishDraft.workflowLogicalNames,
         dry_run: true,
       };
 
@@ -276,6 +325,7 @@ export function StudioPublishCanvas({ apps, entities, selectedApp }: StudioPubli
       setWorkspaceCheckSummary({
         checkedEntities: result.requested_entities,
         checkedApps: result.requested_apps,
+        checkedWorkflows: result.requested_workflows,
       });
       setSelectionValidation({
         selectionKey: workspaceSelectionKey,
@@ -309,6 +359,7 @@ export function StudioPublishCanvas({ apps, entities, selectedApp }: StudioPubli
       const payload: RunWorkspacePublishRequest = {
         entity_logical_names: workspacePublishDraft.entityLogicalNames,
         app_logical_names: workspacePublishDraft.appLogicalNames,
+        workflow_logical_names: workspacePublishDraft.workflowLogicalNames,
         dry_run: false,
       };
 
@@ -327,6 +378,7 @@ export function StudioPublishCanvas({ apps, entities, selectedApp }: StudioPubli
       setWorkspaceCheckSummary({
         checkedEntities: result.requested_entities,
         checkedApps: result.requested_apps,
+        checkedWorkflows: result.requested_workflows,
       });
       setSelectionValidation({
         selectionKey: workspaceSelectionKey,
@@ -335,10 +387,11 @@ export function StudioPublishCanvas({ apps, entities, selectedApp }: StudioPubli
 
       await refreshPublishHistory();
       await refreshPublishDiff();
+      await refreshWorkflows();
 
       if (result.is_publishable) {
         setStatusMessage(
-          `Selective publish complete: ${result.published_entities.length} entities, ${result.validated_apps.length} apps.`,
+          `Selective publish complete: ${result.published_entities.length} entities, ${result.validated_apps.length} apps, ${result.published_workflows.length} workflows.`,
         );
       } else {
         setErrorMessage("Selective publish blocked by publish issues.");
@@ -414,6 +467,37 @@ export function StudioPublishCanvas({ apps, entities, selectedApp }: StudioPubli
               })}
             </div>
           </div>
+
+          <div className="space-y-2 xl:col-span-2">
+            <p className="text-xs font-semibold text-zinc-700">Workflow Selection</p>
+            <div className="max-h-44 space-y-1 overflow-y-auto rounded border border-zinc-200 p-2">
+              {workflows.map((workflow) => {
+                const checked = workspacePublishDraft.workflowLogicalNames.includes(
+                  workflow.logical_name,
+                );
+                return (
+                  <label key={workflow.logical_name} className="flex items-center gap-2 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(event) => {
+                        const next = event.target.checked
+                          ? [...workspacePublishDraft.workflowLogicalNames, workflow.logical_name]
+                          : workspacePublishDraft.workflowLogicalNames.filter(
+                              (name) => name !== workflow.logical_name,
+                            );
+                        setWorkspacePublishDraft((current) => ({
+                          ...current,
+                          workflowLogicalNames: next,
+                        }));
+                      }}
+                    />
+                    {workflow.display_name} ({workflow.logical_name})
+                  </label>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -456,7 +540,7 @@ export function StudioPublishCanvas({ apps, entities, selectedApp }: StudioPubli
 
         {workspaceCheckSummary ? (
           <p className="mt-2 text-xs text-zinc-600">
-            Checked {workspaceCheckSummary.checkedEntities} entities / {workspaceCheckSummary.checkedApps} apps
+            Checked {workspaceCheckSummary.checkedEntities} entities / {workspaceCheckSummary.checkedApps} apps / {workspaceCheckSummary.checkedWorkflows} workflows
           </p>
         ) : null}
       </div>
@@ -468,7 +552,7 @@ export function StudioPublishCanvas({ apps, entities, selectedApp }: StudioPubli
 
       <PublishHistoryPanel
         publishHistory={publishHistory}
-        onLoadSelection={(entityLogicalNames, appLogicalNames) => {
+        onLoadSelection={(entityLogicalNames, appLogicalNames, workflowLogicalNames) => {
           setWorkspacePublishDraft({
             entityLogicalNames: reconcileSelections(
               entityLogicalNames,
@@ -477,6 +561,10 @@ export function StudioPublishCanvas({ apps, entities, selectedApp }: StudioPubli
             appLogicalNames: reconcileSelections(
               appLogicalNames,
               apps.map((app) => app.logical_name),
+            ),
+            workflowLogicalNames: reconcileSelections(
+              workflowLogicalNames,
+              workflows.map((workflow) => workflow.logical_name),
             ),
           });
         }}

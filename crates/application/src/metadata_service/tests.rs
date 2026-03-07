@@ -16,9 +16,10 @@ use uuid::Uuid;
 
 use crate::{
     AuditEvent, AuditRepository, AuthorizationRepository, AuthorizationService,
-    ExportWorkspaceBundleOptions, ImportWorkspaceBundleOptions, MetadataRepository,
-    RecordListQuery, RuntimeFieldGrant, RuntimeRecordFilter, RuntimeRecordLogicalMode,
-    RuntimeRecordOperator, RuntimeRecordQuery, RuntimeRecordSortDirection, SaveBusinessRuleInput,
+    ClaimedRuntimeRecordWorkflowEvent, ExportWorkspaceBundleOptions, ImportWorkspaceBundleOptions,
+    MetadataRepository, RecordListQuery, RuntimeFieldGrant, RuntimeRecordFilter,
+    RuntimeRecordLogicalMode, RuntimeRecordOperator, RuntimeRecordQuery,
+    RuntimeRecordSortDirection, RuntimeRecordWorkflowEventInput, SaveBusinessRuleInput,
     SaveFieldInput, SaveFormInput, SaveOptionSetInput, SaveViewInput, TemporaryPermissionGrant,
     UniqueFieldValue, UpdateFieldInput,
 };
@@ -613,6 +614,7 @@ impl MetadataRepository for FakeRepository {
         data: Value,
         unique_values: Vec<UniqueFieldValue>,
         created_by_subject: &str,
+        _workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<RuntimeRecord> {
         let record_id = Uuid::new_v4().to_string();
         self.create_runtime_record_with_id(
@@ -622,6 +624,7 @@ impl MetadataRepository for FakeRepository {
             data,
             unique_values,
             created_by_subject,
+            None,
         )
         .await
     }
@@ -634,6 +637,7 @@ impl MetadataRepository for FakeRepository {
         data: Value,
         unique_values: Vec<UniqueFieldValue>,
         created_by_subject: &str,
+        _workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<RuntimeRecord> {
         let record = RuntimeRecord::new(record_id, entity_logical_name, data)?;
         let record_key = (
@@ -699,6 +703,7 @@ impl MetadataRepository for FakeRepository {
         record_id: &str,
         data: Value,
         unique_values: Vec<UniqueFieldValue>,
+        _workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<RuntimeRecord> {
         let record_key = (
             tenant_id,
@@ -950,6 +955,7 @@ impl MetadataRepository for FakeRepository {
         tenant_id: TenantId,
         entity_logical_name: &str,
         record_id: &str,
+        _workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<()> {
         let removed = self.runtime_records.lock().await.remove(&(
             tenant_id,
@@ -976,6 +982,37 @@ impl MetadataRepository for FakeRepository {
             record_id.to_owned(),
         ));
 
+        Ok(())
+    }
+
+    async fn claim_runtime_record_workflow_events(
+        &self,
+        _worker_id: &str,
+        _limit: usize,
+        _lease_seconds: u32,
+        _tenant_filter: Option<TenantId>,
+    ) -> AppResult<Vec<ClaimedRuntimeRecordWorkflowEvent>> {
+        Ok(Vec::new())
+    }
+
+    async fn complete_runtime_record_workflow_event(
+        &self,
+        _tenant_id: TenantId,
+        _event_id: &str,
+        _worker_id: &str,
+        _lease_token: &str,
+    ) -> AppResult<()> {
+        Ok(())
+    }
+
+    async fn release_runtime_record_workflow_event(
+        &self,
+        _tenant_id: TenantId,
+        _event_id: &str,
+        _worker_id: &str,
+        _lease_token: &str,
+        _error_message: &str,
+    ) -> AppResult<()> {
         Ok(())
     }
 

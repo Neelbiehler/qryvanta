@@ -1,6 +1,245 @@
 use super::*;
 
 impl PostgresWorkflowRepository {
+    pub(super) async fn list_enabled_schedule_triggers_impl(
+        &self,
+        tenant_filter: Option<TenantId>,
+    ) -> AppResult<Vec<WorkflowScheduledTrigger>> {
+        let mut transaction = begin_workflow_worker_transaction(&self.pool).await?;
+
+        let rows = sqlx::query_as::<_, WorkflowScheduledTriggerRow>(
+            r#"
+            SELECT DISTINCT
+                definitions.tenant_id,
+                versions.trigger_entity_logical_name AS schedule_key
+            FROM workflow_definitions definitions
+            INNER JOIN workflow_published_versions versions
+                ON versions.tenant_id = definitions.tenant_id
+               AND versions.logical_name = definitions.logical_name
+               AND versions.version = definitions.current_published_version
+            WHERE definitions.lifecycle_state = 'published'
+              AND versions.trigger_type = 'schedule_tick'
+              AND versions.trigger_entity_logical_name IS NOT NULL
+              AND ($1::UUID IS NULL OR definitions.tenant_id = $1)
+            ORDER BY definitions.tenant_id, schedule_key
+            "#,
+        )
+        .bind(tenant_filter.map(|value| value.as_uuid()))
+        .fetch_all(&mut *transaction)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to list enabled workflow schedule triggers: {error}"
+            ))
+        })?;
+
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit workflow schedule trigger list transaction: {error}"
+            ))
+        })?;
+
+        rows.into_iter()
+            .map(workflow_scheduled_trigger_from_row)
+            .collect()
+    }
+
+    pub(super) async fn claim_schedule_tick_impl(
+        &self,
+        tenant_id: TenantId,
+        schedule_key: &str,
+        slot_key: &str,
+        scheduled_for: chrono::DateTime<chrono::Utc>,
+        worker_id: &str,
+        lease_seconds: u32,
+    ) -> AppResult<Option<ClaimedWorkflowScheduleTick>> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO workflow_schedule_ticks (
+                tenant_id,
+                schedule_key,
+                slot_key,
+                scheduled_for,
+                status,
+                created_at,
+                updated_at
+            )
+            VALUES ($1, $2, $3, $4, 'pending', now(), now())
+            ON CONFLICT (tenant_id, schedule_key, slot_key)
+            DO NOTHING
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(schedule_key)
+        .bind(slot_key)
+        .bind(scheduled_for)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to enqueue workflow schedule tick '{schedule_key}/{slot_key}' for tenant '{tenant_id}': {error}"
+            ))
+        })?;
+
+        let row = sqlx::query_as::<_, ClaimedWorkflowScheduleTickRow>(
+            r#"
+            UPDATE workflow_schedule_ticks
+            SET
+                status = 'leased',
+                leased_by = $4,
+                lease_token = gen_random_uuid()::TEXT,
+                lease_expires_at = now() + make_interval(secs => $5::INT),
+                last_error = NULL,
+                updated_at = now()
+            WHERE tenant_id = $1
+              AND schedule_key = $2
+              AND slot_key = $3
+              AND (
+                    status = 'pending'
+                    OR (status = 'leased' AND lease_expires_at < now())
+                  )
+            RETURNING tenant_id, schedule_key, slot_key, scheduled_for, leased_by, lease_token
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(schedule_key)
+        .bind(slot_key)
+        .bind(worker_id)
+        .bind(i32::try_from(lease_seconds).map_err(|error| {
+            AppError::Validation(format!("invalid workflow schedule lease_seconds: {error}"))
+        })?)
+        .fetch_optional(&mut *transaction)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to claim workflow schedule tick '{schedule_key}/{slot_key}' for tenant '{tenant_id}': {error}"
+            ))
+        })?;
+
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit workflow schedule tick claim transaction: {error}"
+            ))
+        })?;
+
+        row.map(claimed_workflow_schedule_tick_from_row).transpose()
+    }
+
+    pub(super) async fn complete_schedule_tick_impl(
+        &self,
+        tenant_id: TenantId,
+        schedule_key: &str,
+        slot_key: &str,
+        worker_id: &str,
+        lease_token: &str,
+    ) -> AppResult<()> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
+
+        let result = sqlx::query(
+            r#"
+            UPDATE workflow_schedule_ticks
+            SET
+                status = 'completed',
+                leased_by = NULL,
+                lease_token = NULL,
+                lease_expires_at = NULL,
+                updated_at = now()
+            WHERE tenant_id = $1
+              AND schedule_key = $2
+              AND slot_key = $3
+              AND leased_by = $4
+              AND lease_token = $5
+              AND status = 'leased'
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(schedule_key)
+        .bind(slot_key)
+        .bind(worker_id)
+        .bind(lease_token)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to complete workflow schedule tick '{schedule_key}/{slot_key}' for tenant '{tenant_id}': {error}"
+            ))
+        })?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::Conflict(format!(
+                "workflow schedule tick '{schedule_key}/{slot_key}' is not leased by worker '{worker_id}' with matching lease token"
+            )));
+        }
+
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit workflow schedule tick completion transaction: {error}"
+            ))
+        })?;
+
+        Ok(())
+    }
+
+    pub(super) async fn release_schedule_tick_impl(
+        &self,
+        tenant_id: TenantId,
+        schedule_key: &str,
+        slot_key: &str,
+        worker_id: &str,
+        lease_token: &str,
+        error_message: &str,
+    ) -> AppResult<()> {
+        let mut transaction = begin_tenant_transaction(&self.pool, tenant_id).await?;
+
+        let result = sqlx::query(
+            r#"
+            UPDATE workflow_schedule_ticks
+            SET
+                status = 'pending',
+                leased_by = NULL,
+                lease_token = NULL,
+                lease_expires_at = NULL,
+                last_error = $6,
+                updated_at = now()
+            WHERE tenant_id = $1
+              AND schedule_key = $2
+              AND slot_key = $3
+              AND leased_by = $4
+              AND lease_token = $5
+              AND status = 'leased'
+            "#,
+        )
+        .bind(tenant_id.as_uuid())
+        .bind(schedule_key)
+        .bind(slot_key)
+        .bind(worker_id)
+        .bind(lease_token)
+        .bind(error_message)
+        .execute(&mut *transaction)
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to release workflow schedule tick '{schedule_key}/{slot_key}' for tenant '{tenant_id}': {error}"
+            ))
+        })?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::Conflict(format!(
+                "workflow schedule tick '{schedule_key}/{slot_key}' is not leased by worker '{worker_id}' with matching lease token"
+            )));
+        }
+
+        transaction.commit().await.map_err(|error| {
+            AppError::Internal(format!(
+                "failed to commit workflow schedule tick release transaction: {error}"
+            ))
+        })?;
+
+        Ok(())
+    }
+
     pub(super) async fn enqueue_run_job_impl(
         &self,
         tenant_id: TenantId,
@@ -106,26 +345,29 @@ impl PostgresWorkflowRepository {
                 leased_jobs.id AS job_id,
                 leased_jobs.tenant_id,
                 leased_jobs.run_id,
+                runs.workflow_version,
                 leased_jobs.lease_token,
                 runs.trigger_payload,
-                workflows.logical_name,
-                workflows.display_name,
-                workflows.description,
-                workflows.trigger_type,
-                workflows.trigger_entity_logical_name,
-                workflows.action_type,
-                workflows.action_entity_logical_name,
-                workflows.action_payload,
-                workflows.action_steps,
-                workflows.max_attempts,
-                workflows.is_enabled
+                versions.logical_name,
+                versions.display_name,
+                versions.description,
+                versions.trigger_type,
+                versions.trigger_entity_logical_name,
+                versions.steps,
+                versions.max_attempts,
+                definitions.lifecycle_state,
+                definitions.current_published_version
             FROM leased_jobs
             INNER JOIN workflow_execution_runs runs
                 ON runs.id = leased_jobs.run_id
                AND runs.tenant_id = leased_jobs.tenant_id
-            INNER JOIN workflow_definitions workflows
-                ON workflows.tenant_id = runs.tenant_id
-               AND workflows.logical_name = runs.workflow_logical_name
+            INNER JOIN workflow_definitions definitions
+                ON definitions.tenant_id = runs.tenant_id
+               AND definitions.logical_name = runs.workflow_logical_name
+            INNER JOIN workflow_published_versions versions
+                ON versions.tenant_id = runs.tenant_id
+               AND versions.logical_name = runs.workflow_logical_name
+               AND versions.version = runs.workflow_version
             ORDER BY runs.started_at ASC
             "#,
         )
@@ -435,4 +677,26 @@ impl PostgresWorkflowRepository {
             active_workers,
         })
     }
+}
+
+fn workflow_scheduled_trigger_from_row(
+    row: WorkflowScheduledTriggerRow,
+) -> AppResult<WorkflowScheduledTrigger> {
+    Ok(WorkflowScheduledTrigger {
+        tenant_id: TenantId::from_uuid(row.tenant_id),
+        schedule_key: row.schedule_key,
+    })
+}
+
+fn claimed_workflow_schedule_tick_from_row(
+    row: ClaimedWorkflowScheduleTickRow,
+) -> AppResult<ClaimedWorkflowScheduleTick> {
+    Ok(ClaimedWorkflowScheduleTick {
+        tenant_id: TenantId::from_uuid(row.tenant_id),
+        schedule_key: row.schedule_key,
+        slot_key: row.slot_key,
+        scheduled_for: row.scheduled_for,
+        worker_id: row.leased_by,
+        lease_token: row.lease_token,
+    })
 }

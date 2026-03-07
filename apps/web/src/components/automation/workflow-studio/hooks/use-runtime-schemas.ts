@@ -81,7 +81,14 @@ export function useRuntimeSchemas(triggerType: string, triggerEntityLogicalName:
   }, [loadPublishedSchemaForEntity, runtimeEntities]);
 
   useEffect(() => {
-    if (triggerType === "manual" || triggerType === "schedule_tick") {
+    if (
+      triggerType === "manual" ||
+      triggerType === "schedule_tick" ||
+      triggerType === "webhook_received" ||
+      triggerType === "form_submitted" ||
+      triggerType === "inbound_email_received" ||
+      triggerType === "approval_event_received"
+    ) {
       return;
     }
 

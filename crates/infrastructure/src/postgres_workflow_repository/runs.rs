@@ -12,6 +12,7 @@ impl PostgresWorkflowRepository {
             INSERT INTO workflow_execution_runs (
                 tenant_id,
                 workflow_logical_name,
+                workflow_version,
                 trigger_type,
                 trigger_entity_logical_name,
                 trigger_payload,
@@ -19,10 +20,11 @@ impl PostgresWorkflowRepository {
                 attempts,
                 started_at
             )
-            VALUES ($1, $2, $3, $4, $5, 'running', 0, now())
+            VALUES ($1, $2, $3, $4, $5, $6, 'running', 0, now())
             RETURNING
                 id,
                 workflow_logical_name,
+                workflow_version,
                 trigger_type,
                 trigger_entity_logical_name,
                 trigger_payload,
@@ -35,6 +37,7 @@ impl PostgresWorkflowRepository {
         )
         .bind(tenant_id.as_uuid())
         .bind(input.workflow_logical_name)
+        .bind(input.workflow_version)
         .bind(input.trigger_type)
         .bind(input.trigger_entity_logical_name)
         .bind(input.trigger_payload)
@@ -133,6 +136,7 @@ impl PostgresWorkflowRepository {
             RETURNING
                 id,
                 workflow_logical_name,
+                workflow_version,
                 trigger_type,
                 trigger_entity_logical_name,
                 trigger_payload,
@@ -176,6 +180,7 @@ impl PostgresWorkflowRepository {
             SELECT
                 id,
                 workflow_logical_name,
+                workflow_version,
                 trigger_type,
                 trigger_entity_logical_name,
                 trigger_payload,
@@ -231,6 +236,7 @@ impl PostgresWorkflowRepository {
             SELECT
                 id,
                 workflow_logical_name,
+                workflow_version,
                 trigger_type,
                 trigger_entity_logical_name,
                 trigger_payload,

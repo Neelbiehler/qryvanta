@@ -49,6 +49,7 @@ impl InMemoryMetadataRepository {
         tenant_id: TenantId,
         entity_logical_name: &str,
         record_id: &str,
+        workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<()> {
         let removed = self
             .runtime_records
@@ -78,6 +79,13 @@ impl InMemoryMetadataRepository {
                 entity_logical_name,
                 record_id,
             ));
+        self.enqueue_runtime_record_workflow_event_impl(
+            tenant_id,
+            entity_logical_name,
+            record_id,
+            workflow_event,
+        )
+        .await;
 
         Ok(())
     }

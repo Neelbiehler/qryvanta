@@ -2,17 +2,18 @@ use axum::Json;
 use axum::extract::{ConnectInfo, Extension, State};
 use axum::response::IntoResponse;
 use qryvanta_application::{
-    AppEntityFormInput, AppEntityViewInput, BindAppEntityInput, CreateAppInput,
-    SaveAppRoleEntityPermissionInput, SaveBusinessRuleInput, SaveFieldInput, SaveFormInput,
-    SaveOptionSetInput, SaveViewInput, SaveWorkflowInput, WorkflowExecutionMode,
+    AppEntityFormInput, AppEntityViewInput, BindAppEntityInput, ClaimedWorkflowJob, CreateAppInput,
+    CreateRoleInput, SaveAppRoleEntityPermissionInput, SaveBusinessRuleInput, SaveFieldInput,
+    SaveFormInput, SaveOptionSetInput, SaveViewInput, SaveWorkflowInput, WorkflowExecutionMode,
     WorkflowRunListQuery,
 };
 use qryvanta_core::UserIdentity;
 use qryvanta_domain::{
     BusinessRuleAction, BusinessRuleActionType, BusinessRuleCondition, BusinessRuleOperator,
     BusinessRuleScope, FieldType, FormFieldPlacement, FormSection, FormTab, FormType,
-    LogicalMode as ViewLogicalMode, OptionSetItem, SortDirection, ViewColumn, ViewFilterCondition,
-    ViewFilterGroup, ViewSort, ViewType, WorkflowAction, WorkflowTrigger,
+    LogicalMode as ViewLogicalMode, OptionSetItem, Permission, SortDirection, ViewColumn,
+    ViewFilterCondition, ViewFilterGroup, ViewSort, ViewType, WorkflowDefinition,
+    WorkflowDefinitionInput, WorkflowLifecycleState, WorkflowStep, WorkflowTrigger,
 };
 use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
@@ -1030,6 +1031,882 @@ async fn schedule_dispatch_stays_tenant_scoped_for_shared_schedule_keys() {
 }
 
 #[tokio::test]
+async fn webhook_ingress_stays_tenant_scoped_for_shared_webhook_keys() {
+    let Some(harness) = TestHarness::spawn().await else {
+        return;
+    };
+
+    let suffix = Uuid::new_v4().simple().to_string();
+    let shared_webhook_key = format!("customer_created_{suffix}");
+    let left_workflow_logical_name = format!("left_webhook_{suffix}");
+    let right_workflow_logical_name = format!("right_webhook_{suffix}");
+
+    let left_user = seed_user(
+        &harness.state,
+        format!("left_webhook_{suffix}@example.com").as_str(),
+        "Left Webhook",
+    )
+    .await;
+    let right_user = seed_user(
+        &harness.state,
+        format!("right_webhook_{suffix}@example.com").as_str(),
+        "Right Webhook",
+    )
+    .await;
+
+    let left_workflow = save_webhook_workflow(
+        &harness.state,
+        &left_user.actor,
+        left_workflow_logical_name.as_str(),
+        shared_webhook_key.as_str(),
+    )
+    .await;
+    let right_workflow = save_webhook_workflow(
+        &harness.state,
+        &right_user.actor,
+        right_workflow_logical_name.as_str(),
+        shared_webhook_key.as_str(),
+    )
+    .await;
+    let cookie = harness.login(left_user.email.as_str(), TEST_PASSWORD).await;
+
+    let dispatch_response = harness
+        .request(
+            Method::POST,
+            format!(
+                "/api/public/workflows/webhooks/{}/{}",
+                left_user.actor.tenant_id(),
+                shared_webhook_key
+            )
+            .as_str(),
+            None,
+            Some(json!({
+                "customer_id": "cust-1",
+                "source": "billing"
+            })),
+            false,
+        )
+        .await;
+    assert_eq!(dispatch_response.status(), StatusCode::OK);
+    let dispatched = dispatch_response
+        .json::<usize>()
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    assert_eq!(dispatched, 1);
+
+    let listed_runs_response = harness
+        .request(
+            Method::GET,
+            format!(
+                "/api/workflows/runs?workflow_logical_name={}&limit=10&offset=0",
+                left_workflow_logical_name
+            )
+            .as_str(),
+            Some(cookie.as_str()),
+            None,
+            false,
+        )
+        .await;
+    assert_eq!(listed_runs_response.status(), StatusCode::OK);
+    let listed_runs_response = listed_runs_response
+        .json::<Value>()
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    let listed_runs = listed_runs_response
+        .as_array()
+        .unwrap_or_else(|| unreachable!());
+    assert_eq!(listed_runs.len(), 1);
+    assert_eq!(
+        listed_runs[0]["workflow_logical_name"],
+        json!(left_workflow_logical_name)
+    );
+    assert_eq!(listed_runs[0]["trigger_type"], json!("webhook_received"));
+    assert_eq!(
+        listed_runs[0]["trigger_payload"]["payload"]["customer_id"],
+        json!("cust-1")
+    );
+    let left_run_id = listed_runs[0]["run_id"]
+        .as_str()
+        .unwrap_or_else(|| unreachable!())
+        .to_owned();
+
+    let attempts_response = harness
+        .request(
+            Method::GET,
+            format!("/api/workflows/runs/{left_run_id}/attempts").as_str(),
+            Some(cookie.as_str()),
+            None,
+            false,
+        )
+        .await;
+    assert_eq!(attempts_response.status(), StatusCode::OK);
+    let attempts_response = attempts_response
+        .json::<Value>()
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    let attempts = attempts_response
+        .as_array()
+        .unwrap_or_else(|| unreachable!());
+    assert_eq!(attempts.len(), 1);
+    assert_eq!(attempts[0]["status"], json!("succeeded"));
+
+    let replay_response = harness
+        .request(
+            Method::GET,
+            format!(
+                "/api/workflows/{}/runs/{}/replay",
+                left_workflow_logical_name, left_run_id
+            )
+            .as_str(),
+            Some(cookie.as_str()),
+            None,
+            false,
+        )
+        .await;
+    assert_eq!(replay_response.status(), StatusCode::OK);
+    let replay_response = replay_response
+        .json::<Value>()
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    assert_eq!(replay_response["run"]["run_id"], json!(left_run_id));
+    assert_eq!(replay_response["attempts"][0]["status"], json!("succeeded"));
+
+    let left_runs = harness
+        .state
+        .workflow_service
+        .list_runs(
+            &left_user.actor,
+            WorkflowRunListQuery {
+                workflow_logical_name: Some(left_workflow.logical_name().as_str().to_owned()),
+                limit: 10,
+                offset: 0,
+            },
+        )
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    assert_eq!(left_runs.len(), 1);
+    assert_eq!(
+        left_runs[0].workflow_logical_name,
+        left_workflow_logical_name
+    );
+    assert_eq!(left_runs[0].trigger_type, "webhook_received");
+    assert_eq!(
+        left_runs[0].trigger_payload["payload"]["customer_id"],
+        json!("cust-1")
+    );
+
+    let right_runs = harness
+        .state
+        .workflow_service
+        .list_runs(
+            &right_user.actor,
+            WorkflowRunListQuery {
+                workflow_logical_name: Some(right_workflow.logical_name().as_str().to_owned()),
+                limit: 10,
+                offset: 0,
+            },
+        )
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    assert!(right_runs.is_empty());
+}
+
+#[tokio::test]
+async fn form_ingress_stays_tenant_scoped_for_shared_form_keys() {
+    let Some(harness) = TestHarness::spawn().await else {
+        return;
+    };
+
+    let suffix = Uuid::new_v4().simple().to_string();
+    let shared_form_key = format!("lead_capture_{suffix}");
+    let left_workflow_logical_name = format!("left_form_{suffix}");
+    let right_workflow_logical_name = format!("right_form_{suffix}");
+
+    let left_user = seed_user(
+        &harness.state,
+        format!("left_form_{suffix}@example.com").as_str(),
+        "Left Form",
+    )
+    .await;
+    let right_user = seed_user(
+        &harness.state,
+        format!("right_form_{suffix}@example.com").as_str(),
+        "Right Form",
+    )
+    .await;
+
+    let left_workflow = save_form_workflow(
+        &harness.state,
+        &left_user.actor,
+        left_workflow_logical_name.as_str(),
+        shared_form_key.as_str(),
+    )
+    .await;
+    let right_workflow = save_form_workflow(
+        &harness.state,
+        &right_user.actor,
+        right_workflow_logical_name.as_str(),
+        shared_form_key.as_str(),
+    )
+    .await;
+
+    let dispatch_response = harness
+        .request(
+            Method::POST,
+            format!(
+                "/api/public/workflows/forms/{}/{}",
+                left_user.actor.tenant_id(),
+                shared_form_key
+            )
+            .as_str(),
+            None,
+            Some(json!({
+                "email": "alice@example.com",
+                "source": "landing_page"
+            })),
+            false,
+        )
+        .await;
+    assert_eq!(dispatch_response.status(), StatusCode::OK);
+    let dispatched = dispatch_response
+        .json::<usize>()
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    assert_eq!(dispatched, 1);
+
+    let left_runs = harness
+        .state
+        .workflow_service
+        .list_runs(
+            &left_user.actor,
+            WorkflowRunListQuery {
+                workflow_logical_name: Some(left_workflow.logical_name().as_str().to_owned()),
+                limit: 10,
+                offset: 0,
+            },
+        )
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    assert_eq!(left_runs.len(), 1);
+    assert_eq!(
+        left_runs[0].workflow_logical_name,
+        left_workflow_logical_name
+    );
+    assert_eq!(left_runs[0].trigger_type, "form_submitted");
+    assert_eq!(
+        left_runs[0].trigger_payload["payload"]["email"],
+        json!("alice@example.com")
+    );
+
+    let right_runs = harness
+        .state
+        .workflow_service
+        .list_runs(
+            &right_user.actor,
+            WorkflowRunListQuery {
+                workflow_logical_name: Some(right_workflow.logical_name().as_str().to_owned()),
+                limit: 10,
+                offset: 0,
+            },
+        )
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    assert!(right_runs.is_empty());
+}
+
+#[tokio::test]
+async fn inbound_email_ingress_stays_tenant_scoped_for_shared_mailbox_keys() {
+    let Some(harness) = TestHarness::spawn().await else {
+        return;
+    };
+
+    let suffix = Uuid::new_v4().simple().to_string();
+    let shared_mailbox_key = format!("support_{suffix}");
+    let left_workflow_logical_name = format!("left_email_{suffix}");
+    let right_workflow_logical_name = format!("right_email_{suffix}");
+
+    let left_user = seed_user(
+        &harness.state,
+        format!("left_email_{suffix}@example.com").as_str(),
+        "Left Email",
+    )
+    .await;
+    let right_user = seed_user(
+        &harness.state,
+        format!("right_email_{suffix}@example.com").as_str(),
+        "Right Email",
+    )
+    .await;
+
+    let left_workflow = save_inbound_email_workflow(
+        &harness.state,
+        &left_user.actor,
+        left_workflow_logical_name.as_str(),
+        shared_mailbox_key.as_str(),
+    )
+    .await;
+    let right_workflow = save_inbound_email_workflow(
+        &harness.state,
+        &right_user.actor,
+        right_workflow_logical_name.as_str(),
+        shared_mailbox_key.as_str(),
+    )
+    .await;
+
+    let dispatch_response = harness
+        .request(
+            Method::POST,
+            format!(
+                "/api/public/workflows/email/{}/{}",
+                left_user.actor.tenant_id(),
+                shared_mailbox_key
+            )
+            .as_str(),
+            None,
+            Some(json!({
+                "from": "alice@example.com",
+                "subject": "Need help"
+            })),
+            false,
+        )
+        .await;
+    assert_eq!(dispatch_response.status(), StatusCode::OK);
+    let dispatched = dispatch_response
+        .json::<usize>()
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    assert_eq!(dispatched, 1);
+
+    let left_runs = harness
+        .state
+        .workflow_service
+        .list_runs(
+            &left_user.actor,
+            WorkflowRunListQuery {
+                workflow_logical_name: Some(left_workflow.logical_name().as_str().to_owned()),
+                limit: 10,
+                offset: 0,
+            },
+        )
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    assert_eq!(left_runs.len(), 1);
+    assert_eq!(
+        left_runs[0].workflow_logical_name,
+        left_workflow_logical_name
+    );
+    assert_eq!(left_runs[0].trigger_type, "inbound_email_received");
+    assert_eq!(
+        left_runs[0].trigger_payload["payload"]["subject"],
+        json!("Need help")
+    );
+
+    let right_runs = harness
+        .state
+        .workflow_service
+        .list_runs(
+            &right_user.actor,
+            WorkflowRunListQuery {
+                workflow_logical_name: Some(right_workflow.logical_name().as_str().to_owned()),
+                limit: 10,
+                offset: 0,
+            },
+        )
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    assert!(right_runs.is_empty());
+}
+
+#[tokio::test]
+async fn approval_ingress_stays_tenant_scoped_for_shared_approval_keys() {
+    let Some(harness) = TestHarness::spawn().await else {
+        return;
+    };
+
+    let suffix = Uuid::new_v4().simple().to_string();
+    let shared_approval_key = format!("manager_signoff_{suffix}");
+    let left_workflow_logical_name = format!("left_approval_{suffix}");
+    let right_workflow_logical_name = format!("right_approval_{suffix}");
+
+    let left_user = seed_user(
+        &harness.state,
+        format!("left_approval_{suffix}@example.com").as_str(),
+        "Left Approval",
+    )
+    .await;
+    let right_user = seed_user(
+        &harness.state,
+        format!("right_approval_{suffix}@example.com").as_str(),
+        "Right Approval",
+    )
+    .await;
+
+    let left_workflow = save_approval_event_workflow(
+        &harness.state,
+        &left_user.actor,
+        left_workflow_logical_name.as_str(),
+        shared_approval_key.as_str(),
+    )
+    .await;
+    let right_workflow = save_approval_event_workflow(
+        &harness.state,
+        &right_user.actor,
+        right_workflow_logical_name.as_str(),
+        shared_approval_key.as_str(),
+    )
+    .await;
+
+    let dispatch_response = harness
+        .request(
+            Method::POST,
+            format!(
+                "/api/public/workflows/approvals/{}/{}",
+                left_user.actor.tenant_id(),
+                shared_approval_key
+            )
+            .as_str(),
+            None,
+            Some(json!({
+                "request_id": "req-1",
+                "status": "approved",
+                "approver_id": "manager-7"
+            })),
+            false,
+        )
+        .await;
+    assert_eq!(dispatch_response.status(), StatusCode::OK);
+    let dispatched = dispatch_response
+        .json::<usize>()
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    assert_eq!(dispatched, 1);
+
+    let left_runs = harness
+        .state
+        .workflow_service
+        .list_runs(
+            &left_user.actor,
+            WorkflowRunListQuery {
+                workflow_logical_name: Some(left_workflow.logical_name().as_str().to_owned()),
+                limit: 10,
+                offset: 0,
+            },
+        )
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    assert_eq!(left_runs.len(), 1);
+    assert_eq!(
+        left_runs[0].workflow_logical_name,
+        left_workflow_logical_name
+    );
+    assert_eq!(left_runs[0].trigger_type, "approval_event_received");
+    assert_eq!(
+        left_runs[0].trigger_payload["payload"]["status"],
+        json!("approved")
+    );
+
+    let right_runs = harness
+        .state
+        .workflow_service
+        .list_runs(
+            &right_user.actor,
+            WorkflowRunListQuery {
+                workflow_logical_name: Some(right_workflow.logical_name().as_str().to_owned()),
+                limit: 10,
+                offset: 0,
+            },
+        )
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    assert!(right_runs.is_empty());
+}
+
+#[tokio::test]
+async fn workspace_record_create_dispatches_runtime_workflow_and_exposes_history_surfaces() {
+    let Some(harness) = TestHarness::spawn().await else {
+        return;
+    };
+
+    let suffix = Uuid::new_v4().simple().to_string();
+    let app_logical_name = format!("ops_runtime_{suffix}");
+    let entity_logical_name = format!("contact_runtime_{suffix}");
+    let workflow_logical_name = format!("contact_created_runtime_{suffix}");
+
+    let user = seed_user(
+        &harness.state,
+        format!("runtime_workflow_{suffix}@example.com").as_str(),
+        "Runtime Workflow",
+    )
+    .await;
+    let cookie = harness.login(user.email.as_str(), TEST_PASSWORD).await;
+
+    seed_workspace_surface(
+        &harness.state,
+        &user.actor,
+        WorkspaceSurfaceSeed {
+            entity_logical_name: entity_logical_name.as_str(),
+            app_logical_name: app_logical_name.as_str(),
+            extra_field_logical_name: None,
+            extra_option_set_logical_name: None,
+            extra_form_logical_name: None,
+            extra_view_logical_name: None,
+        },
+    )
+    .await;
+
+    let _workflow = save_runtime_record_created_workflow(
+        &harness.state,
+        &user.actor,
+        workflow_logical_name.as_str(),
+        entity_logical_name.as_str(),
+    )
+    .await;
+
+    let create_record_response = harness
+        .request(
+            Method::POST,
+            format!(
+                "/api/workspace/apps/{}/entities/{}/records",
+                app_logical_name, entity_logical_name
+            )
+            .as_str(),
+            Some(cookie.as_str()),
+            Some(json!({
+                "data": {
+                    "name": "Alice Runtime"
+                }
+            })),
+            true,
+        )
+        .await;
+    assert_eq!(create_record_response.status(), StatusCode::CREATED);
+    let created_record = create_record_response
+        .json::<Value>()
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    let record_id = created_record["record_id"]
+        .as_str()
+        .unwrap_or_else(|| unreachable!())
+        .to_owned();
+
+    let listed_runs_response = harness
+        .request(
+            Method::GET,
+            format!(
+                "/api/workflows/runs?workflow_logical_name={}&limit=10&offset=0",
+                workflow_logical_name
+            )
+            .as_str(),
+            Some(cookie.as_str()),
+            None,
+            false,
+        )
+        .await;
+    assert_eq!(listed_runs_response.status(), StatusCode::OK);
+    let listed_runs_response = listed_runs_response
+        .json::<Value>()
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    let listed_runs = listed_runs_response
+        .as_array()
+        .unwrap_or_else(|| unreachable!());
+    assert_eq!(listed_runs.len(), 1);
+    assert_eq!(
+        listed_runs[0]["workflow_logical_name"],
+        json!(workflow_logical_name)
+    );
+    assert_eq!(
+        listed_runs[0]["trigger_type"],
+        json!("runtime_record_created")
+    );
+    assert_eq!(
+        listed_runs[0]["trigger_entity_logical_name"],
+        json!(entity_logical_name)
+    );
+    assert_eq!(
+        listed_runs[0]["trigger_payload"]["record_id"],
+        json!(record_id)
+    );
+    let run_id = listed_runs[0]["run_id"]
+        .as_str()
+        .unwrap_or_else(|| unreachable!())
+        .to_owned();
+
+    let attempts_response = harness
+        .request(
+            Method::GET,
+            format!("/api/workflows/runs/{run_id}/attempts").as_str(),
+            Some(cookie.as_str()),
+            None,
+            false,
+        )
+        .await;
+    assert_eq!(attempts_response.status(), StatusCode::OK);
+    let attempts_response = attempts_response
+        .json::<Value>()
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    let attempts = attempts_response
+        .as_array()
+        .unwrap_or_else(|| unreachable!());
+    assert_eq!(attempts.len(), 1);
+    assert_eq!(attempts[0]["status"], json!("succeeded"));
+    assert_eq!(
+        attempts[0]["step_traces"][0]["step_type"],
+        json!("log_message")
+    );
+
+    let replay_response = harness
+        .request(
+            Method::GET,
+            format!(
+                "/api/workflows/{}/runs/{}/replay",
+                workflow_logical_name, run_id
+            )
+            .as_str(),
+            Some(cookie.as_str()),
+            None,
+            false,
+        )
+        .await;
+    assert_eq!(replay_response.status(), StatusCode::OK);
+    let replay_response = replay_response
+        .json::<Value>()
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    assert_eq!(replay_response["run"]["run_id"], json!(run_id));
+    assert_eq!(
+        replay_response["run"]["trigger_type"],
+        json!("runtime_record_created")
+    );
+    assert_eq!(replay_response["attempts"][0]["status"], json!("succeeded"));
+    assert_eq!(
+        replay_response["timeline"][0]["step_type"],
+        json!("log_message")
+    );
+}
+
+#[tokio::test]
+async fn queued_workspace_record_create_drains_and_claims_worker_jobs_through_internal_routes() {
+    let worker_secret = "queued-worker-secret";
+    let Some(harness) = TestHarness::spawn_queued(worker_secret).await else {
+        return;
+    };
+
+    let suffix = Uuid::new_v4().simple().to_string();
+    let app_logical_name = format!("ops_queue_{suffix}");
+    let entity_logical_name = format!("contact_queue_{suffix}");
+    let workflow_logical_name = format!("contact_created_queue_{suffix}");
+
+    let user = seed_user(
+        &harness.state,
+        format!("queued_runtime_{suffix}@example.com").as_str(),
+        "Queued Runtime",
+    )
+    .await;
+    let cookie = harness.login(user.email.as_str(), TEST_PASSWORD).await;
+
+    seed_workspace_surface(
+        &harness.state,
+        &user.actor,
+        WorkspaceSurfaceSeed {
+            entity_logical_name: entity_logical_name.as_str(),
+            app_logical_name: app_logical_name.as_str(),
+            extra_field_logical_name: None,
+            extra_option_set_logical_name: None,
+            extra_form_logical_name: None,
+            extra_view_logical_name: None,
+        },
+    )
+    .await;
+
+    let _workflow = save_runtime_record_created_workflow(
+        &harness.state,
+        &user.actor,
+        workflow_logical_name.as_str(),
+        entity_logical_name.as_str(),
+    )
+    .await;
+
+    let create_record_response = harness
+        .request(
+            Method::POST,
+            format!(
+                "/api/workspace/apps/{}/entities/{}/records",
+                app_logical_name, entity_logical_name
+            )
+            .as_str(),
+            Some(cookie.as_str()),
+            Some(json!({
+                "data": {
+                    "name": "Queued Alice"
+                }
+            })),
+            true,
+        )
+        .await;
+    assert_eq!(create_record_response.status(), StatusCode::CREATED);
+    let created_record = create_record_response
+        .json::<Value>()
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    let record_id = created_record["record_id"]
+        .as_str()
+        .unwrap_or_else(|| unreachable!())
+        .to_owned();
+
+    let initial_runs_response = harness
+        .request(
+            Method::GET,
+            format!(
+                "/api/workflows/runs?workflow_logical_name={}&limit=10&offset=0",
+                workflow_logical_name
+            )
+            .as_str(),
+            Some(cookie.as_str()),
+            None,
+            false,
+        )
+        .await;
+    assert_eq!(initial_runs_response.status(), StatusCode::OK);
+    let initial_runs_response = initial_runs_response
+        .json::<Value>()
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    assert_eq!(
+        initial_runs_response
+            .as_array()
+            .unwrap_or_else(|| unreachable!())
+            .len(),
+        0
+    );
+
+    let drain_response = harness
+        .request_internal_worker(
+            Method::POST,
+            "/api/internal/worker/runtime-events/drain",
+            "worker-alpha",
+            worker_secret,
+            Some(json!({
+                "limit": 10,
+                "lease_seconds": 30,
+                "tenant_id": user.actor.tenant_id().to_string()
+            })),
+        )
+        .await;
+    assert_eq!(drain_response.status(), StatusCode::OK);
+    let drain_response = drain_response
+        .json::<Value>()
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    assert_eq!(drain_response["claimed_events"], json!(1));
+    assert_eq!(drain_response["dispatched_workflows"], json!(1));
+    assert_eq!(drain_response["released_events"], json!(0));
+
+    let claimed_jobs_response = harness
+        .request_internal_worker(
+            Method::POST,
+            "/api/internal/worker/jobs/claim",
+            "worker-alpha",
+            worker_secret,
+            Some(json!({
+                "limit": 10,
+                "lease_seconds": 30,
+                "tenant_id": user.actor.tenant_id().to_string()
+            })),
+        )
+        .await;
+    assert_eq!(claimed_jobs_response.status(), StatusCode::OK);
+    let claimed_jobs_response = claimed_jobs_response
+        .json::<Value>()
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    let claimed_jobs = claimed_jobs_response["jobs"]
+        .as_array()
+        .unwrap_or_else(|| unreachable!());
+    assert_eq!(claimed_jobs.len(), 1);
+    assert_eq!(
+        claimed_jobs[0]["trigger_payload"]["record_id"],
+        json!(record_id)
+    );
+
+    let queue_stats_response = harness
+        .request_internal_worker(
+            Method::GET,
+            "/api/internal/worker/jobs/stats?active_window_seconds=120",
+            "worker-alpha",
+            worker_secret,
+            None,
+        )
+        .await;
+    assert_eq!(queue_stats_response.status(), StatusCode::OK);
+    let queue_stats_response = queue_stats_response
+        .json::<Value>()
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    assert!(
+        queue_stats_response["leased_jobs"]
+            .as_i64()
+            .unwrap_or_else(|| unreachable!())
+            >= 1
+    );
+
+    let claimed_job = claimed_workflow_job_from_response_value(claimed_jobs[0].clone())
+        .unwrap_or_else(|_| unreachable!());
+    let completed_run = harness
+        .state
+        .workflow_service
+        .execute_claimed_job("worker-alpha", claimed_job)
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    assert_eq!(completed_run.trigger_payload["record_id"], json!(record_id));
+
+    let listed_runs_response = harness
+        .request(
+            Method::GET,
+            format!(
+                "/api/workflows/runs?workflow_logical_name={}&limit=10&offset=0",
+                workflow_logical_name
+            )
+            .as_str(),
+            Some(cookie.as_str()),
+            None,
+            false,
+        )
+        .await;
+    assert_eq!(listed_runs_response.status(), StatusCode::OK);
+    let listed_runs_response = listed_runs_response
+        .json::<Value>()
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    let listed_runs = listed_runs_response
+        .as_array()
+        .unwrap_or_else(|| unreachable!());
+    assert_eq!(listed_runs.len(), 1);
+    assert_eq!(listed_runs[0]["status"], json!("succeeded"));
+    let run_id = listed_runs[0]["run_id"]
+        .as_str()
+        .unwrap_or_else(|| unreachable!())
+        .to_owned();
+
+    let attempts_response = harness
+        .request(
+            Method::GET,
+            format!("/api/workflows/runs/{run_id}/attempts").as_str(),
+            Some(cookie.as_str()),
+            None,
+            false,
+        )
+        .await;
+    assert_eq!(attempts_response.status(), StatusCode::OK);
+    let attempts_response = attempts_response
+        .json::<Value>()
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    assert_eq!(attempts_response[0]["status"], json!("succeeded"));
+}
+
+#[tokio::test]
 async fn auth_me_exposes_available_tenants_and_switching_updates_scope() {
     let Some(harness) = TestHarness::spawn().await else {
         return;
@@ -1322,11 +2199,341 @@ async fn high_risk_security_actions_require_recent_step_up() {
     assert_eq!(allowed_response.0, StatusCode::CREATED);
 }
 
+#[tokio::test]
+async fn workflow_publish_with_outbound_actions_requires_recent_step_up() {
+    let Some(harness) = TestHarness::spawn().await else {
+        return;
+    };
+
+    let suffix = Uuid::new_v4().simple().to_string();
+    let actor = seed_user(
+        &harness.state,
+        format!("workflow_step_up_{suffix}@example.com").as_str(),
+        "Workflow Step Up",
+    )
+    .await;
+    harness
+        .state
+        .workflow_service
+        .save_workflow(
+            &actor.actor,
+            SaveWorkflowInput {
+                logical_name: format!("outbound_publish_{suffix}"),
+                display_name: "Outbound Publish".to_owned(),
+                description: None,
+                trigger: WorkflowTrigger::Manual,
+                steps: vec![WorkflowStep::SendEmail {
+                    to: "ops@example.com".to_owned(),
+                    subject: "Alert".to_owned(),
+                    body: "Investigate".to_owned(),
+                    html_body: None,
+                }],
+                max_attempts: 1,
+                is_enabled: false,
+            },
+        )
+        .await
+        .unwrap_or_else(|_| unreachable!());
+
+    let session_store = Arc::new(MemoryStore::default());
+    let session = Session::new(None, session_store, None);
+    session
+        .insert("step_up_verified_at", 0_i64)
+        .await
+        .unwrap_or_else(|_| unreachable!());
+
+    let blocked_response = match crate::handlers::workflows::publish_workflow_handler(
+        State(harness.state.clone()),
+        Extension(actor.actor.clone()),
+        session.clone(),
+        axum::extract::Path(format!("outbound_publish_{suffix}")),
+    )
+    .await
+    {
+        Ok(_) => panic!("expected workflow publish to require step-up"),
+        Err(error) => error.into_response(),
+    };
+    assert_eq!(blocked_response.status(), StatusCode::FORBIDDEN);
+    let blocked_payload = axum::body::to_bytes(blocked_response.into_body(), usize::MAX)
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    let blocked_payload: Value =
+        serde_json::from_slice(blocked_payload.as_ref()).unwrap_or_else(|_| unreachable!());
+    assert_eq!(
+        blocked_payload["code"].as_str(),
+        Some("forbidden.step_up_required")
+    );
+
+    let step_up_response = crate::auth::step_up_handler(
+        State(harness.state.clone()),
+        axum::http::HeaderMap::new(),
+        ConnectInfo("127.0.0.1:4000".parse().unwrap_or_else(|_| unreachable!())),
+        Extension(actor.actor.clone()),
+        session.clone(),
+        Json(AuthStepUpRequest {
+            password: Some(TEST_PASSWORD.to_owned()),
+            code: None,
+            method: None,
+        }),
+    )
+    .await
+    .unwrap_or_else(|_| unreachable!());
+    assert_eq!(step_up_response, StatusCode::NO_CONTENT);
+
+    let published = crate::handlers::workflows::publish_workflow_handler(
+        State(harness.state),
+        Extension(actor.actor),
+        session,
+        axum::extract::Path(format!("outbound_publish_{suffix}")),
+    )
+    .await
+    .unwrap_or_else(|_| unreachable!());
+    assert_eq!(published.0.published_version, Some(1));
+}
+
+#[tokio::test]
+async fn workflow_disable_with_outbound_actions_requires_recent_step_up() {
+    let Some(harness) = TestHarness::spawn().await else {
+        return;
+    };
+
+    let suffix = Uuid::new_v4().simple().to_string();
+    let actor = seed_user(
+        &harness.state,
+        format!("workflow_disable_{suffix}@example.com").as_str(),
+        "Workflow Disable",
+    )
+    .await;
+    let workflow_logical_name = format!("outbound_disable_{suffix}");
+    harness
+        .state
+        .workflow_service
+        .save_workflow(
+            &actor.actor,
+            SaveWorkflowInput {
+                logical_name: workflow_logical_name.clone(),
+                display_name: "Outbound Disable".to_owned(),
+                description: None,
+                trigger: WorkflowTrigger::Manual,
+                steps: vec![WorkflowStep::Webhook {
+                    endpoint: "https://example.com/webhook".to_owned(),
+                    event: "record.updated".to_owned(),
+                    headers: None,
+                    header_secret_refs: None,
+                    payload: json!({"record_id": "rec-1"}),
+                }],
+                max_attempts: 1,
+                is_enabled: false,
+            },
+        )
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    harness
+        .state
+        .workflow_service
+        .publish_workflow(&actor.actor, workflow_logical_name.as_str())
+        .await
+        .unwrap_or_else(|_| unreachable!());
+
+    let session_store = Arc::new(MemoryStore::default());
+    let session = Session::new(None, session_store, None);
+    session
+        .insert("step_up_verified_at", 0_i64)
+        .await
+        .unwrap_or_else(|_| unreachable!());
+
+    let blocked_response = match crate::handlers::workflows::disable_workflow_handler(
+        State(harness.state.clone()),
+        Extension(actor.actor.clone()),
+        session.clone(),
+        axum::extract::Path(workflow_logical_name.clone()),
+    )
+    .await
+    {
+        Ok(_) => panic!("expected workflow disable to require step-up"),
+        Err(error) => error.into_response(),
+    };
+    assert_eq!(blocked_response.status(), StatusCode::FORBIDDEN);
+
+    let step_up_response = crate::auth::step_up_handler(
+        State(harness.state.clone()),
+        axum::http::HeaderMap::new(),
+        ConnectInfo("127.0.0.1:4000".parse().unwrap_or_else(|_| unreachable!())),
+        Extension(actor.actor.clone()),
+        session.clone(),
+        Json(AuthStepUpRequest {
+            password: Some(TEST_PASSWORD.to_owned()),
+            code: None,
+            method: None,
+        }),
+    )
+    .await
+    .unwrap_or_else(|_| unreachable!());
+    assert_eq!(step_up_response, StatusCode::NO_CONTENT);
+
+    let disabled = crate::handlers::workflows::disable_workflow_handler(
+        State(harness.state),
+        Extension(actor.actor),
+        session,
+        axum::extract::Path(workflow_logical_name),
+    )
+    .await
+    .unwrap_or_else(|_| unreachable!());
+    assert_eq!(disabled.0.lifecycle_state, "disabled");
+}
+
+#[tokio::test]
+async fn workflow_routes_require_explicit_workflow_permissions() {
+    let Some(harness) = TestHarness::spawn().await else {
+        return;
+    };
+
+    let suffix = Uuid::new_v4().simple().to_string();
+    let owner = seed_user(
+        &harness.state,
+        format!("workflow_owner_{suffix}@example.com").as_str(),
+        "Workflow Owner",
+    )
+    .await;
+    let metadata_only = seed_tenant_member(
+        &harness.state,
+        owner.actor.tenant_id(),
+        format!("metadata_only_{suffix}@example.com").as_str(),
+        "Metadata Only",
+    )
+    .await;
+    let workflow_only = seed_tenant_member(
+        &harness.state,
+        owner.actor.tenant_id(),
+        format!("workflow_only_{suffix}@example.com").as_str(),
+        "Workflow Only",
+    )
+    .await;
+
+    replace_owner_role_with_custom_role(
+        &harness.state,
+        &owner.actor,
+        &metadata_only,
+        format!("metadata_only_{suffix}").as_str(),
+        vec![
+            Permission::MetadataFieldRead,
+            Permission::MetadataFieldWrite,
+        ],
+    )
+    .await;
+    replace_owner_role_with_custom_role(
+        &harness.state,
+        &owner.actor,
+        &workflow_only,
+        format!("workflow_only_{suffix}").as_str(),
+        vec![Permission::WorkflowRead, Permission::WorkflowManage],
+    )
+    .await;
+
+    let metadata_cookie = harness
+        .login(metadata_only.email.as_str(), TEST_PASSWORD)
+        .await;
+    let blocked_list = harness
+        .request(
+            Method::GET,
+            "/api/workflows",
+            Some(metadata_cookie.as_str()),
+            None,
+            false,
+        )
+        .await;
+    assert_eq!(blocked_list.status(), StatusCode::FORBIDDEN);
+
+    let blocked_save = harness
+        .request(
+            Method::POST,
+            "/api/workflows",
+            Some(metadata_cookie.as_str()),
+            Some(json!({
+                "logical_name": format!("blocked_workflow_{suffix}"),
+                "display_name": "Blocked Workflow",
+                "description": null,
+                "trigger_type": "manual",
+                "trigger_entity_logical_name": null,
+                "steps": [
+                    {
+                        "type": "log_message",
+                        "message": "blocked"
+                    }
+                ],
+                "max_attempts": 1
+            })),
+            true,
+        )
+        .await;
+    assert_eq!(blocked_save.status(), StatusCode::FORBIDDEN);
+
+    let workflow_cookie = harness
+        .login(workflow_only.email.as_str(), TEST_PASSWORD)
+        .await;
+    let created_logical_name = format!("workflow_ops_{suffix}");
+    let save_response = harness
+        .request(
+            Method::POST,
+            "/api/workflows",
+            Some(workflow_cookie.as_str()),
+            Some(json!({
+                "logical_name": created_logical_name,
+                "display_name": "Workflow Ops",
+                "description": null,
+                "trigger_type": "manual",
+                "trigger_entity_logical_name": null,
+                "steps": [
+                    {
+                        "type": "log_message",
+                        "message": "allowed"
+                    }
+                ],
+                "max_attempts": 1
+            })),
+            true,
+        )
+        .await;
+    assert_eq!(save_response.status(), StatusCode::CREATED);
+
+    let workflows = harness
+        .request(
+            Method::GET,
+            "/api/workflows",
+            Some(workflow_cookie.as_str()),
+            None,
+            false,
+        )
+        .await;
+    assert_eq!(workflows.status(), StatusCode::OK);
+    let workflows = workflows
+        .json::<Value>()
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    assert_array_contains_string(
+        &workflows,
+        "logical_name",
+        format!("workflow_ops_{suffix}").as_str(),
+    );
+}
+
 impl TestHarness {
     async fn spawn() -> Option<Self> {
-        let pool = test_pool().await?;
         let database_url = std::env::var("DATABASE_URL").ok()?;
         let config = test_config(database_url.as_str());
+        Self::spawn_with_config(config).await
+    }
+
+    async fn spawn_queued(worker_shared_secret: &str) -> Option<Self> {
+        let database_url = std::env::var("DATABASE_URL").ok()?;
+        let mut config = test_config(database_url.as_str());
+        config.workflow_execution_mode = WorkflowExecutionMode::Queued;
+        config.worker_shared_secret = Some(worker_shared_secret.to_owned());
+        Self::spawn_with_config(config).await
+    }
+
+    async fn spawn_with_config(config: ApiConfig) -> Option<Self> {
+        let pool = test_pool().await?;
         let state = build_app_state(pool.clone(), &config).unwrap_or_else(|_| unreachable!());
         let session_layer = build_postgres_session_layer(pool, config.cookie_secure)
             .await
@@ -1397,6 +2604,30 @@ impl TestHarness {
         if include_origin {
             request = request.header(reqwest::header::ORIGIN, FRONTEND_URL);
         }
+
+        if let Some(body) = body {
+            request = request.json(&body);
+        }
+
+        request.send().await.unwrap_or_else(|_| unreachable!())
+    }
+
+    async fn request_internal_worker(
+        &self,
+        method: Method,
+        path: &str,
+        worker_id: &str,
+        worker_secret: &str,
+        body: Option<Value>,
+    ) -> reqwest::Response {
+        let mut request = self
+            .client
+            .request(method, format!("{}{}", self.base_url, path))
+            .header(
+                reqwest::header::AUTHORIZATION,
+                format!("Bearer {worker_secret}"),
+            )
+            .header("x-qryvanta-worker-id", worker_id);
 
         if let Some(body) = body {
             request = request.json(&body);
@@ -1653,6 +2884,76 @@ async fn seed_user(state: &AppState, email: &str, display_name: &str) -> SeededU
     }
 }
 
+async fn seed_tenant_member(
+    state: &AppState,
+    tenant_id: qryvanta_core::TenantId,
+    email: &str,
+    display_name: &str,
+) -> SeededUser {
+    let password_hash = state
+        .user_service
+        .password_hasher()
+        .hash_password(TEST_PASSWORD)
+        .unwrap_or_else(|_| unreachable!());
+    let user_id = state
+        .user_service
+        .user_repository()
+        .create(email, Some(password_hash.as_str()), true)
+        .await
+        .unwrap_or_else(|_| unreachable!());
+
+    state
+        .tenant_repository
+        .create_membership(
+            tenant_id,
+            user_id.to_string().as_str(),
+            display_name,
+            Some(email),
+        )
+        .await
+        .unwrap_or_else(|_| unreachable!());
+
+    SeededUser {
+        actor: UserIdentity::new(
+            user_id.to_string(),
+            email.to_owned(),
+            Some(email.to_owned()),
+            tenant_id,
+        ),
+        email: email.to_owned(),
+    }
+}
+
+async fn replace_owner_role_with_custom_role(
+    state: &AppState,
+    actor: &UserIdentity,
+    member: &SeededUser,
+    role_name: &str,
+    permissions: Vec<Permission>,
+) {
+    state
+        .security_admin_service
+        .create_role(
+            actor,
+            CreateRoleInput {
+                name: role_name.to_owned(),
+                permissions,
+            },
+        )
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    state
+        .security_admin_service
+        .assign_role(actor, member.actor.subject(), role_name)
+        .await
+        .unwrap_or_else(|_| unreachable!());
+    state
+        .security_admin_service
+        .unassign_role(actor, member.actor.subject(), TENANT_OWNER_ROLE)
+        .await
+        .unwrap_or_else(|_| unreachable!());
+}
+
 struct WorkspaceSurfaceSeed<'a> {
     entity_logical_name: &'a str,
     app_logical_name: &'a str,
@@ -1901,10 +3202,9 @@ async fn save_manual_workflow(
                 display_name: logical_name.replace('_', " "),
                 description: Some("Manual test workflow".to_owned()),
                 trigger: WorkflowTrigger::Manual,
-                action: WorkflowAction::LogMessage {
+                steps: vec![WorkflowStep::LogMessage {
                     message: "manual".to_owned(),
-                },
-                steps: None,
+                }],
                 max_attempts: 1,
                 is_enabled: true,
             },
@@ -1930,16 +3230,237 @@ async fn save_schedule_workflow(
                 trigger: WorkflowTrigger::ScheduleTick {
                     schedule_key: schedule_key.to_owned(),
                 },
-                action: WorkflowAction::LogMessage {
+                steps: vec![WorkflowStep::LogMessage {
                     message: "schedule".to_owned(),
-                },
-                steps: None,
+                }],
                 max_attempts: 1,
                 is_enabled: true,
             },
         )
         .await
         .unwrap_or_else(|error| panic!("failed to save scheduled workflow: {error}"))
+}
+
+async fn save_webhook_workflow(
+    state: &AppState,
+    actor: &UserIdentity,
+    logical_name: &str,
+    webhook_key: &str,
+) -> qryvanta_domain::WorkflowDefinition {
+    state
+        .workflow_service
+        .save_workflow(
+            actor,
+            SaveWorkflowInput {
+                logical_name: logical_name.to_owned(),
+                display_name: logical_name.replace('_', " "),
+                description: Some("Webhook test workflow".to_owned()),
+                trigger: WorkflowTrigger::WebhookReceived {
+                    webhook_key: webhook_key.to_owned(),
+                },
+                steps: vec![WorkflowStep::LogMessage {
+                    message: "webhook".to_owned(),
+                }],
+                max_attempts: 1,
+                is_enabled: true,
+            },
+        )
+        .await
+        .unwrap_or_else(|error| panic!("failed to save webhook workflow: {error}"))
+}
+
+async fn save_form_workflow(
+    state: &AppState,
+    actor: &UserIdentity,
+    logical_name: &str,
+    form_key: &str,
+) -> qryvanta_domain::WorkflowDefinition {
+    state
+        .workflow_service
+        .save_workflow(
+            actor,
+            SaveWorkflowInput {
+                logical_name: logical_name.to_owned(),
+                display_name: logical_name.replace('_', " "),
+                description: Some("Form test workflow".to_owned()),
+                trigger: WorkflowTrigger::FormSubmitted {
+                    form_key: form_key.to_owned(),
+                },
+                steps: vec![WorkflowStep::LogMessage {
+                    message: "form".to_owned(),
+                }],
+                max_attempts: 1,
+                is_enabled: true,
+            },
+        )
+        .await
+        .unwrap_or_else(|error| panic!("failed to save form workflow: {error}"))
+}
+
+async fn save_inbound_email_workflow(
+    state: &AppState,
+    actor: &UserIdentity,
+    logical_name: &str,
+    mailbox_key: &str,
+) -> qryvanta_domain::WorkflowDefinition {
+    state
+        .workflow_service
+        .save_workflow(
+            actor,
+            SaveWorkflowInput {
+                logical_name: logical_name.to_owned(),
+                display_name: logical_name.replace('_', " "),
+                description: Some("Inbound email test workflow".to_owned()),
+                trigger: WorkflowTrigger::InboundEmailReceived {
+                    mailbox_key: mailbox_key.to_owned(),
+                },
+                steps: vec![WorkflowStep::LogMessage {
+                    message: "email".to_owned(),
+                }],
+                max_attempts: 1,
+                is_enabled: true,
+            },
+        )
+        .await
+        .unwrap_or_else(|error| panic!("failed to save inbound email workflow: {error}"))
+}
+
+async fn save_approval_event_workflow(
+    state: &AppState,
+    actor: &UserIdentity,
+    logical_name: &str,
+    approval_key: &str,
+) -> qryvanta_domain::WorkflowDefinition {
+    state
+        .workflow_service
+        .save_workflow(
+            actor,
+            SaveWorkflowInput {
+                logical_name: logical_name.to_owned(),
+                display_name: logical_name.replace('_', " "),
+                description: Some("Approval event test workflow".to_owned()),
+                trigger: WorkflowTrigger::ApprovalEventReceived {
+                    approval_key: approval_key.to_owned(),
+                },
+                steps: vec![WorkflowStep::LogMessage {
+                    message: "approval".to_owned(),
+                }],
+                max_attempts: 1,
+                is_enabled: true,
+            },
+        )
+        .await
+        .unwrap_or_else(|error| panic!("failed to save approval event workflow: {error}"))
+}
+
+async fn save_runtime_record_created_workflow(
+    state: &AppState,
+    actor: &UserIdentity,
+    logical_name: &str,
+    entity_logical_name: &str,
+) -> qryvanta_domain::WorkflowDefinition {
+    state
+        .workflow_service
+        .save_workflow(
+            actor,
+            SaveWorkflowInput {
+                logical_name: logical_name.to_owned(),
+                display_name: logical_name.replace('_', " "),
+                description: Some("Runtime record created test workflow".to_owned()),
+                trigger: WorkflowTrigger::RuntimeRecordCreated {
+                    entity_logical_name: entity_logical_name.to_owned(),
+                },
+                steps: vec![WorkflowStep::LogMessage {
+                    message: "runtime created".to_owned(),
+                }],
+                max_attempts: 1,
+                is_enabled: true,
+            },
+        )
+        .await
+        .unwrap_or_else(|error| panic!("failed to save runtime-record workflow: {error}"))
+}
+
+fn claimed_workflow_job_from_response_value(value: Value) -> Result<ClaimedWorkflowJob, String> {
+    let workflow_trigger: WorkflowTrigger = serde_json::from_value(
+        value
+            .get("workflow_trigger")
+            .cloned()
+            .ok_or_else(|| "workflow_trigger missing".to_owned())?,
+    )
+    .map_err(|error| format!("workflow_trigger invalid: {error}"))?;
+    let workflow_steps: Vec<WorkflowStep> = serde_json::from_value(
+        value
+            .get("workflow_steps")
+            .cloned()
+            .ok_or_else(|| "workflow_steps missing".to_owned())?,
+    )
+    .map_err(|error| format!("workflow_steps invalid: {error}"))?;
+    let workflow_version = value
+        .get("workflow_version")
+        .and_then(Value::as_i64)
+        .ok_or_else(|| "workflow_version missing".to_owned())? as i32;
+    let workflow = WorkflowDefinition::new(WorkflowDefinitionInput {
+        logical_name: value
+            .get("workflow_logical_name")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "workflow_logical_name missing".to_owned())?
+            .to_owned(),
+        display_name: value
+            .get("workflow_display_name")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "workflow_display_name missing".to_owned())?
+            .to_owned(),
+        description: value
+            .get("workflow_description")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        trigger: workflow_trigger,
+        steps: workflow_steps,
+        max_attempts: value
+            .get("workflow_max_attempts")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| "workflow_max_attempts missing".to_owned())?
+            as u16,
+    })
+    .map_err(|error| error.to_string())?
+    .with_publish_state(WorkflowLifecycleState::Published, Some(workflow_version))
+    .map_err(|error| error.to_string())?;
+
+    let tenant_id = qryvanta_core::TenantId::from_uuid(
+        Uuid::parse_str(
+            value
+                .get("tenant_id")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "tenant_id missing".to_owned())?,
+        )
+        .map_err(|error| format!("tenant_id invalid: {error}"))?,
+    );
+
+    Ok(ClaimedWorkflowJob {
+        job_id: value
+            .get("job_id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "job_id missing".to_owned())?
+            .to_owned(),
+        lease_token: value
+            .get("lease_token")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "lease_token missing".to_owned())?
+            .to_owned(),
+        tenant_id,
+        run_id: value
+            .get("run_id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "run_id missing".to_owned())?
+            .to_owned(),
+        workflow_version,
+        workflow,
+        trigger_payload: value
+            .get("trigger_payload")
+            .cloned()
+            .ok_or_else(|| "trigger_payload missing".to_owned())?,
+    })
 }
 
 fn minimal_form_tabs() -> Vec<FormTab> {

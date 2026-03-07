@@ -146,6 +146,7 @@ impl MetadataService {
                         plan.rewritten_data,
                         unique_values,
                         actor.subject(),
+                        None,
                     )
                     .await?;
 
@@ -172,6 +173,7 @@ impl MetadataService {
                         plan.target_record_id.as_str(),
                         plan.rewritten_data,
                         unique_values,
+                        None,
                     )
                     .await?;
 

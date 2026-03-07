@@ -45,8 +45,8 @@ pub use publish::{
     PublishCheckCategoryDto, PublishCheckIssueResponse, PublishCheckScopeDto,
     PublishCheckSeverityDto, PublishFieldDiffItemResponse, PublishSurfaceDeltaItemResponse,
     PublishSurfaceDiffItemResponse, RunWorkspacePublishRequest, RunWorkspacePublishResponse,
-    WorkspacePublishChecksResponse, WorkspacePublishDiffRequest, WorkspacePublishDiffResponse,
-    WorkspacePublishHistoryEntryResponse,
+    WorkflowPublishDiffResponse, WorkspacePublishChecksResponse, WorkspacePublishDiffRequest,
+    WorkspacePublishDiffResponse, WorkspacePublishHistoryEntryResponse,
 };
 pub use runtime::{
     CreateRuntimeRecordRequest, QueryRuntimeRecordsRequest, RuntimeRecordQueryFilterRequest,
@@ -115,11 +115,11 @@ mod tests {
         SaveRuntimeFieldPermissionsRequest, SaveWorkflowRequest, TemporaryAccessGrantResponse,
         TenantOptionResponse, TenantRegistrationModeResponse, UpdateAuditRetentionPolicyRequest,
         UpdateEntityRequest, UpdateFieldRequest, UpdateRuntimeRecordRequest,
-        UpdateTenantRegistrationModeRequest, UserIdentityResponse, ViewResponse, WorkflowResponse,
-        WorkflowRunAttemptResponse, WorkflowRunReplayResponse,
-        WorkflowRunReplayTimelineEventResponse, WorkflowRunResponse, WorkspaceDashboardResponse,
-        WorkspacePortableBundleResponse, WorkspacePublishChecksResponse,
-        WorkspacePublishDiffRequest, WorkspacePublishDiffResponse,
+        UpdateTenantRegistrationModeRequest, UserIdentityResponse, ViewResponse,
+        WorkflowPublishDiffResponse, WorkflowResponse, WorkflowRunAttemptResponse,
+        WorkflowRunReplayResponse, WorkflowRunReplayTimelineEventResponse, WorkflowRunResponse,
+        WorkspaceDashboardResponse, WorkspacePortableBundleResponse,
+        WorkspacePublishChecksResponse, WorkspacePublishDiffRequest, WorkspacePublishDiffResponse,
         WorkspacePublishHistoryEntryResponse,
     };
 
@@ -205,6 +205,7 @@ mod tests {
         PublishSurfaceDeltaItemResponse::export(&config)?;
         WorkspacePublishChecksResponse::export(&config)?;
         WorkspacePublishDiffRequest::export(&config)?;
+        WorkflowPublishDiffResponse::export(&config)?;
         WorkspacePublishDiffResponse::export(&config)?;
         WorkspacePublishHistoryEntryResponse::export(&config)?;
         RunWorkspacePublishRequest::export(&config)?;

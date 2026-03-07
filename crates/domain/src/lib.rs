@@ -44,6 +44,7 @@ pub use view::{
     ViewFilterGroup, ViewSort, ViewType,
 };
 pub use workflow::{
-    WorkflowAction, WorkflowConditionOperator, WorkflowDefinition, WorkflowDefinitionInput,
-    WorkflowStep, WorkflowTrigger,
+    WorkflowConditionOperator, WorkflowDefinition, WorkflowDefinitionInput, WorkflowLifecycleState,
+    WorkflowStep, WorkflowTrigger, is_sensitive_workflow_header_name,
+    redact_sensitive_workflow_headers, redact_workflow_header_secret_refs,
 };

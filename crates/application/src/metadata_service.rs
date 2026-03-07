@@ -130,6 +130,49 @@ impl MetadataService {
                 ))
             })
     }
+
+    pub(crate) async fn claim_runtime_record_workflow_events(
+        &self,
+        worker_id: &str,
+        limit: usize,
+        lease_seconds: u32,
+        tenant_filter: Option<TenantId>,
+    ) -> AppResult<Vec<crate::ClaimedRuntimeRecordWorkflowEvent>> {
+        self.repository
+            .claim_runtime_record_workflow_events(worker_id, limit, lease_seconds, tenant_filter)
+            .await
+    }
+
+    pub(crate) async fn complete_runtime_record_workflow_event(
+        &self,
+        tenant_id: TenantId,
+        event_id: &str,
+        worker_id: &str,
+        lease_token: &str,
+    ) -> AppResult<()> {
+        self.repository
+            .complete_runtime_record_workflow_event(tenant_id, event_id, worker_id, lease_token)
+            .await
+    }
+
+    pub(crate) async fn release_runtime_record_workflow_event(
+        &self,
+        tenant_id: TenantId,
+        event_id: &str,
+        worker_id: &str,
+        lease_token: &str,
+        error_message: &str,
+    ) -> AppResult<()> {
+        self.repository
+            .release_runtime_record_workflow_event(
+                tenant_id,
+                event_id,
+                worker_id,
+                lease_token,
+                error_message,
+            )
+            .await
+    }
 }
 
 #[cfg(test)]

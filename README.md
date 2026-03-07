@@ -37,6 +37,24 @@ The project is built as a Rust-first monorepo with a Next.js frontend and docs s
 - Authenticated API regression tests now also cover `GET /auth/me` tenant visibility and `POST /auth/switch-tenant` scope changes.
 - Foreign-resource delete paths now fail closed with `404` instead of succeeding as silent no-ops.
 - Optional queued workflow execution via `qryvanta-worker`.
+- Canonical step-graph workflow definitions shared across API, worker, and maker surfaces.
+- Workflow definitions are now draft-first, published as immutable versions, and workflow runs are pinned to the published version that created them.
+- Workflow access now uses dedicated `workflow.read` and `workflow.manage` RBAC grants instead of piggybacking on metadata-field permissions.
+- Workspace publish checks, diff, history, and selective publish now include workflows alongside entities and apps.
+- Runtime-record workflow triggers are delivered through a transactional outbox and drained by inline or queued worker control paths.
+- Queued workers now include a built-in schedule-tick dispatcher with persisted slot claiming for native UTC workflow schedules.
+- Workflow runtime now includes native webhook ingress at `/api/public/workflows/webhooks/{tenant_id}/{webhook_key}` for first-class webhook triggers.
+- Workflow runtime now includes native form ingress at `/api/public/workflows/forms/{tenant_id}/{form_key}` for first-class form submission triggers.
+- Workflow runtime now includes native inbound email ingress at `/api/public/workflows/email/{tenant_id}/{mailbox_key}` for first-class email triggers.
+- Workflow runtime now includes native approval ingress at `/api/public/workflows/approvals/{tenant_id}/{approval_key}` for first-class approval-event triggers.
+- Native workflow actions now include outbound integrations (`send_email`, `http_request`, `webhook`) plus platform-side operations (`update_runtime_record`, `delete_runtime_record`, `assign_owner`, `approval_request`, `delay`) with typed contracts across API, worker, and maker surfaces.
+- Maker workflow authoring now uses typed field-row editors for common record/webhook/approval payloads and typed condition-value controls instead of whole-object JSON blobs in those paths.
+- Workflow test execution in Maker now uses typed sample-trigger payload editors with trigger-aware defaults, and common step inspectors render local payload previews before execution.
+- HTTP request and webhook steps in Maker now expose typed secret-header credential presets for common outbound auth patterns instead of raw secret-header JSON entry.
+- Those outbound credential presets now include provider-aware secret-reference builders for 1Password, AWS Secrets Manager, AWS SSM, Vault, and GCP Secret Manager formats.
+- HTTP request steps in Maker now support typed object, array, and scalar body authoring for common outbound payloads, with raw JSON kept only for advanced custom body shapes.
+- Secret-backed outbound auth headers in Maker now support typed `Authorization` formatting (`Raw`, `Bearer`, `Basic`) plus provider-aware secret-reference builders.
+- Workflow publish governance now supports secret-manager-backed outbound header references, blocks inline credential-bearing headers, requires recent step-up for publish/disable of outbound workflows, and redacts sensitive headers from persisted step traces.
 - Optional Redis-backed rate limiting and workflow queue-stats caching.
 
 ## Repository Layout

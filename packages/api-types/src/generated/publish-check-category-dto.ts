@@ -3,4 +3,4 @@
 /**
  * Publish check issue category.
  */
-export type PublishCheckCategoryDto = "schema" | "relationship" | "form" | "view" | "sitemap" | "binding" | "unknown";
+export type PublishCheckCategoryDto = "schema" | "relationship" | "form" | "view" | "sitemap" | "binding" | "workflow" | "unknown";

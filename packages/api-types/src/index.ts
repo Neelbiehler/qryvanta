@@ -97,6 +97,7 @@ export * from "./generated/workspace-publish-history-entry-response";
 export * from "./generated/entity-publish-diff-response";
 export * from "./generated/app-publish-diff-response";
 export * from "./generated/app-binding-diff-response";
+export * from "./generated/workflow-publish-diff-response";
 export * from "./generated/workflow-condition-operator-dto";
 export * from "./generated/workflow-step-dto";
 export * from "./generated/workflow-run-response";

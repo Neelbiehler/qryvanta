@@ -27,6 +27,10 @@ export function TriggerConfigPanel({
     triggerType === "runtime_record_updated" ||
     triggerType === "runtime_record_deleted";
   const isScheduleTrigger = triggerType === "schedule_tick";
+  const isWebhookTrigger = triggerType === "webhook_received";
+  const isFormTrigger = triggerType === "form_submitted";
+  const isInboundEmailTrigger = triggerType === "inbound_email_received";
+  const isApprovalEventTrigger = triggerType === "approval_event_received";
 
   return (
     <>
@@ -73,7 +77,17 @@ export function TriggerConfigPanel({
       </div>
       <div className="space-y-2">
         <Label htmlFor="workflow_trigger_entity">
-          {isScheduleTrigger ? "Schedule Key" : "Trigger Entity"}
+          {isScheduleTrigger
+            ? "Schedule Key"
+            : isWebhookTrigger
+              ? "Webhook Key"
+              : isFormTrigger
+                ? "Form Key"
+                : isInboundEmailTrigger
+                  ? "Mailbox Key"
+                  : isApprovalEventTrigger
+                    ? "Approval Key"
+              : "Trigger Entity"}
         </Label>
         {isScheduleTrigger ? (
           <Select
@@ -99,9 +113,28 @@ export function TriggerConfigPanel({
           id="workflow_trigger_entity"
           value={triggerEntityLogicalName}
           onChange={(event) => onTriggerEntityChange(event.target.value)}
-          placeholder={isScheduleTrigger ? "hourly" : "contact"}
+          placeholder={
+            isScheduleTrigger
+              ? "hourly"
+              : isWebhookTrigger
+                ? "customer_created"
+                : isFormTrigger
+                  ? "lead_capture"
+                  : isInboundEmailTrigger
+                    ? "support"
+                    : isApprovalEventTrigger
+                      ? "manager_signoff"
+                : "contact"
+          }
           list="workflow_trigger_entity_suggestions"
-          disabled={!isRuntimeEntityTrigger && !isScheduleTrigger}
+          disabled={
+            !isRuntimeEntityTrigger &&
+            !isScheduleTrigger &&
+            !isWebhookTrigger &&
+            !isFormTrigger &&
+            !isInboundEmailTrigger &&
+            !isApprovalEventTrigger
+          }
         />
         <datalist id="workflow_trigger_entity_suggestions">
           {runtimeEntityOptions.map((preset) => (

@@ -30,6 +30,7 @@ mod redis_rate_limit_repository;
 mod redis_workflow_queue_stats_cache;
 mod redis_workflow_worker_lease_coordinator;
 mod smtp_email_service;
+mod tokio_workflow_delay_service;
 mod totp_provider;
 mod wasm_extension_runtime;
 
@@ -62,5 +63,6 @@ pub use redis_rate_limit_repository::RedisRateLimitRepository;
 pub use redis_workflow_queue_stats_cache::RedisWorkflowQueueStatsCache;
 pub use redis_workflow_worker_lease_coordinator::RedisWorkflowWorkerLeaseCoordinator;
 pub use smtp_email_service::{SmtpEmailConfig, SmtpEmailService};
+pub use tokio_workflow_delay_service::TokioWorkflowDelayService;
 pub use totp_provider::TotpRsProvider;
 pub use wasm_extension_runtime::WasmExtensionRuntime;

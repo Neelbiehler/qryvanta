@@ -237,11 +237,17 @@ export function WorkflowHistoryPanel({ workflow, runs }: WorkflowHistoryPanelPro
             <h1 className="text-lg font-semibold text-zinc-900">{workflow.display_name}</h1>
             <span className={cn(
               "rounded-full px-2 py-0.5 text-[11px] font-semibold",
-              workflow.is_enabled
+              workflow.lifecycle_state === "published"
                 ? "bg-emerald-100 text-emerald-700"
-                : "bg-zinc-100 text-zinc-500",
+                : workflow.lifecycle_state === "disabled"
+                  ? "bg-zinc-100 text-zinc-500"
+                  : "bg-amber-100 text-amber-700",
             )}>
-              {workflow.is_enabled ? "Enabled" : "Disabled"}
+              {workflow.lifecycle_state === "published"
+                ? "Published"
+                : workflow.lifecycle_state === "disabled"
+                  ? "Disabled"
+                  : "Draft"}
             </span>
           </div>
           <p className="font-mono text-xs text-zinc-400">{workflow.logical_name}</p>

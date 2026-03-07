@@ -1,16 +1,18 @@
 use std::str::FromStr;
 
-use crate::begin_tenant_transaction;
+use crate::{begin_tenant_transaction, begin_workflow_worker_transaction};
 use async_trait::async_trait;
 use qryvanta_application::{
-    MetadataRepository, RecordListQuery, RuntimeRecordConditionGroup, RuntimeRecordConditionNode,
-    RuntimeRecordFilter, RuntimeRecordJoinType, RuntimeRecordLogicalMode, RuntimeRecordOperator,
-    RuntimeRecordQuery, RuntimeRecordSort, RuntimeRecordSortDirection, UniqueFieldValue,
+    ClaimedRuntimeRecordWorkflowEvent, MetadataRepository, RecordListQuery,
+    RuntimeRecordConditionGroup, RuntimeRecordConditionNode, RuntimeRecordFilter,
+    RuntimeRecordJoinType, RuntimeRecordLogicalMode, RuntimeRecordOperator, RuntimeRecordQuery,
+    RuntimeRecordSort, RuntimeRecordSortDirection, RuntimeRecordWorkflowEventInput,
+    UniqueFieldValue,
 };
 use qryvanta_core::{AppError, AppResult, TenantId};
 use qryvanta_domain::{
     BusinessRuleDefinition, EntityDefinition, EntityFieldDefinition, FieldType, FormDefinition,
-    OptionSetDefinition, PublishedEntitySchema, RuntimeRecord, ViewDefinition,
+    OptionSetDefinition, PublishedEntitySchema, RuntimeRecord, ViewDefinition, WorkflowTrigger,
 };
 use serde_json::Value;
 use sqlx::{FromRow, PgPool, Postgres};
@@ -96,6 +98,18 @@ struct RuntimeRecordRow {
     id: Uuid,
     entity_logical_name: String,
     data: Value,
+}
+
+#[derive(Debug, FromRow)]
+struct RuntimeRecordWorkflowEventRow {
+    id: Uuid,
+    tenant_id: Uuid,
+    trigger_type: String,
+    entity_logical_name: String,
+    record_id: String,
+    emitted_by_subject: String,
+    payload: Value,
+    lease_token: Option<String>,
 }
 
 mod components;
@@ -387,6 +401,7 @@ impl MetadataRepository for PostgresMetadataRepository {
         data: Value,
         unique_values: Vec<UniqueFieldValue>,
         created_by_subject: &str,
+        workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<RuntimeRecord> {
         self.create_runtime_record_impl(
             tenant_id,
@@ -394,6 +409,7 @@ impl MetadataRepository for PostgresMetadataRepository {
             data,
             unique_values,
             created_by_subject,
+            workflow_event,
         )
         .await
     }
@@ -406,6 +422,7 @@ impl MetadataRepository for PostgresMetadataRepository {
         data: Value,
         unique_values: Vec<UniqueFieldValue>,
         created_by_subject: &str,
+        workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<RuntimeRecord> {
         self.create_runtime_record_with_id_impl(
             tenant_id,
@@ -414,6 +431,7 @@ impl MetadataRepository for PostgresMetadataRepository {
             data,
             unique_values,
             created_by_subject,
+            workflow_event,
         )
         .await
     }
@@ -425,6 +443,7 @@ impl MetadataRepository for PostgresMetadataRepository {
         record_id: &str,
         data: Value,
         unique_values: Vec<UniqueFieldValue>,
+        workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<RuntimeRecord> {
         self.update_runtime_record_impl(
             tenant_id,
@@ -432,6 +451,7 @@ impl MetadataRepository for PostgresMetadataRepository {
             record_id,
             data,
             unique_values,
+            workflow_event,
         )
         .await
     }
@@ -471,9 +491,60 @@ impl MetadataRepository for PostgresMetadataRepository {
         tenant_id: TenantId,
         entity_logical_name: &str,
         record_id: &str,
+        workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<()> {
-        self.delete_runtime_record_impl(tenant_id, entity_logical_name, record_id)
+        self.delete_runtime_record_impl(tenant_id, entity_logical_name, record_id, workflow_event)
             .await
+    }
+
+    async fn claim_runtime_record_workflow_events(
+        &self,
+        worker_id: &str,
+        limit: usize,
+        lease_seconds: u32,
+        tenant_filter: Option<TenantId>,
+    ) -> AppResult<Vec<ClaimedRuntimeRecordWorkflowEvent>> {
+        self.claim_runtime_record_workflow_events_impl(
+            worker_id,
+            limit,
+            lease_seconds,
+            tenant_filter,
+        )
+        .await
+    }
+
+    async fn complete_runtime_record_workflow_event(
+        &self,
+        tenant_id: TenantId,
+        event_id: &str,
+        worker_id: &str,
+        lease_token: &str,
+    ) -> AppResult<()> {
+        self.complete_runtime_record_workflow_event_impl(
+            tenant_id,
+            event_id,
+            worker_id,
+            lease_token,
+        )
+        .await
+    }
+
+    async fn release_runtime_record_workflow_event(
+        &self,
+        tenant_id: TenantId,
+        event_id: &str,
+        worker_id: &str,
+        lease_token: &str,
+        error_message: &str,
+    ) -> AppResult<()> {
+        self.release_runtime_record_workflow_event_impl(
+            tenant_id,
+            event_id,
+            worker_id,
+            lease_token,
+            error_message,
+        )
+        .await
     }
 
     async fn runtime_record_exists(

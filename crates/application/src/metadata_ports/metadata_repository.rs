@@ -7,6 +7,7 @@ use qryvanta_domain::{
 use serde_json::Value;
 
 use super::{RecordListQuery, RuntimeRecordQuery, UniqueFieldValue};
+use crate::{ClaimedRuntimeRecordWorkflowEvent, RuntimeRecordWorkflowEventInput};
 
 /// Legacy aggregate repository port for metadata and runtime persistence.
 #[async_trait]
@@ -230,6 +231,7 @@ pub trait MetadataRepository: Send + Sync {
         data: Value,
         unique_values: Vec<UniqueFieldValue>,
         created_by_subject: &str,
+        workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<RuntimeRecord>;
 
     /// Creates a runtime record with a caller-provided stable identifier.
@@ -241,6 +243,7 @@ pub trait MetadataRepository: Send + Sync {
         data: Value,
         unique_values: Vec<UniqueFieldValue>,
         created_by_subject: &str,
+        workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<RuntimeRecord>;
 
     /// Updates a runtime record and replaces unique field index entries.
@@ -251,6 +254,7 @@ pub trait MetadataRepository: Send + Sync {
         record_id: &str,
         data: Value,
         unique_values: Vec<UniqueFieldValue>,
+        workflow_event: Option<RuntimeRecordWorkflowEventInput>,
     ) -> AppResult<RuntimeRecord>;
 
     /// Lists runtime records for an entity.
@@ -283,6 +287,35 @@ pub trait MetadataRepository: Send + Sync {
         tenant_id: TenantId,
         entity_logical_name: &str,
         record_id: &str,
+        workflow_event: Option<RuntimeRecordWorkflowEventInput>,
+    ) -> AppResult<()>;
+
+    /// Claims one batch of pending runtime-record workflow events.
+    async fn claim_runtime_record_workflow_events(
+        &self,
+        worker_id: &str,
+        limit: usize,
+        lease_seconds: u32,
+        tenant_filter: Option<TenantId>,
+    ) -> AppResult<Vec<ClaimedRuntimeRecordWorkflowEvent>>;
+
+    /// Marks one leased runtime-record workflow event as completed.
+    async fn complete_runtime_record_workflow_event(
+        &self,
+        tenant_id: TenantId,
+        event_id: &str,
+        worker_id: &str,
+        lease_token: &str,
+    ) -> AppResult<()>;
+
+    /// Releases one leased runtime-record workflow event back to pending.
+    async fn release_runtime_record_workflow_event(
+        &self,
+        tenant_id: TenantId,
+        event_id: &str,
+        worker_id: &str,
+        lease_token: &str,
+        error_message: &str,
     ) -> AppResult<()>;
 
     /// Checks whether a runtime record exists in the provided entity scope.

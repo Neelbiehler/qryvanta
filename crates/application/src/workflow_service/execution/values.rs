@@ -1,21 +1,136 @@
 use super::*;
 
 impl WorkflowService {
-    pub(super) fn interpolate_action(
-        action: &WorkflowAction,
+    pub(super) fn interpolate_step(
+        step: &WorkflowStep,
         context: WorkflowExecutionContext<'_>,
-    ) -> AppResult<WorkflowAction> {
-        match action {
-            WorkflowAction::LogMessage { message } => Ok(WorkflowAction::LogMessage {
+    ) -> AppResult<WorkflowStep> {
+        match step {
+            WorkflowStep::LogMessage { message } => Ok(WorkflowStep::LogMessage {
                 message: Self::interpolate_string(message, context),
             }),
-            WorkflowAction::CreateRuntimeRecord {
+            WorkflowStep::CreateRuntimeRecord {
                 entity_logical_name,
                 data,
-            } => Ok(WorkflowAction::CreateRuntimeRecord {
+            } => Ok(WorkflowStep::CreateRuntimeRecord {
                 entity_logical_name: Self::interpolate_string(entity_logical_name, context),
                 data: Self::interpolate_json_value(data, context)?,
             }),
+            WorkflowStep::UpdateRuntimeRecord {
+                entity_logical_name,
+                record_id,
+                data,
+            } => Ok(WorkflowStep::UpdateRuntimeRecord {
+                entity_logical_name: Self::interpolate_string(entity_logical_name, context),
+                record_id: Self::interpolate_string(record_id, context),
+                data: Self::interpolate_json_value(data, context)?,
+            }),
+            WorkflowStep::DeleteRuntimeRecord {
+                entity_logical_name,
+                record_id,
+            } => Ok(WorkflowStep::DeleteRuntimeRecord {
+                entity_logical_name: Self::interpolate_string(entity_logical_name, context),
+                record_id: Self::interpolate_string(record_id, context),
+            }),
+            WorkflowStep::SendEmail {
+                to,
+                subject,
+                body,
+                html_body,
+            } => Ok(WorkflowStep::SendEmail {
+                to: Self::interpolate_string(to, context),
+                subject: Self::interpolate_string(subject, context),
+                body: Self::interpolate_string(body, context),
+                html_body: html_body
+                    .as_ref()
+                    .map(|value| Self::interpolate_string(value, context)),
+            }),
+            WorkflowStep::HttpRequest {
+                method,
+                url,
+                headers,
+                header_secret_refs,
+                body,
+            } => Ok(WorkflowStep::HttpRequest {
+                method: Self::interpolate_string(method, context),
+                url: Self::interpolate_string(url, context),
+                headers: headers
+                    .as_ref()
+                    .map(|value| Self::interpolate_json_value(value, context))
+                    .transpose()?,
+                header_secret_refs: header_secret_refs.clone(),
+                body: body
+                    .as_ref()
+                    .map(|value| Self::interpolate_json_value(value, context))
+                    .transpose()?,
+            }),
+            WorkflowStep::Webhook {
+                endpoint,
+                event,
+                headers,
+                header_secret_refs,
+                payload,
+            } => Ok(WorkflowStep::Webhook {
+                endpoint: Self::interpolate_string(endpoint, context),
+                event: Self::interpolate_string(event, context),
+                headers: headers
+                    .as_ref()
+                    .map(|value| Self::interpolate_json_value(value, context))
+                    .transpose()?,
+                header_secret_refs: header_secret_refs.clone(),
+                payload: Self::interpolate_json_value(payload, context)?,
+            }),
+            WorkflowStep::AssignOwner {
+                entity_logical_name,
+                record_id,
+                owner_id,
+                reason,
+            } => Ok(WorkflowStep::AssignOwner {
+                entity_logical_name: Self::interpolate_string(entity_logical_name, context),
+                record_id: Self::interpolate_string(record_id, context),
+                owner_id: Self::interpolate_string(owner_id, context),
+                reason: reason
+                    .as_ref()
+                    .map(|value| Self::interpolate_string(value, context)),
+            }),
+            WorkflowStep::ApprovalRequest {
+                entity_logical_name,
+                record_id,
+                request_type,
+                requested_by,
+                approver_id,
+                reason,
+                payload,
+            } => Ok(WorkflowStep::ApprovalRequest {
+                entity_logical_name: Self::interpolate_string(entity_logical_name, context),
+                record_id: Self::interpolate_string(record_id, context),
+                request_type: Self::interpolate_string(request_type, context),
+                requested_by: requested_by
+                    .as_ref()
+                    .map(|value| Self::interpolate_string(value, context)),
+                approver_id: approver_id
+                    .as_ref()
+                    .map(|value| Self::interpolate_string(value, context)),
+                reason: reason
+                    .as_ref()
+                    .map(|value| Self::interpolate_string(value, context)),
+                payload: payload
+                    .as_ref()
+                    .map(|value| Self::interpolate_json_value(value, context))
+                    .transpose()?,
+            }),
+            WorkflowStep::Delay {
+                duration_ms,
+                reason,
+            } => Ok(WorkflowStep::Delay {
+                duration_ms: *duration_ms,
+                reason: reason
+                    .as_ref()
+                    .map(|value| Self::interpolate_string(value, context)),
+            }),
+            WorkflowStep::Condition { .. } => Err(AppError::Validation(
+                "condition step cannot be interpolated as an executable action".to_owned(),
+            )),
         }
     }
 

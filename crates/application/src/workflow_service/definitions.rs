@@ -1,6 +1,7 @@
 use super::*;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 
 impl WorkflowService {
     /// Saves one workflow definition.
@@ -16,10 +17,8 @@ impl WorkflowService {
             display_name: input.display_name,
             description: input.description,
             trigger: input.trigger,
-            action: input.action,
             steps: input.steps,
             max_attempts: input.max_attempts,
-            is_enabled: input.is_enabled,
         })?;
 
         self.repository
@@ -34,11 +33,51 @@ impl WorkflowService {
                 resource_type: "workflow_definition".to_owned(),
                 resource_id: workflow.logical_name().as_str().to_owned(),
                 detail: Some(format!(
-                    "saved workflow '{}' trigger '{}' action '{}' with {} step(s)",
+                    "saved workflow '{}' trigger '{}' with {} step(s)",
                     workflow.logical_name().as_str(),
                     workflow.trigger().trigger_type(),
-                    workflow.action().action_type(),
-                    workflow.effective_steps().len()
+                    workflow.steps().len()
+                )),
+            })
+            .await?;
+
+        if input.is_enabled {
+            return self
+                .publish_workflow(actor, workflow.logical_name().as_str())
+                .await;
+        }
+
+        Ok(workflow)
+    }
+
+    /// Publishes the current workflow draft as the next active immutable version.
+    pub async fn publish_workflow(
+        &self,
+        actor: &UserIdentity,
+        workflow_logical_name: &str,
+    ) -> AppResult<WorkflowDefinition> {
+        self.require_workflow_manage(actor).await?;
+        let publish_errors = self.publish_checks(actor, workflow_logical_name).await?;
+        if !publish_errors.is_empty() {
+            return Err(AppError::Validation(publish_errors.join("; ")));
+        }
+
+        let workflow = self
+            .repository
+            .publish_workflow(actor.tenant_id(), workflow_logical_name, actor.subject())
+            .await?;
+
+        self.audit_repository
+            .append_event(AuditEvent {
+                tenant_id: actor.tenant_id(),
+                subject: actor.subject().to_owned(),
+                action: AuditAction::WorkflowPublished,
+                resource_type: "workflow_definition".to_owned(),
+                resource_id: workflow.logical_name().as_str().to_owned(),
+                detail: Some(format!(
+                    "published workflow '{}' at version {}",
+                    workflow.logical_name().as_str(),
+                    workflow.published_version().unwrap_or_default()
                 )),
             })
             .await?;
@@ -46,10 +85,173 @@ impl WorkflowService {
         Ok(workflow)
     }
 
+    /// Disables the currently published workflow version.
+    pub async fn disable_workflow(
+        &self,
+        actor: &UserIdentity,
+        workflow_logical_name: &str,
+    ) -> AppResult<WorkflowDefinition> {
+        self.require_workflow_manage(actor).await?;
+
+        let workflow = self
+            .repository
+            .disable_workflow(actor.tenant_id(), workflow_logical_name)
+            .await?;
+
+        self.audit_repository
+            .append_event(AuditEvent {
+                tenant_id: actor.tenant_id(),
+                subject: actor.subject().to_owned(),
+                action: AuditAction::WorkflowDisabled,
+                resource_type: "workflow_definition".to_owned(),
+                resource_id: workflow.logical_name().as_str().to_owned(),
+                detail: Some(format!(
+                    "disabled workflow '{}' at version {}",
+                    workflow.logical_name().as_str(),
+                    workflow.published_version().unwrap_or_default()
+                )),
+            })
+            .await?;
+
+        Ok(workflow)
+    }
+
+    /// Returns whether publishing this workflow draft requires recent step-up verification.
+    pub async fn publish_requires_recent_step_up(
+        &self,
+        actor: &UserIdentity,
+        workflow_logical_name: &str,
+    ) -> AppResult<bool> {
+        self.require_workflow_manage(actor).await?;
+
+        let workflow = self
+            .repository
+            .find_workflow(actor.tenant_id(), workflow_logical_name)
+            .await?
+            .ok_or_else(|| {
+                AppError::NotFound(format!(
+                    "workflow '{}' does not exist for tenant '{}'",
+                    workflow_logical_name,
+                    actor.tenant_id()
+                ))
+            })?;
+
+        Ok(workflow.contains_outbound_integration_steps())
+    }
+
+    /// Returns whether disabling the active published workflow requires recent step-up verification.
+    pub async fn disable_requires_recent_step_up(
+        &self,
+        actor: &UserIdentity,
+        workflow_logical_name: &str,
+    ) -> AppResult<bool> {
+        self.require_workflow_manage(actor).await?;
+
+        let workflow = self
+            .repository
+            .find_published_workflow(actor.tenant_id(), workflow_logical_name)
+            .await?
+            .ok_or_else(|| {
+                AppError::NotFound(format!(
+                    "workflow '{}' does not have a published version for tenant '{}'",
+                    workflow_logical_name,
+                    actor.tenant_id()
+                ))
+            })?;
+
+        Ok(workflow.contains_outbound_integration_steps())
+    }
+
     /// Lists workflow definitions.
     pub async fn list_workflows(&self, actor: &UserIdentity) -> AppResult<Vec<WorkflowDefinition>> {
         self.require_workflow_read(actor).await?;
         self.repository.list_workflows(actor.tenant_id()).await
+    }
+
+    /// Returns one draft workflow definition by logical name.
+    pub async fn find_workflow(
+        &self,
+        actor: &UserIdentity,
+        workflow_logical_name: &str,
+    ) -> AppResult<Option<WorkflowDefinition>> {
+        self.require_workflow_read(actor).await?;
+        self.repository
+            .find_workflow(actor.tenant_id(), workflow_logical_name)
+            .await
+    }
+
+    /// Returns one immutable published workflow snapshot by version.
+    pub async fn find_published_workflow_version(
+        &self,
+        actor: &UserIdentity,
+        workflow_logical_name: &str,
+        version: i32,
+    ) -> AppResult<Option<WorkflowDefinition>> {
+        self.require_workflow_read(actor).await?;
+        self.repository
+            .find_published_workflow_version(actor.tenant_id(), workflow_logical_name, version)
+            .await
+    }
+
+    /// Runs publish validation checks for one workflow draft.
+    pub async fn publish_checks(
+        &self,
+        actor: &UserIdentity,
+        workflow_logical_name: &str,
+    ) -> AppResult<Vec<String>> {
+        self.publish_checks_with_allowed_unpublished_entities(actor, workflow_logical_name, &[])
+            .await
+    }
+
+    /// Runs publish validation checks while allowing selected unpublished entities.
+    pub async fn publish_checks_with_allowed_unpublished_entities(
+        &self,
+        actor: &UserIdentity,
+        workflow_logical_name: &str,
+        allowed_unpublished_entity_logical_names: &[String],
+    ) -> AppResult<Vec<String>> {
+        self.require_workflow_manage(actor).await?;
+
+        let workflow = self
+            .repository
+            .find_workflow(actor.tenant_id(), workflow_logical_name)
+            .await?
+            .ok_or_else(|| {
+                AppError::NotFound(format!(
+                    "workflow '{}' does not exist for tenant '{}'",
+                    workflow_logical_name,
+                    actor.tenant_id()
+                ))
+            })?;
+
+        let allowed_unpublished_entities = allowed_unpublished_entity_logical_names
+            .iter()
+            .map(String::as_str)
+            .collect::<HashSet<_>>();
+        let referenced_entities = collect_workflow_entity_references(&workflow);
+        let mut errors = Vec::new();
+
+        for entity_logical_name in referenced_entities {
+            if allowed_unpublished_entities.contains(entity_logical_name.as_str()) {
+                continue;
+            }
+
+            let has_published_schema = self
+                .runtime_record_service
+                .has_published_entity_schema(actor, entity_logical_name.as_str())
+                .await?;
+            if !has_published_schema {
+                errors.push(format!(
+                    "dependency check failed: workflow '{}' -> entity '{}' requires a published schema or inclusion in this publish selection",
+                    workflow.logical_name().as_str(),
+                    entity_logical_name
+                ));
+            }
+        }
+
+        errors.extend(collect_workflow_governance_violations(&workflow));
+
+        Ok(errors)
     }
 
     /// Lists workflow runs for operational traceability.
@@ -128,19 +330,205 @@ impl WorkflowService {
             .require_permission(
                 actor.tenant_id(),
                 actor.subject(),
-                Permission::MetadataFieldWrite,
+                Permission::WorkflowManage,
             )
             .await
     }
 
     pub(super) async fn require_workflow_read(&self, actor: &UserIdentity) -> AppResult<()> {
         self.authorization_service
-            .require_permission(
-                actor.tenant_id(),
-                actor.subject(),
-                Permission::MetadataFieldRead,
-            )
+            .require_permission(actor.tenant_id(), actor.subject(), Permission::WorkflowRead)
             .await
+    }
+}
+
+fn collect_workflow_entity_references(workflow: &WorkflowDefinition) -> Vec<String> {
+    let mut referenced_entities = Vec::new();
+
+    if let Some(entity_logical_name) = workflow_entity_reference_from_trigger(workflow.trigger()) {
+        referenced_entities.push(entity_logical_name.to_owned());
+    }
+
+    collect_step_entity_references(workflow.steps(), &mut referenced_entities);
+
+    let mut unique_entities = Vec::new();
+    let mut seen = HashSet::new();
+    for entity_logical_name in referenced_entities {
+        if seen.insert(entity_logical_name.clone()) {
+            unique_entities.push(entity_logical_name);
+        }
+    }
+
+    unique_entities
+}
+
+fn workflow_entity_reference_from_trigger(trigger: &WorkflowTrigger) -> Option<&str> {
+    match trigger {
+        WorkflowTrigger::RuntimeRecordCreated {
+            entity_logical_name,
+        }
+        | WorkflowTrigger::RuntimeRecordUpdated {
+            entity_logical_name,
+        }
+        | WorkflowTrigger::RuntimeRecordDeleted {
+            entity_logical_name,
+        } => Some(entity_logical_name.as_str()),
+        WorkflowTrigger::Manual
+        | WorkflowTrigger::ScheduleTick { .. }
+        | WorkflowTrigger::WebhookReceived { .. }
+        | WorkflowTrigger::FormSubmitted { .. }
+        | WorkflowTrigger::InboundEmailReceived { .. }
+        | WorkflowTrigger::ApprovalEventReceived { .. } => None,
+    }
+}
+
+fn collect_step_entity_references(steps: &[WorkflowStep], referenced_entities: &mut Vec<String>) {
+    for step in steps {
+        match step {
+            WorkflowStep::CreateRuntimeRecord {
+                entity_logical_name,
+                ..
+            }
+            | WorkflowStep::UpdateRuntimeRecord {
+                entity_logical_name,
+                ..
+            }
+            | WorkflowStep::DeleteRuntimeRecord {
+                entity_logical_name,
+                ..
+            }
+            | WorkflowStep::AssignOwner {
+                entity_logical_name,
+                ..
+            }
+            | WorkflowStep::ApprovalRequest {
+                entity_logical_name,
+                ..
+            } => referenced_entities.push(entity_logical_name.clone()),
+            WorkflowStep::Condition {
+                then_steps,
+                else_steps,
+                ..
+            } => {
+                collect_step_entity_references(then_steps, referenced_entities);
+                collect_step_entity_references(else_steps, referenced_entities);
+            }
+            WorkflowStep::LogMessage { .. }
+            | WorkflowStep::SendEmail { .. }
+            | WorkflowStep::HttpRequest { .. }
+            | WorkflowStep::Webhook { .. }
+            | WorkflowStep::Delay { .. } => {}
+        }
+    }
+}
+
+fn collect_workflow_governance_violations(workflow: &WorkflowDefinition) -> Vec<String> {
+    let mut violations = Vec::new();
+    collect_step_governance_violations(
+        workflow.logical_name().as_str(),
+        workflow.steps(),
+        "",
+        &mut violations,
+    );
+    violations
+}
+
+fn collect_step_governance_violations(
+    workflow_logical_name: &str,
+    steps: &[WorkflowStep],
+    path_prefix: &str,
+    violations: &mut Vec<String>,
+) {
+    for (index, step) in steps.iter().enumerate() {
+        let step_path = if path_prefix.is_empty() {
+            index.to_string()
+        } else {
+            format!("{path_prefix}.{index}")
+        };
+
+        match step {
+            WorkflowStep::HttpRequest {
+                headers,
+                header_secret_refs,
+                ..
+            }
+            | WorkflowStep::Webhook {
+                headers,
+                header_secret_refs,
+                ..
+            } => {
+                collect_sensitive_header_violations(
+                    workflow_logical_name,
+                    step_path.as_str(),
+                    step.step_type(),
+                    headers.as_ref(),
+                    header_secret_refs.as_ref(),
+                    violations,
+                );
+            }
+            WorkflowStep::Condition {
+                then_steps,
+                else_steps,
+                ..
+            } => {
+                collect_step_governance_violations(
+                    workflow_logical_name,
+                    then_steps,
+                    format!("{step_path}.then").as_str(),
+                    violations,
+                );
+                collect_step_governance_violations(
+                    workflow_logical_name,
+                    else_steps,
+                    format!("{step_path}.else").as_str(),
+                    violations,
+                );
+            }
+            WorkflowStep::LogMessage { .. }
+            | WorkflowStep::CreateRuntimeRecord { .. }
+            | WorkflowStep::UpdateRuntimeRecord { .. }
+            | WorkflowStep::DeleteRuntimeRecord { .. }
+            | WorkflowStep::SendEmail { .. }
+            | WorkflowStep::AssignOwner { .. }
+            | WorkflowStep::ApprovalRequest { .. }
+            | WorkflowStep::Delay { .. } => {}
+        }
+    }
+}
+
+fn collect_sensitive_header_violations(
+    workflow_logical_name: &str,
+    step_path: &str,
+    step_type: &str,
+    headers: Option<&serde_json::Value>,
+    header_secret_refs: Option<&serde_json::Value>,
+    violations: &mut Vec<String>,
+) {
+    let Some(headers) = headers.and_then(serde_json::Value::as_object) else {
+        return;
+    };
+
+    let secret_ref_header_names = header_secret_refs
+        .and_then(serde_json::Value::as_object)
+        .map(|map| {
+            map.keys()
+                .map(|key| key.to_ascii_lowercase())
+                .collect::<HashSet<_>>()
+        })
+        .unwrap_or_default();
+
+    for header_name in headers.keys() {
+        if is_sensitive_workflow_header_name(header_name.as_str())
+            && !secret_ref_header_names.contains(&header_name.to_ascii_lowercase())
+        {
+            violations.push(format!(
+                "workflow governance failed: workflow '{}' step '{}' ({}) uses disallowed inline credential header '{}'; move credentials to secret-managed infrastructure instead",
+                workflow_logical_name,
+                step_path,
+                step_type,
+                header_name,
+            ));
+        }
     }
 }
 

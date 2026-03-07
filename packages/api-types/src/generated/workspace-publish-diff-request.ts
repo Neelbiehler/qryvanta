@@ -3,4 +3,4 @@
 /**
  * Request payload for publish diff preview generation.
  */
-export type WorkspacePublishDiffRequest = { entity_logical_names: Array<string>, app_logical_names: Array<string>, };
+export type WorkspacePublishDiffRequest = { entity_logical_names: Array<string>, app_logical_names: Array<string>, workflow_logical_names: Array<string>, };

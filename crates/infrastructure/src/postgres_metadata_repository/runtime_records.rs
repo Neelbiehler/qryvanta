@@ -6,6 +6,7 @@ use tracing::warn;
 mod query;
 mod read;
 mod relations;
+mod workflow_events;
 mod write;
 
 fn runtime_slow_query_threshold_ms() -> u64 {
@@ -95,4 +96,36 @@ async fn index_unique_values(
     }
 
     Ok(())
+}
+
+fn runtime_record_workflow_event_from_row(
+    row: RuntimeRecordWorkflowEventRow,
+) -> AppResult<ClaimedRuntimeRecordWorkflowEvent> {
+    let trigger = match row.trigger_type.as_str() {
+        "runtime_record_created" => WorkflowTrigger::RuntimeRecordCreated {
+            entity_logical_name: row.entity_logical_name,
+        },
+        "runtime_record_updated" => WorkflowTrigger::RuntimeRecordUpdated {
+            entity_logical_name: row.entity_logical_name,
+        },
+        "runtime_record_deleted" => WorkflowTrigger::RuntimeRecordDeleted {
+            entity_logical_name: row.entity_logical_name,
+        },
+        _ => {
+            return Err(AppError::Validation(format!(
+                "unknown runtime record workflow trigger type '{}'",
+                row.trigger_type
+            )));
+        }
+    };
+
+    Ok(ClaimedRuntimeRecordWorkflowEvent {
+        event_id: row.id.to_string(),
+        tenant_id: TenantId::from_uuid(row.tenant_id),
+        trigger,
+        record_id: row.record_id,
+        payload: row.payload,
+        emitted_by_subject: row.emitted_by_subject,
+        lease_token: row.lease_token.unwrap_or_default(),
+    })
 }

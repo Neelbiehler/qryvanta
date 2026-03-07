@@ -11,8 +11,7 @@ use qryvanta_core::{AppError, AppResult, TenantId, UserIdentity};
 use qryvanta_domain::{
     AppEntityViewMode, AppSitemap, FieldType, FormFieldPlacement, FormSection, FormTab, FormType,
     Permission, SitemapArea, SitemapGroup, SitemapSubArea, SitemapTarget, SortDirection,
-    ViewColumn, ViewSort, ViewType, WorkflowAction, WorkflowConditionOperator, WorkflowStep,
-    WorkflowTrigger,
+    ViewColumn, ViewSort, ViewType, WorkflowConditionOperator, WorkflowStep, WorkflowTrigger,
 };
 
 use qryvanta_infrastructure::{Argon2PasswordHasher, begin_tenant_transaction};
@@ -92,6 +91,7 @@ pub async fn run(pool: PgPool, config: &ApiConfig) -> AppResult<()> {
         standard_subject.as_str(),
     )
     .await?;
+    ensure_tenant_owner_role_grants(&pool, tenant_id).await?;
 
     let mut admin_membership_transaction = begin_tenant_transaction(&pool, tenant_id).await?;
     sqlx::query(
@@ -283,6 +283,58 @@ async fn ensure_standard_membership(
     transaction.commit().await.map_err(|error| {
         AppError::Internal(format!(
             "failed to commit standard membership seed transaction: {error}"
+        ))
+    })?;
+
+    Ok(())
+}
+
+async fn ensure_tenant_owner_role_grants(pool: &PgPool, tenant_id: TenantId) -> AppResult<()> {
+    let mut transaction = begin_tenant_transaction(pool, tenant_id).await?;
+
+    let role_id = sqlx::query_scalar::<_, Uuid>(
+        r#"
+        SELECT id
+        FROM rbac_roles
+        WHERE tenant_id = $1 AND name = 'tenant_owner'
+        "#,
+    )
+    .bind(tenant_id.as_uuid())
+    .fetch_optional(&mut *transaction)
+    .await
+    .map_err(|error| {
+        AppError::Internal(format!(
+            "failed to load tenant owner role for tenant '{}': {error}",
+            tenant_id
+        ))
+    })?;
+
+    if let Some(role_id) = role_id {
+        for permission in Permission::all() {
+            sqlx::query(
+                r#"
+                INSERT INTO rbac_role_grants (role_id, permission)
+                VALUES ($1, $2)
+                ON CONFLICT (role_id, permission) DO NOTHING
+                "#,
+            )
+            .bind(role_id)
+            .bind(permission.as_str())
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| {
+                AppError::Internal(format!(
+                    "failed to ensure tenant owner role grant '{}' in tenant '{}': {error}",
+                    permission.as_str(),
+                    tenant_id
+                ))
+            })?;
+        }
+    }
+
+    transaction.commit().await.map_err(|error| {
+        AppError::Internal(format!(
+            "failed to commit tenant owner role grant seed transaction: {error}"
         ))
     })?;
 
@@ -1270,10 +1322,7 @@ async fn seed_workflows(workflow_service: &WorkflowService, actor: &UserIdentity
                 trigger: WorkflowTrigger::RuntimeRecordCreated {
                     entity_logical_name: "deal".to_owned(),
                 },
-                action: WorkflowAction::LogMessage {
-                    message: "Deal created trigger received".to_owned(),
-                },
-                steps: Some(vec![WorkflowStep::Condition {
+                steps: vec![WorkflowStep::Condition {
                     field_path: "stage".to_owned(),
                     operator: WorkflowConditionOperator::Equals,
                     value: Some(json!("proposal")),
@@ -1285,7 +1334,7 @@ async fn seed_workflows(workflow_service: &WorkflowService, actor: &UserIdentity
                     else_steps: vec![WorkflowStep::LogMessage {
                         message: "Deal created in non-proposal stage".to_owned(),
                     }],
-                }]),
+                }],
                 max_attempts: 3,
                 is_enabled: true,
             },
@@ -1303,19 +1352,21 @@ async fn seed_workflows(workflow_service: &WorkflowService, actor: &UserIdentity
                         .to_owned(),
                 ),
                 trigger: WorkflowTrigger::Manual,
-                action: WorkflowAction::CreateRuntimeRecord {
-                    entity_logical_name: "contact".to_owned(),
-                    data: json!({
-                        "subject": "workflow.followup@qryvanta.local",
-                        "display_name": "Workflow Follow-up",
-                        "email": "workflow.followup@qryvanta.local",
-                        "job_title": "Collections",
-                        "phone": "+1-555-0199"
-                    }),
-                },
-                steps: Some(vec![WorkflowStep::LogMessage {
-                    message: "Invoice overdue follow-up workflow executed".to_owned(),
-                }]),
+                steps: vec![
+                    WorkflowStep::CreateRuntimeRecord {
+                        entity_logical_name: "contact".to_owned(),
+                        data: json!({
+                            "subject": "workflow.followup@qryvanta.local",
+                            "display_name": "Workflow Follow-up",
+                            "email": "workflow.followup@qryvanta.local",
+                            "job_title": "Collections",
+                            "phone": "+1-555-0199"
+                        }),
+                    },
+                    WorkflowStep::LogMessage {
+                        message: "Invoice overdue follow-up workflow executed".to_owned(),
+                    },
+                ],
                 max_attempts: 3,
                 is_enabled: true,
             },

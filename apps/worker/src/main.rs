@@ -12,12 +12,14 @@ use qryvanta_application::{
 };
 use qryvanta_core::{AppError, AppResult, TenantId};
 use qryvanta_domain::{
-    WorkflowAction, WorkflowDefinition, WorkflowDefinitionInput, WorkflowStep, WorkflowTrigger,
+    WorkflowDefinition, WorkflowDefinitionInput, WorkflowLifecycleState, WorkflowStep,
+    WorkflowTrigger,
 };
 use qryvanta_infrastructure::{
     ConsoleEmailService, HttpWorkflowActionDispatcher, PostgresAuditRepository,
     PostgresAuthorizationRepository, PostgresMetadataRepository, PostgresWorkflowRepository,
     RedisWorkflowWorkerLeaseCoordinator, SmtpEmailConfig, SmtpEmailService,
+    TokioWorkflowDelayService,
 };
 
 use reqwest::header;
@@ -47,6 +49,14 @@ struct ClaimWorkflowJobsRequest {
 }
 
 #[derive(Debug, Serialize)]
+struct DrainRuntimeRecordWorkflowEventsRequest {
+    limit: usize,
+    lease_seconds: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tenant_id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
 struct WorkerHeartbeatRequest {
     claimed_jobs: u32,
     executed_jobs: u32,
@@ -63,17 +73,24 @@ struct ClaimedWorkflowJobsResponse {
 }
 
 #[derive(Debug, Deserialize)]
+struct DrainRuntimeRecordWorkflowEventsResponse {
+    claimed_events: u32,
+    dispatched_workflows: u32,
+    released_events: u32,
+}
+
+#[derive(Debug, Deserialize)]
 struct ClaimedWorkflowJobResponse {
     job_id: String,
     lease_token: String,
     tenant_id: String,
     run_id: String,
+    workflow_version: i32,
     workflow_logical_name: String,
     workflow_display_name: String,
     workflow_description: Option<String>,
     workflow_trigger: WorkflowTrigger,
-    workflow_action: WorkflowAction,
-    workflow_steps: Option<Vec<WorkflowStep>>,
+    workflow_steps: Vec<WorkflowStep>,
     workflow_max_attempts: u16,
     workflow_is_enabled: bool,
     trigger_payload: Value,
@@ -230,6 +247,40 @@ async fn run_worker_cycle(
     config: &WorkerConfig,
     cancel_signal: Option<tokio::sync::watch::Receiver<bool>>,
 ) -> AppResult<()> {
+    let schedule_result = workflow_service
+        .dispatch_due_schedule_ticks(
+            config.worker_id.as_str(),
+            config.lease_seconds,
+            config.physical_isolation_tenant_id,
+        )
+        .await?;
+    if schedule_result.claimed_ticks > 0
+        || schedule_result.dispatched_workflows > 0
+        || schedule_result.released_ticks > 0
+    {
+        info!(
+            worker_id = %config.worker_id,
+            claimed_ticks = schedule_result.claimed_ticks,
+            dispatched_workflows = schedule_result.dispatched_workflows,
+            released_ticks = schedule_result.released_ticks,
+            "drained built-in workflow schedule ticks"
+        );
+    }
+
+    let drain_result = drain_runtime_record_workflow_events(http_client, config).await?;
+    if drain_result.claimed_events > 0
+        || drain_result.dispatched_workflows > 0
+        || drain_result.released_events > 0
+    {
+        info!(
+            worker_id = %config.worker_id,
+            claimed_events = drain_result.claimed_events,
+            dispatched_workflows = drain_result.dispatched_workflows,
+            released_events = drain_result.released_events,
+            "drained runtime workflow trigger events"
+        );
+    }
+
     let claimed_jobs = claim_jobs(http_client, config).await?;
     let claimed_job_count = u32::try_from(claimed_jobs.len()).unwrap_or(u32::MAX);
 
@@ -395,6 +446,7 @@ fn build_workflow_service(pool: PgPool) -> WorkflowService {
         WorkflowExecutionMode::Queued,
     )
     .with_action_dispatcher(workflow_action_dispatcher)
+    .with_delay_service(Arc::new(TokioWorkflowDelayService))
 }
 
 fn build_worker_email_service() -> Arc<dyn EmailService> {
@@ -496,6 +548,62 @@ async fn claim_jobs(
     Ok(response_body.jobs)
 }
 
+async fn drain_runtime_record_workflow_events(
+    http_client: &reqwest::Client,
+    config: &WorkerConfig,
+) -> AppResult<DrainRuntimeRecordWorkflowEventsResponse> {
+    let endpoint = format!(
+        "{}/api/internal/worker/runtime-events/drain",
+        config.api_base_url
+    );
+    let response = http_client
+        .post(endpoint)
+        .header(
+            header::AUTHORIZATION,
+            format!("Bearer {}", config.worker_shared_secret),
+        )
+        .header("x-qryvanta-worker-id", config.worker_id.as_str())
+        .header(
+            "x-trace-id",
+            next_worker_trace_id(config.worker_id.as_str()),
+        )
+        .json(&DrainRuntimeRecordWorkflowEventsRequest {
+            limit: config.claim_limit,
+            lease_seconds: config.lease_seconds,
+            tenant_id: config
+                .physical_isolation_tenant_id
+                .map(|tenant_id| tenant_id.to_string()),
+        })
+        .send()
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to call runtime workflow event drain endpoint: {error}"
+            ))
+        })?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "<body unavailable>".to_owned());
+        return Err(AppError::Internal(format!(
+            "runtime workflow event drain endpoint returned status {}: {body}",
+            status.as_u16()
+        )));
+    }
+
+    response
+        .json::<DrainRuntimeRecordWorkflowEventsResponse>()
+        .await
+        .map_err(|error| {
+            AppError::Internal(format!(
+                "failed to parse runtime workflow event drain response body: {error}"
+            ))
+        })
+}
+
 async fn send_heartbeat(
     http_client: &reqwest::Client,
     config: &WorkerConfig,
@@ -561,16 +669,23 @@ impl ClaimedWorkflowJobResponse {
             display_name: self.workflow_display_name,
             description: self.workflow_description,
             trigger: self.workflow_trigger,
-            action: self.workflow_action,
             steps: self.workflow_steps,
             max_attempts: self.workflow_max_attempts,
-            is_enabled: self.workflow_is_enabled,
-        })?;
+        })?
+        .with_publish_state(
+            if self.workflow_is_enabled {
+                WorkflowLifecycleState::Published
+            } else {
+                WorkflowLifecycleState::Disabled
+            },
+            Some(self.workflow_version),
+        )?;
 
         Ok(qryvanta_application::ClaimedWorkflowJob {
             job_id: self.job_id,
             tenant_id: TenantId::from_uuid(tenant_uuid),
             run_id: self.run_id,
+            workflow_version: self.workflow_version,
             workflow,
             trigger_payload: self.trigger_payload,
             lease_token: self.lease_token,

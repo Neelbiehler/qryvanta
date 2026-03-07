@@ -43,6 +43,14 @@ fn build_api_routes() -> Router<AppState> {
                 .post(handlers::workflows::save_workflow_handler),
         )
         .route(
+            "/workflows/{workflow_logical_name}/publish",
+            post(handlers::workflows::publish_workflow_handler),
+        )
+        .route(
+            "/workflows/{workflow_logical_name}/disable",
+            post(handlers::workflows::disable_workflow_handler),
+        )
+        .route(
             "/workflows/runs",
             get(handlers::workflows::list_workflow_runs_handler),
         )

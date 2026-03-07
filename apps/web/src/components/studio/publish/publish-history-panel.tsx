@@ -8,17 +8,24 @@ type PublishHistoryEntry = {
   subject: string;
   requestedEntities: number;
   requestedApps: number;
+  requestedWorkflows: number;
   requestedEntityLogicalNames: string[];
   requestedAppLogicalNames: string[];
+  requestedWorkflowLogicalNames: string[];
   publishedEntities: string[];
   validatedApps: string[];
+  publishedWorkflows: string[];
   issueCount: number;
   isPublishable: boolean;
 };
 
 type PublishHistoryPanelProps = {
   publishHistory: PublishHistoryEntry[];
-  onLoadSelection: (entityLogicalNames: string[], appLogicalNames: string[]) => void;
+  onLoadSelection: (
+    entityLogicalNames: string[],
+    appLogicalNames: string[],
+    workflowLogicalNames: string[],
+  ) => void;
 };
 
 export function PublishHistoryPanel({
@@ -65,8 +72,7 @@ export function PublishHistoryPanel({
               </StatusBadge>
             </div>
             <p className="mt-1 text-zinc-600">
-              {entry.requestedEntities} requested entities / {entry.requestedApps} requested apps -{" "}
-              {entry.issueCount} issues - by {entry.subject}
+              {entry.requestedEntities} requested entities / {entry.requestedApps} requested apps / {entry.requestedWorkflows} requested workflows - {entry.issueCount} issues - by {entry.subject}
             </p>
           </button>
         ))}
@@ -82,10 +88,16 @@ export function PublishHistoryPanel({
             Requested apps: {selectedHistoryEntry.requestedAppLogicalNames.join(", ") || "none"}
           </p>
           <p className="mt-1">
+            Requested workflows: {selectedHistoryEntry.requestedWorkflowLogicalNames.join(", ") || "none"}
+          </p>
+          <p className="mt-1">
             Published entities: {selectedHistoryEntry.publishedEntities.join(", ") || "none"}
           </p>
           <p className="mt-1">
             Validated apps: {selectedHistoryEntry.validatedApps.join(", ") || "none"}
+          </p>
+          <p className="mt-1">
+            Published workflows: {selectedHistoryEntry.publishedWorkflows.join(", ") || "none"}
           </p>
           <div className="mt-2 grid gap-2 md:grid-cols-2">
             <Button
@@ -96,6 +108,7 @@ export function PublishHistoryPanel({
                 onLoadSelection(
                   selectedHistoryEntry.requestedEntityLogicalNames,
                   selectedHistoryEntry.requestedAppLogicalNames,
+                  selectedHistoryEntry.requestedWorkflowLogicalNames,
                 )
               }
             >
@@ -109,11 +122,13 @@ export function PublishHistoryPanel({
                 onLoadSelection(
                   selectedHistoryEntry.publishedEntities,
                   selectedHistoryEntry.validatedApps,
+                  selectedHistoryEntry.publishedWorkflows,
                 )
               }
               disabled={
                 selectedHistoryEntry.publishedEntities.length === 0 &&
-                selectedHistoryEntry.validatedApps.length === 0
+                selectedHistoryEntry.validatedApps.length === 0 &&
+                selectedHistoryEntry.publishedWorkflows.length === 0
               }
             >
               Load Published Selection

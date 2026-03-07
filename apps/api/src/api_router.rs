@@ -44,6 +44,22 @@ where
         .route("/health", get(handlers::health::health_handler))
         .route("/metrics", get(handlers::health::metrics_handler))
         .route("/auth/bootstrap", post(auth::bootstrap_handler))
+        .route(
+            "/api/public/workflows/webhooks/{tenant_id}/{webhook_key}",
+            post(handlers::workflows::ingest_webhook_trigger_handler),
+        )
+        .route(
+            "/api/public/workflows/forms/{tenant_id}/{form_key}",
+            post(handlers::workflows::ingest_form_trigger_handler),
+        )
+        .route(
+            "/api/public/workflows/email/{tenant_id}/{mailbox_key}",
+            post(handlers::workflows::ingest_inbound_email_trigger_handler),
+        )
+        .route(
+            "/api/public/workflows/approvals/{tenant_id}/{approval_key}",
+            post(handlers::workflows::ingest_approval_trigger_handler),
+        )
         .merge(login_routes)
         .merge(register_routes)
         .merge(forgot_password_routes)

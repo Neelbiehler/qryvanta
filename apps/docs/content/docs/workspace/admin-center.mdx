@@ -35,7 +35,8 @@ Use Admin Center before broad user rollout and after every permission change.
 Use at least these role groups in most tenants:
 
 1. `tenant_owner` for full administration.
-2. maker role for metadata and publish workflows.
+2. maker role for metadata and workflow authoring.
+   Grant `metadata.entity.read`, `metadata.entity.create`, `metadata.field.read`, `metadata.field.write`, `workflow.read`, and `workflow.manage`.
 3. worker role for runtime records only.
 4. read-only role for auditors and support users.
 

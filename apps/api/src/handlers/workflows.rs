@@ -1,8 +1,15 @@
+use std::collections::HashMap;
+
 use axum::Json;
 use axum::extract::{Extension, Path, Query, State};
+use axum::http::HeaderMap;
 use axum::http::StatusCode;
 use qryvanta_core::UserIdentity;
+use serde_json::{Value, json};
+use tower_sessions::Session;
+use uuid::Uuid;
 
+use crate::auth::session_helpers::require_recent_step_up;
 use crate::dto::{
     DispatchScheduleTriggerRequest, ExecuteWorkflowRequest, RetryWorkflowStepRequest,
     RetryWorkflowStepStrategyDto, SaveWorkflowRequest, WorkflowResponse,
@@ -46,6 +53,50 @@ pub async fn save_workflow_handler(
     Ok((StatusCode::CREATED, Json(WorkflowResponse::from(workflow))))
 }
 
+pub async fn publish_workflow_handler(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserIdentity>,
+    session: Session,
+    Path(workflow_logical_name): Path<String>,
+) -> ApiResult<Json<WorkflowResponse>> {
+    if state
+        .workflow_service
+        .publish_requires_recent_step_up(&user, workflow_logical_name.as_str())
+        .await?
+    {
+        require_recent_step_up(&session).await?;
+    }
+
+    let workflow = state
+        .workflow_service
+        .publish_workflow(&user, workflow_logical_name.as_str())
+        .await?;
+
+    Ok(Json(WorkflowResponse::from(workflow)))
+}
+
+pub async fn disable_workflow_handler(
+    State(state): State<AppState>,
+    Extension(user): Extension<UserIdentity>,
+    session: Session,
+    Path(workflow_logical_name): Path<String>,
+) -> ApiResult<Json<WorkflowResponse>> {
+    if state
+        .workflow_service
+        .disable_requires_recent_step_up(&user, workflow_logical_name.as_str())
+        .await?
+    {
+        require_recent_step_up(&session).await?;
+    }
+
+    let workflow = state
+        .workflow_service
+        .disable_workflow(&user, workflow_logical_name.as_str())
+        .await?;
+
+    Ok(Json(WorkflowResponse::from(workflow)))
+}
+
 pub async fn execute_workflow_handler(
     State(state): State<AppState>,
     Extension(user): Extension<UserIdentity>,
@@ -77,6 +128,130 @@ pub async fn dispatch_schedule_trigger_handler(
         .await?;
 
     Ok(Json(dispatched))
+}
+
+pub async fn ingest_webhook_trigger_handler(
+    State(state): State<AppState>,
+    Path((tenant_id, webhook_key)): Path<(String, String)>,
+    Query(query): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> ApiResult<(StatusCode, Json<usize>)> {
+    let tenant_uuid = Uuid::parse_str(tenant_id.as_str()).map_err(|error| {
+        qryvanta_core::AppError::Validation(format!("tenant_id must be a valid UUID: {error}"))
+    })?;
+
+    let dispatched = state
+        .workflow_service
+        .dispatch_webhook_received(
+            qryvanta_core::TenantId::from_uuid(tenant_uuid),
+            webhook_key.as_str(),
+            json!({
+                "request": {
+                    "method": "POST",
+                    "headers": header_map_to_json(&headers),
+                    "query": query,
+                },
+                "payload": payload.clone(),
+                "data": payload,
+            }),
+        )
+        .await?;
+
+    Ok((StatusCode::OK, Json(dispatched)))
+}
+
+pub async fn ingest_form_trigger_handler(
+    State(state): State<AppState>,
+    Path((tenant_id, form_key)): Path<(String, String)>,
+    Query(query): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> ApiResult<(StatusCode, Json<usize>)> {
+    let tenant_uuid = Uuid::parse_str(tenant_id.as_str()).map_err(|error| {
+        qryvanta_core::AppError::Validation(format!("tenant_id must be a valid UUID: {error}"))
+    })?;
+
+    let dispatched = state
+        .workflow_service
+        .dispatch_form_submitted(
+            qryvanta_core::TenantId::from_uuid(tenant_uuid),
+            form_key.as_str(),
+            json!({
+                "request": {
+                    "method": "POST",
+                    "headers": header_map_to_json(&headers),
+                    "query": query,
+                },
+                "payload": payload.clone(),
+                "data": payload,
+            }),
+        )
+        .await?;
+
+    Ok((StatusCode::OK, Json(dispatched)))
+}
+
+pub async fn ingest_inbound_email_trigger_handler(
+    State(state): State<AppState>,
+    Path((tenant_id, mailbox_key)): Path<(String, String)>,
+    Query(query): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> ApiResult<(StatusCode, Json<usize>)> {
+    let tenant_uuid = Uuid::parse_str(tenant_id.as_str()).map_err(|error| {
+        qryvanta_core::AppError::Validation(format!("tenant_id must be a valid UUID: {error}"))
+    })?;
+
+    let dispatched = state
+        .workflow_service
+        .dispatch_inbound_email_received(
+            qryvanta_core::TenantId::from_uuid(tenant_uuid),
+            mailbox_key.as_str(),
+            json!({
+                "request": {
+                    "method": "POST",
+                    "headers": header_map_to_json(&headers),
+                    "query": query,
+                },
+                "payload": payload.clone(),
+                "data": payload,
+            }),
+        )
+        .await?;
+
+    Ok((StatusCode::OK, Json(dispatched)))
+}
+
+pub async fn ingest_approval_trigger_handler(
+    State(state): State<AppState>,
+    Path((tenant_id, approval_key)): Path<(String, String)>,
+    Query(query): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+    Json(payload): Json<Value>,
+) -> ApiResult<(StatusCode, Json<usize>)> {
+    let tenant_uuid = Uuid::parse_str(tenant_id.as_str()).map_err(|error| {
+        qryvanta_core::AppError::Validation(format!("tenant_id must be a valid UUID: {error}"))
+    })?;
+
+    let dispatched = state
+        .workflow_service
+        .dispatch_approval_event_received(
+            qryvanta_core::TenantId::from_uuid(tenant_uuid),
+            approval_key.as_str(),
+            json!({
+                "request": {
+                    "method": "POST",
+                    "headers": header_map_to_json(&headers),
+                    "query": query,
+                },
+                "payload": payload.clone(),
+                "data": payload,
+            }),
+        )
+        .await?;
+
+    Ok((StatusCode::OK, Json(dispatched)))
 }
 
 pub async fn list_workflow_runs_handler(
@@ -153,4 +328,14 @@ pub async fn retry_workflow_run_step_handler(
         .await?;
 
     Ok(Json(WorkflowRunResponse::from(run)))
+}
+
+fn header_map_to_json(headers: &HeaderMap) -> serde_json::Map<String, Value> {
+    let mut values = serde_json::Map::new();
+    for (name, value) in headers {
+        let header_value = value.to_str().unwrap_or_default().trim().to_owned();
+        values.insert(name.as_str().to_owned(), Value::String(header_value));
+    }
+
+    values
 }

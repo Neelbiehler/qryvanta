@@ -4,7 +4,9 @@ use qryvanta_application::{
     AppService, ContactBootstrapService, ExtensionService, MetadataService, WorkflowService,
 };
 use qryvanta_core::AppError;
-use qryvanta_infrastructure::{HttpWorkflowActionDispatcher, WasmExtensionRuntime};
+use qryvanta_infrastructure::{
+    HttpWorkflowActionDispatcher, TokioWorkflowDelayService, WasmExtensionRuntime,
+};
 use sqlx::PgPool;
 use tokio::sync::Semaphore;
 
@@ -90,6 +92,7 @@ pub fn build_app_state(pool: PgPool, config: &ApiConfig) -> Result<AppState, App
             config.workflow_execution_mode,
         )
         .with_action_dispatcher(workflow_action_dispatcher)
+        .with_delay_service(Arc::new(TokioWorkflowDelayService))
         .with_queue_stats_cache(
             workflow_queue_stats_cache,
             config.workflow_queue_stats_cache_ttl_seconds,

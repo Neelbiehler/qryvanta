@@ -58,14 +58,20 @@ pub struct WorkspacePublishRunAuditInput {
     pub requested_entities: usize,
     /// Number of apps selected for the run.
     pub requested_apps: usize,
+    /// Number of workflows selected for the run.
+    pub requested_workflows: usize,
     /// Entity logical names selected for this run.
     pub requested_entity_logical_names: Vec<String>,
     /// App logical names selected for this run.
     pub requested_app_logical_names: Vec<String>,
+    /// Workflow logical names selected for this run.
+    pub requested_workflow_logical_names: Vec<String>,
     /// Entity logical names published in this run.
     pub published_entities: Vec<String>,
     /// App logical names validated in this run.
     pub validated_apps: Vec<String>,
+    /// Workflow logical names published in this run.
+    pub published_workflows: Vec<String>,
     /// Number of blocking issues discovered.
     pub issue_count: usize,
     /// Whether the run completed as publishable.

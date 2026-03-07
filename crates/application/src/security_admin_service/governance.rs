@@ -54,10 +54,13 @@ impl SecurityAdminService {
         let detail = serde_json::json!({
             "requested_entities": input.requested_entities,
             "requested_apps": input.requested_apps,
+            "requested_workflows": input.requested_workflows,
             "requested_entity_logical_names": input.requested_entity_logical_names,
             "requested_app_logical_names": input.requested_app_logical_names,
+            "requested_workflow_logical_names": input.requested_workflow_logical_names,
             "published_entities": input.published_entities,
             "validated_apps": input.validated_apps,
+            "published_workflows": input.published_workflows,
             "issue_count": input.issue_count,
             "is_publishable": input.is_publishable,
         })

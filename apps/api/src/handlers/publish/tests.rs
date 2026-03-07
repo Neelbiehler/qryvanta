@@ -4,19 +4,24 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use axum::Json;
 use axum::extract::{Extension, Query, State};
+use chrono::{DateTime, Utc};
 use qryvanta_application::{
     AppEntityFormInput, AppEntityViewInput, AppRepository, AppService, AuditEvent,
     AuditIntegrityStatus, AuditLogEntry, AuditLogQuery, AuditLogRepository, AuditRepository,
-    AuthorizationRepository, AuthorizationService, BindAppEntityInput, CreateAppInput,
+    AuthorizationRepository, AuthorizationService, BindAppEntityInput, ClaimedWorkflowJob,
+    ClaimedWorkflowScheduleTick, CompleteWorkflowRunInput, CreateAppInput, CreateWorkflowRunInput,
     MetadataService, RuntimeFieldGrant, RuntimeRecordService, SaveFieldInput, SaveFormInput,
-    SaveViewInput, SecurityAdminService, SubjectEntityPermission, TemporaryPermissionGrant,
+    SaveViewInput, SaveWorkflowInput, SecurityAdminService, SubjectEntityPermission,
+    TemporaryPermissionGrant, WorkflowClaimPartition, WorkflowExecutionMode, WorkflowQueueStats,
+    WorkflowQueueStatsQuery, WorkflowRepository, WorkflowRun, WorkflowRunAttempt,
+    WorkflowRunListQuery, WorkflowScheduledTrigger, WorkflowService, WorkflowWorkerHeartbeatInput,
     WorkspacePublishRunAuditInput,
 };
 use qryvanta_core::{AppResult, TenantId, UserIdentity};
 use qryvanta_domain::{
     AppDefinition, AppEntityRolePermission, AppSitemap, FieldType, FormDefinition,
     FormFieldPlacement, FormSection, FormTab, FormType, Permission, ViewColumn, ViewDefinition,
-    ViewType,
+    ViewType, WorkflowDefinition, WorkflowLifecycleState, WorkflowStep, WorkflowTrigger,
 };
 use qryvanta_infrastructure::{InMemoryMetadataRepository, PostgresSecurityAdminRepository};
 use serde_json::json;
@@ -313,6 +318,315 @@ impl AppRepository for FakeAppRepository {
     }
 }
 
+#[derive(Default)]
+struct FakeWorkflowRepository {
+    workflows: Mutex<HashMap<(TenantId, String), WorkflowDefinition>>,
+    published_workflows: Mutex<HashMap<(TenantId, String, i32), WorkflowDefinition>>,
+}
+
+#[async_trait]
+impl WorkflowRepository for FakeWorkflowRepository {
+    async fn save_workflow(
+        &self,
+        tenant_id: TenantId,
+        workflow: WorkflowDefinition,
+    ) -> AppResult<()> {
+        let key = (tenant_id, workflow.logical_name().as_str().to_owned());
+        let workflow = if let Some(existing) = self.workflows.lock().await.get(&key).cloned() {
+            workflow.with_publish_state(existing.lifecycle_state(), existing.published_version())?
+        } else {
+            workflow
+        };
+
+        self.workflows.lock().await.insert(key, workflow);
+        Ok(())
+    }
+
+    async fn list_workflows(&self, tenant_id: TenantId) -> AppResult<Vec<WorkflowDefinition>> {
+        Ok(self
+            .workflows
+            .lock()
+            .await
+            .iter()
+            .filter(|((stored_tenant_id, _), _)| *stored_tenant_id == tenant_id)
+            .map(|(_, workflow)| workflow.clone())
+            .collect())
+    }
+
+    async fn find_workflow(
+        &self,
+        tenant_id: TenantId,
+        logical_name: &str,
+    ) -> AppResult<Option<WorkflowDefinition>> {
+        Ok(self
+            .workflows
+            .lock()
+            .await
+            .get(&(tenant_id, logical_name.to_owned()))
+            .cloned())
+    }
+
+    async fn find_published_workflow(
+        &self,
+        tenant_id: TenantId,
+        logical_name: &str,
+    ) -> AppResult<Option<WorkflowDefinition>> {
+        let draft = self
+            .workflows
+            .lock()
+            .await
+            .get(&(tenant_id, logical_name.to_owned()))
+            .cloned();
+        let Some(draft) = draft else {
+            return Ok(None);
+        };
+        let Some(version) = draft.published_version() else {
+            return Ok(None);
+        };
+
+        self.published_workflows
+            .lock()
+            .await
+            .get(&(tenant_id, logical_name.to_owned(), version))
+            .cloned()
+            .map(|workflow| workflow.with_publish_state(draft.lifecycle_state(), Some(version)))
+            .transpose()
+    }
+
+    async fn find_published_workflow_version(
+        &self,
+        tenant_id: TenantId,
+        logical_name: &str,
+        version: i32,
+    ) -> AppResult<Option<WorkflowDefinition>> {
+        let lifecycle_state = self
+            .workflows
+            .lock()
+            .await
+            .get(&(tenant_id, logical_name.to_owned()))
+            .map(WorkflowDefinition::lifecycle_state)
+            .unwrap_or(WorkflowLifecycleState::Disabled);
+
+        self.published_workflows
+            .lock()
+            .await
+            .get(&(tenant_id, logical_name.to_owned(), version))
+            .cloned()
+            .map(|workflow| workflow.with_publish_state(lifecycle_state, Some(version)))
+            .transpose()
+    }
+
+    async fn publish_workflow(
+        &self,
+        tenant_id: TenantId,
+        logical_name: &str,
+        _published_by: &str,
+    ) -> AppResult<WorkflowDefinition> {
+        let key = (tenant_id, logical_name.to_owned());
+        let draft = self
+            .workflows
+            .lock()
+            .await
+            .get(&key)
+            .cloned()
+            .ok_or_else(|| {
+                qryvanta_core::AppError::NotFound(format!(
+                    "workflow '{logical_name}' was not found"
+                ))
+            })?;
+        let next_version = draft.published_version().unwrap_or(0) + 1;
+        let published =
+            draft.with_publish_state(WorkflowLifecycleState::Published, Some(next_version))?;
+
+        self.workflows
+            .lock()
+            .await
+            .insert(key.clone(), published.clone());
+        self.published_workflows.lock().await.insert(
+            (tenant_id, logical_name.to_owned(), next_version),
+            published.clone(),
+        );
+        Ok(published)
+    }
+
+    async fn disable_workflow(
+        &self,
+        tenant_id: TenantId,
+        logical_name: &str,
+    ) -> AppResult<WorkflowDefinition> {
+        let key = (tenant_id, logical_name.to_owned());
+        let existing = self
+            .workflows
+            .lock()
+            .await
+            .get(&key)
+            .cloned()
+            .ok_or_else(|| {
+                qryvanta_core::AppError::NotFound(format!(
+                    "workflow '{logical_name}' was not found"
+                ))
+            })?;
+        let published_version = existing.published_version();
+        let disabled =
+            existing.with_publish_state(WorkflowLifecycleState::Disabled, published_version)?;
+        self.workflows.lock().await.insert(key, disabled.clone());
+        Ok(disabled)
+    }
+
+    async fn list_enabled_workflows_for_trigger(
+        &self,
+        _tenant_id: TenantId,
+        _trigger: &WorkflowTrigger,
+    ) -> AppResult<Vec<WorkflowDefinition>> {
+        Ok(Vec::new())
+    }
+
+    async fn list_enabled_schedule_triggers(
+        &self,
+        _tenant_filter: Option<TenantId>,
+    ) -> AppResult<Vec<WorkflowScheduledTrigger>> {
+        Ok(Vec::new())
+    }
+
+    async fn claim_schedule_tick(
+        &self,
+        _tenant_id: TenantId,
+        _schedule_key: &str,
+        _slot_key: &str,
+        _scheduled_for: DateTime<Utc>,
+        _worker_id: &str,
+        _lease_seconds: u32,
+    ) -> AppResult<Option<ClaimedWorkflowScheduleTick>> {
+        Ok(None)
+    }
+
+    async fn complete_schedule_tick(
+        &self,
+        _tenant_id: TenantId,
+        _schedule_key: &str,
+        _slot_key: &str,
+        _worker_id: &str,
+        _lease_token: &str,
+    ) -> AppResult<()> {
+        Ok(())
+    }
+
+    async fn release_schedule_tick(
+        &self,
+        _tenant_id: TenantId,
+        _schedule_key: &str,
+        _slot_key: &str,
+        _worker_id: &str,
+        _lease_token: &str,
+        _error_message: &str,
+    ) -> AppResult<()> {
+        Ok(())
+    }
+
+    async fn create_run(
+        &self,
+        _tenant_id: TenantId,
+        _input: CreateWorkflowRunInput,
+    ) -> AppResult<WorkflowRun> {
+        unreachable!()
+    }
+
+    async fn enqueue_run_job(&self, _tenant_id: TenantId, _run_id: &str) -> AppResult<()> {
+        Ok(())
+    }
+
+    async fn claim_jobs(
+        &self,
+        _worker_id: &str,
+        _limit: usize,
+        _lease_seconds: u32,
+        _partition: Option<WorkflowClaimPartition>,
+        _tenant_filter: Option<TenantId>,
+    ) -> AppResult<Vec<ClaimedWorkflowJob>> {
+        Ok(Vec::new())
+    }
+
+    async fn complete_job(
+        &self,
+        _tenant_id: TenantId,
+        _job_id: &str,
+        _worker_id: &str,
+        _lease_token: &str,
+    ) -> AppResult<()> {
+        Ok(())
+    }
+
+    async fn fail_job(
+        &self,
+        _tenant_id: TenantId,
+        _job_id: &str,
+        _worker_id: &str,
+        _lease_token: &str,
+        _error_message: &str,
+    ) -> AppResult<()> {
+        Ok(())
+    }
+
+    async fn upsert_worker_heartbeat(
+        &self,
+        _worker_id: &str,
+        _input: WorkflowWorkerHeartbeatInput,
+    ) -> AppResult<()> {
+        Ok(())
+    }
+
+    async fn queue_stats(&self, _query: WorkflowQueueStatsQuery) -> AppResult<WorkflowQueueStats> {
+        Ok(WorkflowQueueStats {
+            pending_jobs: 0,
+            leased_jobs: 0,
+            completed_jobs: 0,
+            failed_jobs: 0,
+            expired_leases: 0,
+            active_workers: 0,
+        })
+    }
+
+    async fn append_run_attempt(
+        &self,
+        _tenant_id: TenantId,
+        _attempt: WorkflowRunAttempt,
+    ) -> AppResult<()> {
+        Ok(())
+    }
+
+    async fn complete_run(
+        &self,
+        _tenant_id: TenantId,
+        _input: CompleteWorkflowRunInput,
+    ) -> AppResult<WorkflowRun> {
+        unreachable!()
+    }
+
+    async fn list_runs(
+        &self,
+        _tenant_id: TenantId,
+        _query: WorkflowRunListQuery,
+    ) -> AppResult<Vec<WorkflowRun>> {
+        Ok(Vec::new())
+    }
+
+    async fn find_run(
+        &self,
+        _tenant_id: TenantId,
+        _run_id: &str,
+    ) -> AppResult<Option<WorkflowRun>> {
+        Ok(None)
+    }
+
+    async fn list_run_attempts(
+        &self,
+        _tenant_id: TenantId,
+        _run_id: &str,
+    ) -> AppResult<Vec<WorkflowRunAttempt>> {
+        Ok(Vec::new())
+    }
+}
+
 async fn build_publish_state() -> (PublishState, UserIdentity) {
     let tenant_id = TenantId::new();
     let actor = UserIdentity::new("maker", "maker", None, tenant_id);
@@ -332,6 +646,8 @@ async fn build_publish_state() -> (PublishState, UserIdentity) {
                     Permission::MetadataEntityCreate,
                     Permission::MetadataFieldRead,
                     Permission::MetadataFieldWrite,
+                    Permission::WorkflowRead,
+                    Permission::WorkflowManage,
                 ],
             )]),
         }),
@@ -349,6 +665,13 @@ async fn build_publish_state() -> (PublishState, UserIdentity) {
         Arc::new(FakeAppRepository::default()),
         Arc::new(metadata_service.clone()) as Arc<dyn RuntimeRecordService>,
         audit_repository.clone(),
+    );
+    let workflow_service = WorkflowService::new(
+        authorization_service.clone(),
+        Arc::new(FakeWorkflowRepository::default()),
+        Arc::new(metadata_service.clone()),
+        audit_repository.clone(),
+        WorkflowExecutionMode::Inline,
     );
 
     let pool = PgPoolOptions::new()
@@ -416,6 +739,7 @@ async fn build_publish_state() -> (PublishState, UserIdentity) {
         PublishState {
             app_service,
             metadata_service,
+            workflow_service,
             security_admin_service,
         },
         actor,
@@ -483,6 +807,15 @@ fn extract_dependency_path_reads_app_entity_edge() {
 }
 
 #[test]
+fn extract_dependency_path_reads_workflow_entity_edge() {
+    let edge = extract_dependency_path(
+        "dependency check failed: workflow 'contact_router' -> entity 'contact' requires a published schema or inclusion in this publish selection",
+    );
+
+    assert_eq!(edge.as_deref(), Some("contact_router -> contact"));
+}
+
+#[test]
 fn extract_dependency_path_reads_entity_relation_edge() {
     let edge = extract_dependency_path(
         "dependency check failed: entity 'contact' relation field 'account_id' -> entity 'account' requires a published schema or inclusion in this publish selection",
@@ -496,8 +829,10 @@ fn map_workspace_publish_history_entries_skips_invalid_payloads_and_preserves_or
     let valid_detail = serde_json::json!({
         "requested_entities": 2,
         "requested_apps": 1,
+        "requested_workflows": 0,
         "published_entities": ["contact"],
         "validated_apps": ["sales"],
+        "published_workflows": [],
         "issue_count": 0,
         "is_publishable": true,
     })
@@ -666,6 +1001,31 @@ async fn save_view_definition(state: &PublishState, actor: &UserIdentity, view: 
                 default_sort: view.default_sort().cloned(),
                 filter_criteria: view.filter_criteria().cloned(),
                 is_default: view.is_default(),
+            },
+        )
+        .await;
+    assert!(saved.is_ok());
+}
+
+async fn save_workflow_definition(
+    state: &PublishState,
+    actor: &UserIdentity,
+    logical_name: &str,
+    trigger: WorkflowTrigger,
+    steps: Vec<WorkflowStep>,
+) {
+    let saved = state
+        .workflow_service
+        .save_workflow(
+            actor,
+            SaveWorkflowInput {
+                logical_name: logical_name.to_owned(),
+                display_name: logical_name.replace('_', " "),
+                description: None,
+                trigger,
+                steps,
+                max_attempts: 1,
+                is_enabled: false,
             },
         )
         .await;
@@ -931,6 +1291,7 @@ async fn workspace_publish_diff_handler_compares_against_latest_published_snapsh
                 "missing_app".to_owned(),
                 "sales".to_owned(),
             ],
+            workflow_logical_names: Vec::new(),
         }),
     )
     .await;
@@ -1045,6 +1406,7 @@ async fn post_publish_checks_returns_unknown_selection_and_dependency_edge() {
         Json(RunWorkspacePublishRequest {
             entity_logical_names: vec!["missing_entity".to_owned()],
             app_logical_names: vec!["sales".to_owned()],
+            workflow_logical_names: Vec::new(),
             dry_run: false,
         }),
     )
@@ -1107,6 +1469,7 @@ async fn post_publish_checks_reports_entity_relation_dependency_edge() {
         Json(RunWorkspacePublishRequest {
             entity_logical_names: vec!["contact".to_owned()],
             app_logical_names: Vec::new(),
+            workflow_logical_names: Vec::new(),
             dry_run: true,
         }),
     )
@@ -1224,6 +1587,7 @@ async fn run_workspace_publish_allows_selected_relation_dependencies() {
         Json(RunWorkspacePublishRequest {
             entity_logical_names: vec!["contact".to_owned(), "account".to_owned()],
             app_logical_names: vec!["sales".to_owned()],
+            workflow_logical_names: Vec::new(),
             dry_run: false,
         }),
     )
@@ -1254,6 +1618,136 @@ async fn run_workspace_publish_allows_selected_relation_dependencies() {
 }
 
 #[tokio::test]
+async fn workspace_publish_checks_include_workflow_dependency_issues() {
+    let (state, actor) = build_publish_state().await;
+
+    save_workflow_definition(
+        &state,
+        &actor,
+        "contact_router",
+        WorkflowTrigger::RuntimeRecordCreated {
+            entity_logical_name: "contact".to_owned(),
+        },
+        vec![WorkflowStep::AssignOwner {
+            entity_logical_name: "contact".to_owned(),
+            record_id: "{{trigger.record_id}}".to_owned(),
+            owner_id: "owner-1".to_owned(),
+            reason: None,
+        }],
+    )
+    .await;
+
+    let response = run_workspace_publish_handler(
+        State(state),
+        Extension(actor),
+        Json(RunWorkspacePublishRequest {
+            entity_logical_names: Vec::new(),
+            app_logical_names: Vec::new(),
+            workflow_logical_names: vec!["contact_router".to_owned()],
+            dry_run: true,
+        }),
+    )
+    .await;
+
+    assert!(response.is_ok());
+    let Json(payload) = response.unwrap_or_else(|_| unreachable!());
+    assert!(!payload.is_publishable);
+    assert_eq!(payload.requested_workflows, 1);
+    assert!(payload.issues.iter().any(|issue| {
+        matches!(issue.scope, PublishCheckScopeDto::Workflow)
+            && issue.scope_logical_name == "contact_router"
+            && issue.dependency_path.as_deref() == Some("contact_router -> contact")
+    }));
+}
+
+#[tokio::test]
+async fn run_workspace_publish_publishes_selected_workflows_and_records_history() {
+    let (state, actor) = build_publish_state().await;
+
+    save_text_field(&state, &actor, "name", "Name").await;
+    assert!(
+        state
+            .metadata_service
+            .publish_entity(&actor, "contact")
+            .await
+            .is_ok()
+    );
+    save_view_definition(
+        &state,
+        &actor,
+        test_view("main_view", "Main View", false, &["name"]),
+    )
+    .await;
+    save_workflow_definition(
+        &state,
+        &actor,
+        "contact_router",
+        WorkflowTrigger::RuntimeRecordCreated {
+            entity_logical_name: "contact".to_owned(),
+        },
+        vec![WorkflowStep::AssignOwner {
+            entity_logical_name: "contact".to_owned(),
+            record_id: "{{trigger.record_id}}".to_owned(),
+            owner_id: "owner-1".to_owned(),
+            reason: None,
+        }],
+    )
+    .await;
+
+    let response = run_workspace_publish_handler(
+        State(state.clone()),
+        Extension(actor.clone()),
+        Json(RunWorkspacePublishRequest {
+            entity_logical_names: vec!["contact".to_owned()],
+            app_logical_names: vec!["sales".to_owned()],
+            workflow_logical_names: vec!["contact_router".to_owned()],
+            dry_run: false,
+        }),
+    )
+    .await;
+
+    assert!(response.is_ok());
+    let Json(payload) = response.unwrap_or_else(|_| unreachable!());
+    assert!(payload.is_publishable);
+    assert_eq!(payload.published_entities, vec!["contact".to_owned()]);
+    assert_eq!(payload.validated_apps, vec!["sales".to_owned()]);
+    assert_eq!(
+        payload.published_workflows,
+        vec!["contact_router".to_owned()]
+    );
+
+    let workflow = state
+        .workflow_service
+        .find_workflow(&actor, "contact_router")
+        .await
+        .unwrap_or_else(|_| unreachable!())
+        .unwrap_or_else(|| unreachable!());
+    assert_eq!(
+        workflow.lifecycle_state(),
+        WorkflowLifecycleState::Published
+    );
+    assert_eq!(workflow.published_version(), Some(1));
+
+    let history = workspace_publish_history_handler(
+        State(state),
+        Extension(actor),
+        Query(PublishHistoryQuery { limit: Some(10) }),
+    )
+    .await;
+    assert!(history.is_ok());
+    let Json(entries) = history.unwrap_or_else(|_| unreachable!());
+    assert!(!entries.is_empty());
+    assert_eq!(
+        entries[0].requested_workflow_logical_names,
+        vec!["contact_router".to_owned()]
+    );
+    assert_eq!(
+        entries[0].published_workflows,
+        vec!["contact_router".to_owned()]
+    );
+}
+
+#[tokio::test]
 async fn publish_history_endpoint_returns_latest_runs_first() {
     let (state, actor) = build_publish_state().await;
     let _ = run_workspace_publish_handler(
@@ -1262,6 +1756,7 @@ async fn publish_history_endpoint_returns_latest_runs_first() {
         Json(RunWorkspacePublishRequest {
             entity_logical_names: vec!["missing_entity".to_owned()],
             app_logical_names: vec!["sales".to_owned()],
+            workflow_logical_names: Vec::new(),
             dry_run: false,
         }),
     )
@@ -1273,6 +1768,7 @@ async fn publish_history_endpoint_returns_latest_runs_first() {
         Json(RunWorkspacePublishRequest {
             entity_logical_names: vec!["contact".to_owned()],
             app_logical_names: vec!["sales".to_owned()],
+            workflow_logical_names: Vec::new(),
             dry_run: false,
         }),
     )
@@ -1307,6 +1803,7 @@ async fn dry_run_publish_does_not_write_history_entry() {
         Json(RunWorkspacePublishRequest {
             entity_logical_names: vec!["contact".to_owned()],
             app_logical_names: vec!["sales".to_owned()],
+            workflow_logical_names: Vec::new(),
             dry_run: true,
         }),
     )
@@ -1337,10 +1834,13 @@ async fn publish_history_limit_is_clamped() {
                 WorkspacePublishRunAuditInput {
                     requested_entities: 1,
                     requested_apps: 1,
+                    requested_workflows: 0,
                     requested_entity_logical_names: vec!["contact".to_owned()],
                     requested_app_logical_names: vec!["sales".to_owned()],
+                    requested_workflow_logical_names: Vec::new(),
                     published_entities: vec!["contact".to_owned()],
                     validated_apps: vec!["sales".to_owned()],
+                    published_workflows: Vec::new(),
                     issue_count: index % 2,
                     is_publishable: index % 2 == 0,
                 },
@@ -1400,6 +1900,7 @@ async fn run_workspace_publish_deduplicates_requested_selections() {
                 "missing_app".to_owned(),
                 "sales".to_owned(),
             ],
+            workflow_logical_names: Vec::new(),
             dry_run: false,
         }),
     )

@@ -15,6 +15,7 @@ pub(super) async fn collect_workspace_issues(
     user: &UserIdentity,
     entity_logical_names: &[String],
     app_logical_names: &[String],
+    workflow_logical_names: &[String],
 ) -> ApiResult<Vec<PublishCheckIssueResponse>> {
     let mut issues = Vec::new();
     let mut publishable_entity_logical_names = Vec::new();
@@ -63,6 +64,29 @@ pub(super) async fn collect_workspace_issues(
                 category,
                 severity: PublishCheckSeverityDto::Error,
                 fix_path: Some(app_fix_path(app_logical_name, category)),
+                dependency_path: extract_dependency_path(message.as_str()),
+                message,
+            });
+        }
+    }
+
+    for workflow_logical_name in workflow_logical_names {
+        let errors = state
+            .workflow_service
+            .publish_checks_with_allowed_unpublished_entities(
+                user,
+                workflow_logical_name.as_str(),
+                &publishable_entity_logical_names,
+            )
+            .await?;
+        for message in errors {
+            let category = classify_issue(PublishCheckScopeDto::Workflow, message.as_str());
+            issues.push(PublishCheckIssueResponse {
+                scope: PublishCheckScopeDto::Workflow,
+                scope_logical_name: workflow_logical_name.clone(),
+                category,
+                severity: PublishCheckSeverityDto::Error,
+                fix_path: Some(workflow_fix_path(workflow_logical_name)),
                 dependency_path: extract_dependency_path(message.as_str()),
                 message,
             });
@@ -128,10 +152,14 @@ pub(super) fn build_unknown_selection_issues(
                 PublishCheckScopeDto::App => {
                     format!("selected app '{}' does not exist", logical_name)
                 }
+                PublishCheckScopeDto::Workflow => {
+                    format!("selected workflow '{}' does not exist", logical_name)
+                }
             },
             fix_path: Some(match scope {
                 PublishCheckScopeDto::Entity => "/maker/entities".to_owned(),
                 PublishCheckScopeDto::App => "/maker/apps".to_owned(),
+                PublishCheckScopeDto::Workflow => "/maker/workflows".to_owned(),
             }),
             dependency_path: None,
         })
@@ -140,8 +168,15 @@ pub(super) fn build_unknown_selection_issues(
 
 pub(super) fn extract_dependency_path(message: &str) -> Option<String> {
     let Some(entity_fragment) = message.strip_prefix("dependency check failed: entity '") else {
-        let edge_fragment = message.strip_prefix("dependency check failed: app '")?;
-        let (app_logical_name, rest) = edge_fragment.split_once("' -> entity '")?;
+        let Some(app_fragment) = message.strip_prefix("dependency check failed: app '") else {
+            let workflow_fragment = message.strip_prefix("dependency check failed: workflow '")?;
+            let (workflow_logical_name, rest) = workflow_fragment.split_once("' -> entity '")?;
+            let (entity_logical_name, _) =
+                rest.split_once('"').or_else(|| rest.split_once('\''))?;
+
+            return Some(format!("{workflow_logical_name} -> {entity_logical_name}"));
+        };
+        let (app_logical_name, rest) = app_fragment.split_once("' -> entity '")?;
         let (entity_logical_name, _) = rest.split_once('"').or_else(|| rest.split_once('\''))?;
 
         return Some(format!("{app_logical_name} -> {entity_logical_name}"));
@@ -180,6 +215,12 @@ fn classify_issue(scope: PublishCheckScopeDto, message: &str) -> PublishCheckCat
     if normalized.contains("binding") || normalized.contains("bound") {
         return PublishCheckCategoryDto::Binding;
     }
+    if normalized.contains("workflow ")
+        || normalized.contains("trigger")
+        || normalized.contains("step")
+    {
+        return PublishCheckCategoryDto::Workflow;
+    }
     if normalized.contains("schema") || normalized.contains("field") {
         return PublishCheckCategoryDto::Schema;
     }
@@ -187,6 +228,7 @@ fn classify_issue(scope: PublishCheckScopeDto, message: &str) -> PublishCheckCat
     match scope {
         PublishCheckScopeDto::Entity => PublishCheckCategoryDto::Schema,
         PublishCheckScopeDto::App => PublishCheckCategoryDto::Unknown,
+        PublishCheckScopeDto::Workflow => PublishCheckCategoryDto::Workflow,
     }
 }
 
@@ -203,4 +245,8 @@ fn app_fix_path(app_logical_name: &str, category: PublishCheckCategoryDto) -> St
         PublishCheckCategoryDto::Sitemap => format!("/maker/apps/{app_logical_name}/sitemap"),
         _ => "/maker/apps".to_owned(),
     }
+}
+
+fn workflow_fix_path(workflow_logical_name: &str) -> String {
+    format!("/maker/workflows/{workflow_logical_name}")
 }

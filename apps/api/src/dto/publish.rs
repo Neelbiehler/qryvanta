@@ -22,6 +22,7 @@ pub enum PublishCheckSeverityDto {
 pub enum PublishCheckScopeDto {
     Entity,
     App,
+    Workflow,
 }
 
 /// Publish check issue category.
@@ -38,6 +39,7 @@ pub enum PublishCheckCategoryDto {
     View,
     Sitemap,
     Binding,
+    Workflow,
     Unknown,
 }
 
@@ -67,6 +69,7 @@ pub struct WorkspacePublishChecksResponse {
     pub is_publishable: bool,
     pub checked_entities: usize,
     pub checked_apps: usize,
+    pub checked_workflows: usize,
     pub issues: Vec<PublishCheckIssueResponse>,
 }
 
@@ -82,6 +85,8 @@ pub struct RunWorkspacePublishRequest {
     #[serde(default)]
     pub app_logical_names: Vec<String>,
     #[serde(default)]
+    pub workflow_logical_names: Vec<String>,
+    #[serde(default)]
     pub dry_run: bool,
 }
 
@@ -95,8 +100,10 @@ pub struct RunWorkspacePublishResponse {
     pub is_publishable: bool,
     pub requested_entities: usize,
     pub requested_apps: usize,
+    pub requested_workflows: usize,
     pub published_entities: Vec<String>,
     pub validated_apps: Vec<String>,
+    pub published_workflows: Vec<String>,
     pub issues: Vec<PublishCheckIssueResponse>,
 }
 
@@ -112,10 +119,13 @@ pub struct WorkspacePublishHistoryEntryResponse {
     pub subject: String,
     pub requested_entities: usize,
     pub requested_apps: usize,
+    pub requested_workflows: usize,
     pub requested_entity_logical_names: Vec<String>,
     pub requested_app_logical_names: Vec<String>,
+    pub requested_workflow_logical_names: Vec<String>,
     pub published_entities: Vec<String>,
     pub validated_apps: Vec<String>,
+    pub published_workflows: Vec<String>,
     pub issue_count: usize,
     pub is_publishable: bool,
 }
@@ -131,6 +141,8 @@ pub struct WorkspacePublishDiffRequest {
     pub entity_logical_names: Vec<String>,
     #[serde(default)]
     pub app_logical_names: Vec<String>,
+    #[serde(default)]
+    pub workflow_logical_names: Vec<String>,
 }
 
 /// Field-level diff between draft and latest published schema.
@@ -219,6 +231,24 @@ pub struct AppPublishDiffResponse {
     pub bindings: Vec<AppBindingDiffResponse>,
 }
 
+/// Workflow-level draft-vs-published diff summary.
+#[derive(Debug, Serialize, TS)]
+#[ts(
+    export,
+    export_to = "../../../packages/api-types/src/generated/workflow-publish-diff-response.ts"
+)]
+pub struct WorkflowPublishDiffResponse {
+    pub workflow_logical_name: String,
+    pub lifecycle_state: String,
+    pub published_version: Option<i32>,
+    pub published_workflow_exists: bool,
+    pub draft_trigger_type: String,
+    pub published_trigger_type: Option<String>,
+    pub draft_step_count: usize,
+    pub published_step_count: usize,
+    pub has_changes: bool,
+}
+
 /// Full workspace publish diff preview response.
 #[derive(Debug, Serialize, TS)]
 #[ts(
@@ -228,6 +258,8 @@ pub struct AppPublishDiffResponse {
 pub struct WorkspacePublishDiffResponse {
     pub unknown_entity_logical_names: Vec<String>,
     pub unknown_app_logical_names: Vec<String>,
+    pub unknown_workflow_logical_names: Vec<String>,
     pub entity_diffs: Vec<EntityPublishDiffResponse>,
     pub app_diffs: Vec<AppPublishDiffResponse>,
+    pub workflow_diffs: Vec<WorkflowPublishDiffResponse>,
 }
