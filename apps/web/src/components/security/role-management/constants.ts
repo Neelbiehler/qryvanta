@@ -3,6 +3,8 @@ export const PERMISSION_OPTIONS = [
   "metadata.entity.create",
   "metadata.field.read",
   "metadata.field.write",
+  "workflow.read",
+  "workflow.manage",
   "runtime.record.read",
   "runtime.record.read.own",
   "runtime.record.write",
