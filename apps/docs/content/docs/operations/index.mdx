@@ -1,32 +1,72 @@
 ---
 title: Operations
-description: Self-hosting, configuration, email delivery, and observability guidance.
+description: Self-hosting runbooks for deployment, security controls, configuration, observability, and incident response.
 ---
 
-Qryvanta is in active development and is not ready for production use yet.
+Use this section when you are running Qryvanta outside a basic local setup.
+These pages are for operators who need deployment shape, runtime checks, and failure handling.
 
-Use this section to run Qryvanta in self-hosting environments.
-It covers runtime setup, config controls, and operational checks.
+<AudienceTags>
+  <AudienceTag>Self-hosting operators</AudienceTag>
+  <AudienceTag>Security reviewers</AudienceTag>
+  <AudienceTag>Platform engineers</AudienceTag>
+  <AudienceTag>Teams preparing staging or internal rollout</AudienceTag>
+</AudienceTags>
 
-If you run Qryvanta for internal teams, treat this section as required runbook material.
+<DocCallout title="Required reading before rollout" tone="warn">
+  Treat the self-hosting, security, configuration, and observability pages as one runbook set.
+  Do not rely on a single page in isolation for deployment decisions.
+</DocCallout>
 
-Use it before each release and during incidents.
+<DocSummary>
+  <DocSummaryItem label="Use this section when">
+    You are preparing staging, internal rollout, or a real self-hosted environment.
+  </DocSummaryItem>
+  <DocSummaryItem label="Read first">
+    Self-hosting, security hardening, configuration, and observability.
+  </DocSummaryItem>
+  <DocSummaryItem label="Do not skip">
+    Backups, secret rotation, header checks, and worker health if queued workflows are enabled.
+  </DocSummaryItem>
+</DocSummary>
 
-## Use This Section For
+## Read In This Order
 
-- Runtime topology and deployment expectations.
-- Environment variable and secret management.
-- Transactional email transport for auth and invite flows.
-- Log, metric, and trace baselines for troubleshooting and incident response.
-- Worker queue operations in queued workflow mode.
+<DocCardGrid>
+  <DocCard href="/docs/operations/self-hosting" eyebrow="1. Runtime shape" title="Deployment expectations">
+    Start here for service topology, worker requirements, isolation modes, and baseline rollout checks.
+  </DocCard>
+  <DocCard href="/docs/operations/security-hardening" eyebrow="2. Security" title="Security controls and ingress rules">
+    Review headers, trusted proxy settings, secret handling, and posture checks before exposing a public instance.
+  </DocCard>
+  <DocCard href="/docs/operations/configuration" eyebrow="3. Runtime config" title="Environment variables and secret references">
+    Use this as the source of truth for configuration keys and runtime behavior switches.
+  </DocCard>
+  <DocCard href="/docs/operations/observability" eyebrow="4. Day-two work" title="Monitoring and incident response">
+    Read this before operating queued workflows, auth flows, or tenant traffic at scale.
+  </DocCard>
+</DocCardGrid>
 
-## Read Order
+## Common Operator Jobs
 
-1. `Self-Hosting`
-2. `Security Hardening`
-3. `Ingress Conformance`
-4. `Security Event Taxonomy`
-5. `Identity Recovery and Secret Rotation`
-6. `Configuration`
-7. `Email Delivery`
-8. `Observability`
+<DocCardGrid columns={3}>
+  <DocCard href="/docs/operations/email-delivery" eyebrow="Auth path" title="Set up transactional email">
+    Configure delivery for verification, reset, invite, and recovery flows.
+  </DocCard>
+  <DocCard href="/docs/operations/security-event-taxonomy" eyebrow="Audit path" title="Review security events">
+    Use the event taxonomy when exporting, alerting, or building detections from auth and admin activity.
+  </DocCard>
+  <DocCard href="/docs/operations/workflow-integration-runbook" eyebrow="Workflow path" title="Run workflow integrations safely">
+    Follow this when tenants depend on queued execution, secret-backed outbound auth, or external workflow side effects.
+  </DocCard>
+</DocCardGrid>
+
+## Operator Baseline
+
+<Checklist>
+  <li>Health checks are monitored for API, database, Redis, and worker runtime where used</li>
+  <li>Secrets are not stored in source control and rotation rules are documented</li>
+  <li>Backups are scheduled and restore paths are tested</li>
+  <li>Trusted proxy and browser-facing header behavior are validated in staging</li>
+  <li>Queued workflow mode has at least one healthy worker and the right coordination settings</li>
+</Checklist>

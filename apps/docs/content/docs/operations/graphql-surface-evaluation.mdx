@@ -7,6 +7,18 @@ Qryvanta currently treats REST (`/api/v1`) as the primary public API contract.
 
 GraphQL is evaluated as an optional surface only, with independent versioning and rollout controls.
 
+<DocSummary>
+  <DocSummaryItem label="Use this page when">
+    You want the current public position on GraphQL in Qryvanta.
+  </DocSummaryItem>
+  <DocSummaryItem label="Current decision">
+    GraphQL is deferred. REST with generated SDK types is the supported contract today.
+  </DocSummaryItem>
+  <DocSummaryItem label="Pilot requirement">
+    GraphQL cannot ship unless it preserves tenant isolation, authorization, and operational controls.
+  </DocSummaryItem>
+</DocSummary>
+
 ## Decision
 
 - Status: `defer` (no production GraphQL endpoint yet).

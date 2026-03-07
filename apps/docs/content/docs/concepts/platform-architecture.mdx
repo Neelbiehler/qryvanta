@@ -1,0 +1,162 @@
+---
+title: Platform Architecture
+description: The public architecture map for how the Qryvanta monorepo, runtime, and publish model fit together.
+---
+
+Use this page when you want the whole system in one place.
+It explains what runs where, which layer owns each kind of logic, and why the architecture stays strict about those boundaries.
+
+<DocSummary>
+  <DocSummaryItem label="Use this page when">
+    You need the whole project map before changing code, metadata, or deployment shape.
+  </DocSummaryItem>
+  <DocSummaryItem label="Read this to understand">
+    The monorepo layout, runtime request flow, publish flow, and why Rust owns the API contract.
+  </DocSummaryItem>
+  <DocSummaryItem label="Core rule">
+    Domain logic belongs in the domain and application layers, not in HTTP handlers or infrastructure adapters.
+  </DocSummaryItem>
+</DocSummary>
+
+## What Qryvanta Is
+
+Qryvanta is a metadata-driven business platform.
+Teams define entities, fields, forms, views, apps, and workflows in Maker Center.
+After publish, the runtime uses that metadata to drive product behavior for real users.
+
+The project is designed around three ideas:
+
+<Checklist>
+  <li>Published metadata is the contract for runtime behavior</li>
+  <li>Rust owns the API contract and the core runtime rules</li>
+  <li>The repository keeps domain logic, application use-cases, infrastructure adapters, and app composition separate</li>
+</Checklist>
+
+## Monorepo Map
+
+The repository is split into apps, shared crates, and shared packages.
+
+| Area | Purpose |
+| --- | --- |
+| `apps/api` | Axum API binary. It composes dependencies and translates HTTP requests into application-layer use-cases. |
+| `apps/web` | Next.js product frontend for Admin Center, Maker Center, and Worker Apps. |
+| `apps/docs` | Public documentation app for product behavior and self-hosting. |
+| `crates/domain` | Business invariants and value objects only. |
+| `crates/application` | Use-cases and ports. No framework coupling. |
+| `crates/infrastructure` | Implementations for persistence, queues, and external systems. |
+| `packages/ui` | Shared UI component package. |
+| `packages/api-types` | TypeScript types generated from Rust request and response DTOs. |
+
+## Layer Boundaries
+
+Qryvanta is intentionally strict about where logic lives.
+That is part of what makes the project maintainable.
+
+<DocCardGrid columns={3}>
+  <DocCard eyebrow="Business rules" title="Domain">
+    Holds validation, invariants, and business types. It should not depend on HTTP, databases, or UI details.
+  </DocCard>
+  <DocCard eyebrow="Use-cases" title="Application">
+    Defines the actions the system can perform and the ports it needs, such as repositories or queue clients.
+  </DocCard>
+  <DocCard eyebrow="Adapters" title="Infrastructure and apps">
+    Infrastructure implements ports. API and web compose the runtime and translate between transport and application concerns.
+  </DocCard>
+</DocCardGrid>
+
+## Runtime Surfaces
+
+The product has three main surfaces:
+
+1. `Admin Center` controls tenant access, membership, registration policy, and audit visibility.
+2. `Maker Center` defines metadata, workflows, forms, views, and app navigation.
+3. `Worker Apps` runs the published product for day-to-day users.
+
+This split matters because runtime behavior should not be edited from the runtime surface itself.
+
+## Publish Flow
+
+The publish model is the center of the product.
+
+1. Makers edit entities, forms, views, apps, and workflows in draft.
+2. Publish checks validate dependencies and compatibility.
+3. A publish operation creates the next active runtime contract.
+4. Worker Apps and runtime APIs start using that published contract.
+
+Draft changes are safe because they do not affect runtime users until publish succeeds.
+
+## Request Flow
+
+When a runtime user creates or updates a record, the request path looks like this:
+
+1. The web app sends a typed API request.
+2. The API handler in `apps/api` translates the request into an application use-case.
+3. The application layer enforces the use-case and calls ports.
+4. Infrastructure adapters persist data, enqueue work, or call external systems.
+5. The API returns a Rust-defined DTO.
+6. The frontend consumes the generated TypeScript type from `@qryvanta/api-types`.
+
+This is why the project can keep backend and frontend contracts aligned without redefining DTOs by hand.
+
+## Why Rust-First Contracts Matter
+
+Qryvanta defines API request and response types in Rust first.
+TypeScript types are generated from those DTOs.
+
+That gives the project three concrete benefits:
+
+<Checklist>
+  <li>The API contract stays anchored to the backend implementation</li>
+  <li>The web app imports generated transport types instead of drifting into local copies</li>
+  <li>Contract changes can be reviewed as a single change across API, generated types, and frontend usage</li>
+</Checklist>
+
+## Workflow Runtime
+
+Workflows are metadata-defined too.
+They are created in Maker Center, published like other metadata, and then executed either inline or through `qryvanta-worker` in queued mode.
+
+That means the automation system follows the same pattern as the rest of the platform:
+
+- author in draft
+- publish a version
+- run against the published version
+- inspect history and retries in a tenant-scoped runtime
+
+## Deployment Shape
+
+The smallest meaningful self-hosted deployment usually includes:
+
+- API service
+- web app
+- Postgres
+- docs app
+- worker process when queued workflows are enabled
+
+Redis is optional for some runtime modes and coordination patterns.
+
+## What Makes This Project Strong
+
+Qryvanta is a strong project when these rules stay true:
+
+<Checklist>
+  <li>Metadata is the source of runtime behavior, not ad hoc frontend state</li>
+  <li>Runtime behavior changes through publish, not hidden side effects</li>
+  <li>Contracts are defined once in Rust and consumed everywhere else</li>
+  <li>Tenant scope, RBAC, audit events, and workflow execution stay explicit</li>
+  <li>The docs explain both how to use the product and why the architecture works this way</li>
+</Checklist>
+
+## Read Next
+
+<DocCardGrid>
+  <DocCard href="/docs/concepts/metadata-and-publishing" eyebrow="Publish model" title="Metadata and Publishing">
+    Read this next if you want the rules behind draft, publish, and compatibility checks.
+  </DocCard>
+  <DocCard href="/docs/workspace" eyebrow="Product surfaces" title="Workspace">
+    Use this when you need the practical split between Admin, Maker, and Worker.
+  </DocCard>
+  <DocCard href="/docs/operations/self-hosting" eyebrow="Runtime shape" title="Self-Hosting">
+    Go here for the operator-facing deployment view of the same system.
+  </DocCard>
+</DocCardGrid>

@@ -7,6 +7,18 @@ Use this page for extension runtime operations in self-hosted environments.
 
 Extension definitions are persisted in Postgres (`extension_definitions` table). Lifecycle and policy state survives API restarts.
 
+<DocSummary>
+  <DocSummaryItem label="Use this page when">
+    You are registering, publishing, validating, or disabling extensions in a real environment.
+  </DocSummaryItem>
+  <DocSummaryItem label="Core rule">
+    Run compatibility checks before publish and keep network access disabled unless a manifest explicitly needs it.
+  </DocSummaryItem>
+  <DocSummaryItem label="First response to trouble">
+    Disable the extension, inspect the manifest, and re-run compatibility checks before republishing.
+  </DocSummaryItem>
+</DocSummary>
+
 ## API Endpoints
 
 Protected extension endpoints:

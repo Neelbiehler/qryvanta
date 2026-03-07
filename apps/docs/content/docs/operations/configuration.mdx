@@ -6,6 +6,36 @@ description: Configuration reference for local and self-hosting environments.
 Qryvanta runtime behavior is controlled through environment variables.
 This page lists current variables and validation rules.
 
+<DocSummary>
+  <DocSummaryItem label="Use this page when">
+    You are configuring a local, staging, or self-hosted Qryvanta deployment.
+  </DocSummaryItem>
+  <DocSummaryItem label="Core rule">
+    Keep configuration external, validate it at startup, and use exactly one source per secret.
+  </DocSummaryItem>
+  <DocSummaryItem label="Read with">
+    `Security Hardening`, `Email Delivery`, and `Self-Hosting`.
+  </DocSummaryItem>
+</DocSummary>
+
+<DocCallout title="Do not mix secret sources" tone="warn">
+  For any given setting, use either the direct env var, the `*_FILE` variant, or the `*_SECRET_REF` variant. Do not configure more than one for the same key.
+</DocCallout>
+
+## Read This Page In Parts
+
+<DocCardGrid columns={3}>
+  <DocCard href="#minimal-local-set" eyebrow="Local setup" title="Start with the minimum local keys">
+    Use this if you are getting a local environment running for the first time.
+  </DocCard>
+  <DocCard href="#secret-sources" eyebrow="Secret handling" title="Choose one source per secret">
+    Read this before using `*_FILE` or `*_SECRET_REF` in real environments.
+  </DocCard>
+  <DocCard href="#current-environment-variables" eyebrow="Reference" title="Use the full variable table">
+    Come here when you need the exact key, requirement, and behavior.
+  </DocCard>
+</DocCardGrid>
+
 ## Minimal Local Set
 
 For local first run, set at least:
@@ -113,6 +143,16 @@ If a current fingerprint matches the same `secret_name` from a different environ
 - Apply config updates in staging before production-like environments.
 
 Never commit secrets or production credentials to git.
+
+## High-Risk Areas
+
+Give extra review to these areas during rollout:
+
+- session and bootstrap secrets
+- MFA encryption settings
+- trusted proxy settings
+- worker coordination and shared secret settings
+- Redis-backed session, rate-limit, and queue cache switches
 
 ## Current Environment Variables
 

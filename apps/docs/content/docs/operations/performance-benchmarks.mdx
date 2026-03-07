@@ -5,6 +5,18 @@ description: Reproducible k6 load suite for runtime queries and workflow executi
 
 Qryvanta ships a reproducible `PERF-04` benchmark suite under `benchmarks/k6`.
 
+<DocSummary>
+  <DocSummaryItem label="Use this page when">
+    You need repeatable load tests before or after scaling, infra, or config changes.
+  </DocSummaryItem>
+  <DocSummaryItem label="What it covers">
+    Workspace reads, runtime record queries, and workflow execution paths.
+  </DocSummaryItem>
+  <DocSummaryItem label="Use with">
+    `Scaling Profiles` and `Observability`.
+  </DocSummaryItem>
+</DocSummary>
+
 The suite focuses on production-relevant API paths:
 
 - Workspace surface reads (`GET /api/v1/workspace/apps`)

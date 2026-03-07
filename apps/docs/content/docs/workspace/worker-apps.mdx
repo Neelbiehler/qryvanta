@@ -3,11 +3,20 @@ title: Worker Apps
 description: Use generated runtime pages for record operations in daily workflows.
 ---
 
-Worker Apps are the runtime side of Qryvanta.
-Pages and record forms come from published metadata.
+Worker Apps is the runtime side of Qryvanta.
+Pages, forms, views, and actions all come from published metadata plus runtime permissions.
 
-Worker users do not need access to maker tooling.
-They work only with runtime routes and allowed actions.
+<DocSummary>
+  <DocSummaryItem label="Use this page when">
+    You need to understand what runtime users can see and do after publish.
+  </DocSummaryItem>
+  <DocSummaryItem label="What controls the experience">
+    Published metadata, app scope, and role permissions.
+  </DocSummaryItem>
+  <DocSummaryItem label="If behavior looks wrong">
+    Compare publish state, app bindings, and the affected role before changing the model.
+  </DocSummaryItem>
+</DocSummary>
 
 ## Primary Tasks
 
@@ -30,6 +39,11 @@ Record actions require matching role permissions:
 - `create` to create new records
 - `update` to edit existing records
 - `delete` to remove records
+
+## What Worker Users Should Not Need
+
+Worker users should not need Maker Center to do day-to-day record work.
+If a routine process depends on manual maker intervention, the metadata model, permissions, or workflow design is usually incomplete.
 
 ## Daily Operator Checks
 

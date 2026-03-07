@@ -7,6 +7,32 @@ Qryvanta workflows run from metadata definitions.
 A workflow starts from a trigger and executes action steps.
 Workflow definitions are stored and transported as one canonical step graph (`trigger` + `steps`), so the runtime, worker payloads, and maker editor all operate on the same structure.
 
+<DocSummary>
+  <DocSummaryItem label="Use this page when">
+    You need the high-level rules for how workflows are authored, published, and executed.
+  </DocSummaryItem>
+  <DocSummaryItem label="Core rule">
+    Draft workflows do not run. Published workflow versions do.
+  </DocSummaryItem>
+  <DocSummaryItem label="Execution split">
+    Inline mode runs in the API path. Queued mode runs in `qryvanta-worker`.
+  </DocSummaryItem>
+</DocSummary>
+
+## Read This Page In Layers
+
+<DocCardGrid columns={3}>
+  <DocCard href="#workflow-lifecycle" eyebrow="Core runtime" title="Start with lifecycle and access">
+    Read this first if you need the contract for draft, publish, and workflow permissions.
+  </DocCard>
+  <DocCard href="#trigger-types" eyebrow="Execution model" title="Then review triggers and execution modes">
+    Use this to understand what can start a workflow and where it runs.
+  </DocCard>
+  <DocCard href="#maker-studio-workflow-building" eyebrow="Authoring UX" title="Then read the builder and action details">
+    Go here for maker-facing workflow design, typed editors, and action templates.
+  </DocCard>
+</DocCardGrid>
+
 ## Workflow Lifecycle
 
 - Saving from Maker now persists a draft workflow definition.
@@ -107,6 +133,8 @@ Runtime record triggers now use a transactional outbox. Record create/update/del
 
 The Maker automation canvas now includes workflow-authoring guardrails similar to low-code flow designers:
 
+### Authoring Guardrails
+
 - **Flow Checker** validates trigger and step configuration before save.
 - Validation issues are clickable and focus the trigger or step that needs fixing.
 - Save and publish are blocked while checker errors are present, so invalid flow payloads do not get posted.
@@ -119,6 +147,9 @@ The Maker automation canvas now includes workflow-authoring guardrails similar t
 - Action picker includes contextual recommended actions for faster step insertion.
 - Step settings validate inline and expose advanced fields behind a toggle.
 - Dynamic tokens selected in settings are shown as visual chips to separate mapped data from static text.
+
+### Typed Editors And Payload Building
+
 - Action templates now include real operational patterns (notifications, webhook dispatch, ownership routing, approvals, incident tickets, feed updates, and audit entries).
 - Workflow builder now auto-loads entity metadata so trigger entity selection, action entity inputs, condition field paths, and trigger payload tokens can be selected from discovered entities and published fields.
 - Record-create, record-update, webhook-payload, and approval-payload steps now use typed field-row editors instead of monolithic JSON object blobs for common payload authoring.

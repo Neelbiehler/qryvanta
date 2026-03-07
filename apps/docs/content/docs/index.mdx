@@ -1,48 +1,87 @@
 ---
-title: Qryvanta Documentation
-description: End-user and self-hosting guides for Qryvanta.
+title: Start Here
+description: Learn what Qryvanta does today, who these docs are for, and where to start.
 ---
 
 Qryvanta is an open-source, self-hostable business platform.
-You model business data in metadata, publish changes, and use generated runtime pages.
+You define entities, fields, views, apps, and workflows in metadata, then publish those changes into the runtime.
 
-Qryvanta is in active development and is not ready for production use yet.
+<DocCallout title="Status" tone="warn">
+  Qryvanta is in active development and is not ready for production use yet.
+  Use this docs site for local development, internal evaluation, and self-hosting preparation.
+</DocCallout>
 
-This site is for admins, makers, worker users, and self-hosting operators.
-It explains day-to-day product usage and runtime operations.
+<DocSummary>
+  <DocSummaryItem label="Use this page when">
+    You are new to Qryvanta and need the right starting point.
+  </DocSummaryItem>
+  <DocSummaryItem label="Start with">
+    `Quickstart` for a local run, `Workspace` for product flow, or `Operations` for self-hosting.
+  </DocSummaryItem>
+  <DocSummaryItem label="Keep in mind">
+    Draft changes stay in Maker Center until you publish them.
+  </DocSummaryItem>
+</DocSummary>
 
-`qryvanta.org` is the open-source product surface.
-`qryvanta.com` is the managed cloud surface.
+## Use This Site For
 
-## Product Snapshot
+<AudienceTags>
+  <AudienceTag>Admins</AudienceTag>
+  <AudienceTag>Makers</AudienceTag>
+  <AudienceTag>Worker users</AudienceTag>
+  <AudienceTag>Self-hosting operators</AudienceTag>
+</AudienceTags>
 
-- Open source first: run on your own infrastructure.
-- Rust-first backend: API, security, and worker runtime are implemented in Rust.
-- Metadata-driven runtime: entities, forms, views, and navigation are published from metadata.
-- Cloud optionality: teams that want managed hosting can use `qryvanta.com`.
+This site covers the open-source product at `qryvanta.org`.
+It explains how the product behaves, how teams use it, and how to run it yourself.
 
-## What You Can Do Today
+Repository maintainer docs, ADRs, and coding-agent instructions live outside this site in the repository `docs/` directory.
 
-- Define entities and fields in Maker Center.
-- Publish metadata and use generated runtime pages in Worker Apps.
-- Control access with roles, app permissions, and tenant registration mode.
-- Run automation workflows in inline mode or queued worker mode.
+## Read In Order
 
-## Read Order
+<DocCardGrid>
+  <DocCard href="/docs/quickstart" eyebrow="1. First run" title="Bring up the stack">
+    Install dependencies, start local services, check health, and open the product.
+  </DocCard>
+  <DocCard href="/docs/quickstart/first-app" eyebrow="2. Hands-on tutorial" title="Build your first app">
+    Create one entity, publish it, open Worker Apps, and confirm the runtime result.
+  </DocCard>
+  <DocCard href="/docs/workspace" eyebrow="3. Daily product flow" title="Learn the surfaces">
+    Learn what belongs in Admin Center, Maker Center, and Worker Apps before you change metadata or access.
+  </DocCard>
+  <DocCard href="/docs/concepts" eyebrow="4. Mental model" title="Understand draft and runtime">
+    Learn how publish boundaries, metadata contracts, and workflow execution affect runtime behavior.
+  </DocCard>
+</DocCardGrid>
 
-1. `Quickstart` for first run.
-2. `Workspace` for role-based product flows.
-3. `Concepts` for publish lifecycle and runtime behavior.
-4. `Operations` for self-hosting checks and incident readiness.
+## Choose A Path
 
-## Terminology
+<DocCardGrid columns={3}>
+  <DocCard href="/docs/quickstart/local-development" eyebrow="Local setup" title="I want to run Qryvanta on my machine">
+    Start with Quickstart, then use Local Development and the First App guide.
+  </DocCard>
+  <DocCard href="/docs/workspace/publish-and-access" eyebrow="Product work" title="I need to change metadata without breaking users">
+    Read Workspace and Concepts together. Publish boundaries and role assignments decide what users actually see.
+  </DocCard>
+  <DocCard href="/docs/operations/self-hosting" eyebrow="Deployment" title="I need self-hosting guidance">
+    Use Operations for deployment shape, secrets, ingress checks, backups, and worker runtime.
+  </DocCard>
+</DocCardGrid>
 
-- Surface: a route area such as `/admin`, `/maker`, or `/worker`.
-- Workspace: the docs section that explains surface-based product usage.
-- Runtime: record APIs and pages used by worker users.
-- Self-hosting: running Qryvanta in your own infrastructure.
+## What Exists Today
+
+<Checklist>
+  <li>Metadata entities and fields with draft and publish lifecycle</li>
+  <li>Runtime record APIs generated from published metadata definitions</li>
+  <li>Role-based product surfaces for admin, maker, and worker tasks</li>
+  <li>Authentication with email/password, passkeys, MFA, and tenant switching</li>
+  <li>Tenant-scoped RBAC, audit logging, security events, and PostgreSQL RLS coverage</li>
+  <li>Workflow definitions with native schedules, webhooks, forms, inbound email, approvals, and queued execution</li>
+</Checklist>
 
 ## Product Boundary
 
-- This docs app covers open-source product usage and self-hosting.
-- Internal maintainer and coding-agent docs are in repository `docs/`.
+`qryvanta.org` is the OSS product and self-hosting path.
+
+`qryvanta.com` is the planned managed-cloud option for teams that want hosted operations later.
+Do not assume cloud-only behavior exists in this repository unless the docs say so.

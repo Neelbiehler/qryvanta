@@ -4,7 +4,19 @@ description: How forms, list views, and runtime permissions shape record workflo
 ---
 
 Worker users handle records through forms and list views.
-Both are defined in metadata and applied in app scope.
+Those screens are defined in metadata and resolved inside app scope at runtime.
+
+<DocSummary>
+  <DocSummaryItem label="Use this page when">
+    A list, form, action, or field layout does not match what users expect.
+  </DocSummaryItem>
+  <DocSummaryItem label="Controlled by">
+    Published forms, published views, app defaults, and role permissions.
+  </DocSummaryItem>
+  <DocSummaryItem label="Most common mismatch">
+    The right entity was published, but the wrong form, view, or app default is active.
+  </DocSummaryItem>
+</DocSummary>
 
 ## Record Flow
 
@@ -22,6 +34,15 @@ Both are defined in metadata and applied in app scope.
 - App-scoped form and view defaults
 - Role and runtime permissions
 - Business rules that set values or block invalid writes
+
+## Practical Reading Of The Runtime
+
+When a runtime page looks wrong, break the problem into four checks:
+
+1. Did the right metadata version get published?
+2. Is the user in the right app and route?
+3. Which form or view is the page resolving by default?
+4. Which actions does the assigned role allow?
 
 ## Troubleshooting Tip
 

@@ -7,6 +7,18 @@ Qryvanta extensions are tenant-scoped packages executed inside a WASM runtime bo
 
 This foundation enables extensibility without forking core services.
 
+<DocSummary>
+  <DocSummaryItem label="Use this page when">
+    You need the high-level model for how extensions are packaged, published, and isolated.
+  </DocSummaryItem>
+  <DocSummaryItem label="Current runtime">
+    Extensions run as tenant-scoped `wasm` packages with explicit capabilities and isolation limits.
+  </DocSummaryItem>
+  <DocSummaryItem label="Core rule">
+    Only published extensions can execute actions, and those actions must match granted capabilities.
+  </DocSummaryItem>
+</DocSummary>
+
 ## Runtime Architecture
 
 Runtime contract baseline:

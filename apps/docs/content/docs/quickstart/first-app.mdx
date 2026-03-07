@@ -1,0 +1,141 @@
+---
+title: First App
+description: A hands-on tutorial that takes one simple entity from draft metadata to a usable runtime page.
+---
+
+Use this guide after the local stack is running and you can sign in.
+If that is not true yet, go back to `Quickstart` and `Local Development` first.
+
+<AudienceTags>
+  <AudienceTag>Makers</AudienceTag>
+  <AudienceTag>Admins validating a tenant</AudienceTag>
+  <AudienceTag>Contributors checking the end-to-end path</AudienceTag>
+</AudienceTags>
+
+<DocCallout title="What you are building" tone="tip">
+  You will create a simple `account` entity, publish it, expose it in navigation, and create the first runtime record from Worker Apps.
+</DocCallout>
+
+<DocSummary>
+  <DocSummaryItem label="Before you start">
+    Make sure you can open both `/maker` and `/worker`.
+  </DocSummaryItem>
+  <DocSummaryItem label="What this proves">
+    Draft metadata stays isolated until publish, and published metadata becomes usable runtime UI.
+  </DocSummaryItem>
+  <DocSummaryItem label="Most common miss">
+    The entity is published, but app navigation or role access was not updated.
+  </DocSummaryItem>
+</DocSummary>
+
+## Step 1: Confirm Surface Access
+
+You need access to both of these surfaces:
+
+- Maker Center at `/maker`
+- Worker Apps at `/worker`
+
+If either surface is missing, fix role assignments in Admin Center before you continue.
+
+## Step 2: Create The Entity
+
+In Maker Center:
+
+1. Create a new entity named `account`.
+2. Add these first fields:
+   - `name` as text
+   - `status` as a choice or option-set field
+   - `owner` as the user or owner field your tenant model uses
+   - `segment` as a text or choice field
+3. Save the draft changes.
+
+Nothing is visible to runtime users yet.
+Draft metadata does not change Worker Apps.
+
+## Step 3: Add A Basic Form And View
+
+Still in Maker Center:
+
+1. Open the main form for `account`.
+2. Add the fields in the order you expect users to enter them.
+3. Open the default list view for `account`.
+4. Add columns that help with day-to-day work, such as `name`, `status`, and `owner`.
+5. Save the draft again.
+
+## Step 4: Bind The Entity Into An App
+
+Publishing the entity is not enough on its own.
+Users still need app navigation and the right access.
+
+1. Open the app or sitemap you want worker users to use.
+2. Add `account` to the navigation.
+3. Confirm the target role has app access and runtime record permissions.
+
+If runtime users cannot see the page later, check app binding and role access first.
+
+## Step 5: Run Publish Checks
+
+Before publishing:
+
+<Checklist>
+  <li>The entity has the fields required for the first record</li>
+  <li>The form does not reference removed or missing fields</li>
+  <li>The default view includes useful runtime columns</li>
+  <li>The app sitemap includes the entity for the expected role</li>
+</Checklist>
+
+Then run publish checks in Maker Center and fix any blocking issues.
+
+## Step 6: Publish
+
+Publish the metadata scope that includes:
+
+- the `account` entity
+- the form and view changes
+- the app navigation change
+
+After publish completes, the runtime contract changes.
+Worker Apps should pick up the new entity at this point.
+
+## Step 7: Verify In Worker Apps
+
+Open Worker Apps and confirm:
+
+1. The navigation now includes `account`.
+2. The list page opens without permission errors.
+3. The form shows the fields you added.
+4. You can create one `account` record successfully.
+
+Create a test record such as:
+
+- `name`: `Northwind Industrial Group`
+- `status`: `Active`
+- `segment`: `Enterprise`
+
+## Step 8: Prove The Publish Boundary
+
+Make one small draft-only change in Maker Center, such as renaming a field label.
+
+Before publishing:
+
+- Worker Apps should still show the old label.
+
+After publishing:
+
+- Worker Apps should show the new label.
+
+This is the quickest way to confirm that draft changes stay isolated until publish.
+
+## What To Read Next
+
+<DocCardGrid>
+  <DocCard href="/docs/workspace/maker-center" eyebrow="Maker flow" title="Maker Center">
+    Use this next if you want a fuller guide to entities, forms, views, rules, and publish checks.
+  </DocCard>
+  <DocCard href="/docs/concepts/metadata-and-publishing" eyebrow="Mental model" title="Metadata and Publishing">
+    Read this when you need the contract rules behind draft, publish, and compatibility checks.
+  </DocCard>
+  <DocCard href="/docs/workspace/publish-and-access" eyebrow="Troubleshooting" title="Publish and Access">
+    Go here if the entity published successfully but users still cannot see or edit it.
+  </DocCard>
+</DocCardGrid>

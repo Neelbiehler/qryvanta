@@ -6,6 +6,18 @@ description: Forward migration checks and backup-restore rollback runbook for se
 Qryvanta migrations are forward-only SQL files.
 Rollback strategy is backup restore plus redeploy of the previous known-good release.
 
+<DocSummary>
+  <DocSummaryItem label="Use this page when">
+    You are deploying a release with schema changes or preparing a rollback runbook.
+  </DocSummaryItem>
+  <DocSummaryItem label="Core rule">
+    Treat rollback as backup restore plus redeploy, not as ad hoc reverse SQL.
+  </DocSummaryItem>
+  <DocSummaryItem label="Safer migration pattern">
+    Use `expand -> migrate -> contract` for live systems.
+  </DocSummaryItem>
+</DocSummary>
+
 ## Production Policy
 
 1. Take a database backup before deploying a release with new migrations.

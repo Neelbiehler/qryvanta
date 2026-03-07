@@ -6,6 +6,18 @@ description: Secure transactional email delivery standards for auth and tenant i
 Qryvanta email is for account and access flows.
 It is not a campaign system.
 
+<DocSummary>
+  <DocSummaryItem label="Use this page when">
+    You are configuring or troubleshooting transactional email for auth and invite flows.
+  </DocSummaryItem>
+  <DocSummaryItem label="What breaks if email fails">
+    Users cannot verify accounts, reset passwords, or accept invites.
+  </DocSummaryItem>
+  <DocSummaryItem label="Core rule">
+    Treat SMTP issues as access incidents, not as low-priority messaging bugs.
+  </DocSummaryItem>
+</DocSummary>
+
 ## Scope
 
 Qryvanta email delivery is transactional-only in current auth flows:

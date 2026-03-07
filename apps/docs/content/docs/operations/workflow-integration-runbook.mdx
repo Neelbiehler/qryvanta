@@ -5,6 +5,32 @@ description: Production setup and troubleshooting guide for workflow triggers an
 
 Use this runbook when enabling workflow automations that trigger from runtime events and call external systems.
 
+<DocSummary>
+  <DocSummaryItem label="Use this page when">
+    You are operating workflow triggers, external integrations, or queued execution in a production-like environment.
+  </DocSummaryItem>
+  <DocSummaryItem label="Core rule">
+    Draft workflows do not execute. Published workflow versions do.
+  </DocSummaryItem>
+  <DocSummaryItem label="Read with">
+    `Automation Basics`, `Configuration`, `Email Delivery`, and `Observability`.
+  </DocSummaryItem>
+</DocSummary>
+
+## Read This Page In Parts
+
+<DocCardGrid columns={3}>
+  <DocCard href="#draft-and-publish-operations" eyebrow="Release path" title="Start with publish behavior">
+    Use this if you need to know what becomes active and when.
+  </DocCard>
+  <DocCard href="#trigger-coverage" eyebrow="Ingress" title="Then review trigger ingress paths">
+    Read this for schedule, webhook, form, email, and approval entry points.
+  </DocCard>
+  <DocCard href="#outbound-integration-actions" eyebrow="Side effects" title="Then review outbound delivery and retries">
+    Use this for external calls, email delivery, idempotency, and replay.
+  </DocCard>
+</DocCardGrid>
+
 ## Draft And Publish Operations
 
 Workflows are now draft-first:

@@ -5,6 +5,18 @@ description: Deployment profiles for shared, tenant-per-schema, and tenant-per-d
 
 Qryvanta supports an optional physical isolation profile for self-hosted deployments.
 
+<DocSummary>
+  <DocSummaryItem label="Use this page when">
+    You are deciding whether shared, tenant-per-schema, or tenant-per-database deployment is the right isolation model.
+  </DocSummaryItem>
+  <DocSummaryItem label="Default">
+    `shared` is the normal baseline. Physical isolation modes are opt-in and tenant-pinned.
+  </DocSummaryItem>
+  <DocSummaryItem label="Core rule">
+    Non-shared modes require `PHYSICAL_ISOLATION_TENANT_ID` and a matching schema or database template.
+  </DocSummaryItem>
+</DocSummary>
+
 ## Modes
 
 - `shared` (default): all tenants share one database and rely on logical tenant scoping.

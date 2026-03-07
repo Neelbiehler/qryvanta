@@ -5,8 +5,19 @@ description: How draft metadata becomes active runtime behavior.
 
 Makers edit metadata in draft mode.
 Runtime behavior changes only after publish.
+That boundary is one of the main reasons Qryvanta stays predictable for runtime users.
 
-This contract keeps runtime behavior predictable for worker users.
+<DocSummary>
+  <DocSummaryItem label="Use this page when">
+    A change exists in Maker Center but not in Worker Apps.
+  </DocSummaryItem>
+  <DocSummaryItem label="Core rule">
+    Draft is editable. Published is active.
+  </DocSummaryItem>
+  <DocSummaryItem label="First check">
+    Confirm the expected scope was actually published and passed compatibility checks.
+  </DocSummaryItem>
+</DocSummary>
 
 ## Draft to Runtime
 
@@ -23,6 +34,11 @@ This contract keeps runtime behavior predictable for worker users.
 - Published-schema compatibility breaks
 - Invalid sitemap or app bindings
 - App permission and binding issues that block runtime access
+
+## What Publish Protects
+
+Publish is not just a release button.
+It is the place where Qryvanta checks whether a draft is safe to become the active contract for runtime APIs, forms, views, and workflows.
 
 ## Compatibility Gates
 

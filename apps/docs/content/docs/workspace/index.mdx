@@ -1,38 +1,77 @@
 ---
 title: Workspace
-description: How Admin Center, Maker Center, and Worker Apps work together in daily product use.
+description: Understand how Admin Center, Maker Center, and Worker Apps fit together in daily product use.
 ---
 
-Qryvanta separates product usage into role-based surfaces.
-Each surface has its own navigation and permission checks.
+Qryvanta splits daily work into three surfaces.
+Admin Center handles access and tenant controls.
+Maker Center changes metadata.
+Worker Apps runs the published product.
 
-## Surfaces
+<AudienceTags>
+  <AudienceTag>Admins</AudienceTag>
+  <AudienceTag>Makers</AudienceTag>
+  <AudienceTag>Worker users</AudienceTag>
+  <AudienceTag>Operators validating permissions</AudienceTag>
+</AudienceTags>
 
-- Admin Center (`/admin`): roles, assignments, invite flow, audit controls.
-- Maker Center (`/maker`): entities, fields, forms, views, and publish actions.
-- Worker Apps (`/worker`): runtime record creation, updates, and daily operations.
-- Docs (`/docs`): user and operator reference.
+<DocSummary>
+  <DocSummaryItem label="Use this section when">
+    You need to work out which surface owns a task or where a problem started.
+  </DocSummaryItem>
+  <DocSummaryItem label="Start with">
+    Admin for access, Maker for metadata, and Worker for runtime validation.
+  </DocSummaryItem>
+  <DocSummaryItem label="Practical rule">
+    Do not debug runtime behavior in the admin layer, and do not fix permissions in Maker.
+  </DocSummaryItem>
+</DocSummary>
 
-The same tenant can have users in one surface or in multiple surfaces.
+## Surface Model
+
+<DocCardGrid columns={3}>
+  <DocCard href="/docs/workspace/admin-center" eyebrow="Control plane" title="Admin Center">
+    Manage roles, memberships, invites, registration behavior, and audit visibility for the tenant.
+  </DocCard>
+  <DocCard href="/docs/workspace/maker-center" eyebrow="Build plane" title="Maker Center">
+    Define metadata, configure forms and views, bind apps, run publish checks, and publish changes.
+  </DocCard>
+  <DocCard href="/docs/workspace/worker-apps" eyebrow="Runtime plane" title="Worker Apps">
+    Run the day-to-day record work that published metadata makes available to users.
+  </DocCard>
+</DocCardGrid>
 
 ## Recommended Team Flow
 
-1. Admin configures access and invites users.
-2. Maker defines data model and app navigation.
-3. Maker publishes metadata.
-4. Worker users run day-to-day processes in generated app pages.
-5. Admin reviews audit and access events.
+<Checklist>
+  <li>Admin sets up access, roles, and invite policy</li>
+  <li>Maker defines the entity model, forms, views, and app navigation</li>
+  <li>Maker runs publish checks and publishes the change</li>
+  <li>Worker users use the new runtime path in Worker Apps</li>
+  <li>Admin reviews access and audit events when needed</li>
+</Checklist>
 
-## Practical Rules
+## Use These Pages When
 
-- Control-plane tasks stay in admin and maker surfaces.
-- Runtime tasks stay in worker surfaces.
-- Permissions and publish checks gate what appears to each role.
-- When a role lacks access, fix role assignments before changing metadata.
+<DocCardGrid>
+  <DocCard href="/docs/workspace/admin-center" eyebrow="Access work" title="You need to fix who can do what">
+    Start here for role assignments, tenant membership changes, invite flow, and audit policy.
+  </DocCard>
+  <DocCard href="/docs/workspace/maker-center" eyebrow="Metadata work" title="You need to change schema or layout">
+    Use this when editing entities, forms, views, relationships, rules, and app navigation.
+  </DocCard>
+  <DocCard href="/docs/workspace/publish-and-access" eyebrow="Release work" title="You need to release a change safely">
+    Read this before publish windows or when runtime users cannot see the expected metadata.
+  </DocCard>
+  <DocCard href="/docs/workspace/worker-apps" eyebrow="Runtime work" title="You need to validate what users actually get">
+    Use this to check runtime behavior after publish or while investigating user-facing issues.
+  </DocCard>
+</DocCardGrid>
 
-## Page Guide
+## Practical Rule
 
-- Read `Admin Center` when setting roles, invites, and audit policy.
-- Read `Maker Center` when changing entities, forms, views, or navigation.
-- Read `Worker Apps` when validating daily runtime behavior.
-- Read `Publish and Access` before release windows.
+<DocCallout title="Fix the right layer" tone="note">
+  If a user cannot reach a page, start with roles and app bindings.
+  If a page loads with the wrong fields or layout, start with published metadata.
+  If a workflow or runtime side effect is missing, check the publish state and execution mode before changing code.
+</DocCallout>

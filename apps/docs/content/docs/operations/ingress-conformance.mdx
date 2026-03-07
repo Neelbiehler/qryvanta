@@ -5,6 +5,18 @@ description: Validate staging and production ingress/CDN behavior before opening
 
 Use this runbook after every ingress, CDN, TLS termination, or reverse-proxy change.
 
+<DocSummary>
+  <DocSummaryItem label="Use this page when">
+    You changed CDN, proxy, hostnames, TLS termination, or edge redirect behavior.
+  </DocSummaryItem>
+  <DocSummaryItem label="What the probe checks">
+    HTTPS redirects, security headers, trace-header echo, and API CORS behavior.
+  </DocSummaryItem>
+  <DocSummaryItem label="Core rule">
+    Fix edge behavior first, then rerun the probe before reopening traffic.
+  </DocSummaryItem>
+</DocSummary>
+
 Qryvanta depends on correct edge behavior for:
 
 - HTTPS-only browser entrypoints

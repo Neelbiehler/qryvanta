@@ -12,10 +12,25 @@ export function baseOptions(): BaseLayoutProps {
       enabled: false,
     },
     nav: {
-      title: 'Qryvanta Docs',
+      title: (
+        <span className="docs-brand">
+          <span className="docs-brand-mark" aria-hidden="true">
+            Q
+          </span>
+          <span className="docs-brand-copy">
+            <span className="docs-brand-name">Qryvanta Docs</span>
+            <span className="docs-brand-tag">OSS platform manual</span>
+          </span>
+        </span>
+      ),
     },
     githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}`,
     links: [
+      {
+        text: 'Start Here',
+        url: '/docs',
+        active: 'url',
+      },
       {
         text: 'Quickstart',
         url: '/docs/quickstart',

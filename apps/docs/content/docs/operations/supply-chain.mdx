@@ -6,6 +6,18 @@ description: Generate and retrieve software bill of materials artifacts from CI 
 Qryvanta CI generates SBOM artifacts on every pull request and `main` push in `.github/workflows/ci.yml`.
 Release automation signs published npm package artifacts in `.github/workflows/release-packages.yml`.
 
+<DocSummary>
+  <DocSummaryItem label="Use this page when">
+    You need SBOM artifacts or release-signature evidence for compliance or release review.
+  </DocSummaryItem>
+  <DocSummaryItem label="Artifacts produced">
+    CycloneDX and SPDX SBOM files for CI, plus signed release bundles for published packages.
+  </DocSummaryItem>
+  <DocSummaryItem label="Operator workflow">
+    Download the GitHub Actions artifacts, archive them with release evidence, and verify checksums and signatures.
+  </DocSummaryItem>
+</DocSummary>
+
 ## Generated Formats
 
 - `CycloneDX JSON` (`sbom-cyclonedx.json`)

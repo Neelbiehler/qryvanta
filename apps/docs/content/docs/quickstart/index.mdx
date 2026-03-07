@@ -1,55 +1,63 @@
 ---
 title: Quickstart
-description: First-run setup for a local Qryvanta instance.
+description: First-run setup for a local Qryvanta instance, with a clear path from install to first published app.
 ---
 
-Qryvanta is in active development and is not ready for production use yet.
+Use Quickstart when you want a working local instance fast and you do not want to hunt across multiple pages for the next step.
 
-Use this page to start a local instance and verify that the product is usable.
+<AudienceTags>
+  <AudienceTag>First-time contributors</AudienceTag>
+  <AudienceTag>Makers</AudienceTag>
+  <AudienceTag>Local evaluators</AudienceTag>
+  <AudienceTag>Self-hosting operators</AudienceTag>
+</AudienceTags>
 
-## Prerequisites
+<DocCallout title="Expected outcome" tone="tip">
+  By the end of this section, you should have a running local stack, a working login, and one published metadata change visible in Worker Apps.
+</DocCallout>
 
-- Rust stable (`rustup`)
-- Node.js 22+
-- pnpm 10+
-- Docker + Docker Compose
+<DocSummary>
+  <DocSummaryItem label="You need">
+    Rust, Node.js, `pnpm`, Docker, and Docker Compose.
+  </DocSummaryItem>
+  <DocSummaryItem label="Fastest path">
+    Bring up infrastructure, start the apps, confirm health, then follow `First App`.
+  </DocSummaryItem>
+  <DocSummaryItem label="If you get stuck">
+    Check local URLs, auth settings, and role access before changing code.
+  </DocSummaryItem>
+</DocSummary>
 
-## First Run
+## Before You Start
 
-1. Install workspace dependencies.
+<Checklist>
+  <li>Rust stable is installed through `rustup`</li>
+  <li>Node.js 22 or newer is installed</li>
+  <li>`pnpm` 10 or newer is available</li>
+  <li>Docker and Docker Compose are running</li>
+</Checklist>
+
+## Recommended Path
+
+<DocCardGrid>
+  <DocCard href="/docs/quickstart/docker-setup" eyebrow="Step 1" title="Bring up local infrastructure">
+    Start Postgres and Redis, confirm container health, and fix local Docker issues before opening the app.
+  </DocCard>
+  <DocCard href="/docs/quickstart/local-development" eyebrow="Step 2" title="Verify local development">
+    Start the API and web app, log in, and confirm at least one product surface is reachable.
+  </DocCard>
+  <DocCard href="/docs/quickstart/first-app" eyebrow="Step 3" title="Build your first app">
+    Create an entity, publish it, open Worker Apps, and create a runtime record to prove the full path works.
+  </DocCard>
+</DocCardGrid>
+
+## Fast Path
 
 ```bash
 pnpm install
-```
-
-2. Start Postgres and Redis.
-
-```bash
 pnpm infra:up
-```
-
-3. Create your local `.env` file.
-
-```bash
 cp .env.example .env
-```
-
-4. Start API, web, and docs.
-
-```bash
 pnpm dev
-```
-
-Local URLs:
-
-- API: `http://localhost:3001`
-- Web: `http://localhost:3000`
-- Docs: `http://127.0.0.1:3002`
-- Postgres: `127.0.0.1:5432`
-
-## Verify Runtime Health
-
-```bash
 curl http://127.0.0.1:3001/health
 ```
 
@@ -59,16 +67,33 @@ Expected response:
 {"status":"ok","ready":true,"postgres":{"status":"ok","detail":null},"redis":{"status":"ok","detail":null}}
 ```
 
-If `ready` is `false`, check container health in `Docker Setup`.
+Local URLs:
 
-## Verify Web Access
+- API: `http://localhost:3001`
+- Web: `http://localhost:3000`
+- Docs: `http://127.0.0.1:3002`
+- Landing: `http://localhost:3003`
 
-1. Open `http://localhost:3000`.
-2. Complete bootstrap or registration.
-3. Confirm that at least one surface route opens.
-4. Continue in `Local Development` for the first publish flow.
+## Seeded Demo Path
 
-## Next Pages
+If you want a fuller tenant without modeling everything by hand:
 
-- `Docker Setup` for container checks and local troubleshooting.
-- `Local Development` for first login and first app flow.
+```bash
+pnpm dev:seed
+```
+
+Default seeded users:
+
+- `admin@qryvanta.local` / `admin`
+- `user@qryvanta.local` / `admin`
+
+## Common Stops
+
+<DocCardGrid>
+  <DocCard href="/docs/operations/configuration" eyebrow="Config" title="The app boots but auth or URLs look wrong">
+    Check the configuration reference, especially `FRONTEND_URL`, `NEXT_PUBLIC_API_BASE_URL`, and session or bootstrap secrets.
+  </DocCard>
+  <DocCard href="/docs/workspace/publish-and-access" eyebrow="Permissions" title="I can log in, but I cannot reach the right surface">
+    Review role assignments, app bindings, and publish state before changing code or metadata.
+  </DocCard>
+</DocCardGrid>

@@ -5,6 +5,18 @@ description: How to consume and track versioned TypeScript API contract packages
 
 Qryvanta publishes generated TypeScript transport contracts as `@qryvanta/api-types`.
 
+<DocSummary>
+  <DocSummaryItem label="Use this page when">
+    You are consuming Qryvanta APIs from another TypeScript codebase.
+  </DocSummaryItem>
+  <DocSummaryItem label="Core rule">
+    Import generated transport types from `@qryvanta/api-types` instead of redefining DTOs locally.
+  </DocSummaryItem>
+  <DocSummaryItem label="Upgrade flow">
+    Bump the package, rerun type checks, then validate critical API paths.
+  </DocSummaryItem>
+</DocSummary>
+
 ## Install
 
 ```bash

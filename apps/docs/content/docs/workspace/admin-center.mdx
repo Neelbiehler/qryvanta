@@ -3,9 +3,20 @@ title: Admin Center
 description: Tenant access administration, invite policy, and audit visibility.
 ---
 
-Admin Center is for tenant and security administration.
+Use Admin Center for tenant access control, membership changes, registration policy, and audit visibility.
+This is the control plane for who can enter the tenant and what they can do.
 
-Use Admin Center before broad user rollout and after every permission change.
+<DocSummary>
+  <DocSummaryItem label="Use this page when">
+    You need to change roles, invites, registration policy, or audit access.
+  </DocSummaryItem>
+  <DocSummaryItem label="Most common task">
+    Create clear maker and worker roles, then assign users to them.
+  </DocSummaryItem>
+  <DocSummaryItem label="First check when access looks wrong">
+    Verify role assignment, app permission coverage, and session refresh.
+  </DocSummaryItem>
+</DocSummary>
 
 ## Primary Tasks
 
@@ -22,6 +33,16 @@ Use Admin Center before broad user rollout and after every permission change.
 3. Assign members to roles.
 4. Confirm audit visibility for metadata and security actions.
 5. Set registration mode to `invite_only` unless open registration is required.
+
+## What Admin Center Owns
+
+Admin Center should answer these questions:
+
+- Who belongs to the tenant?
+- Which roles does each member have?
+- Can new users self-register or only join by invite?
+- Which users can review audit and security history?
+- Who has temporary elevated access right now?
 
 ## Ongoing Operations
 

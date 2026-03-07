@@ -5,6 +5,18 @@ description: Export and import metadata and runtime data bundles for migration, 
 
 Qryvanta provides deterministic workspace portability bundles for metadata and runtime records.
 
+<DocSummary>
+  <DocSummaryItem label="Use this page when">
+    You need tenant export or import for migration, backup validation, or recovery drills.
+  </DocSummaryItem>
+  <DocSummaryItem label="Safest path">
+    Export, archive checksum, dry-run import, then apply import and compare totals.
+  </DocSummaryItem>
+  <DocSummaryItem label="Collision warning">
+    If the target already has runtime data, prefer `remap_record_ids=true`.
+  </DocSummaryItem>
+</DocSummary>
+
 Use this runbook for:
 
 - Backup snapshots

@@ -1,12 +1,28 @@
 ---
 title: Local Development
-description: Local first-use flow for admins and makers.
+description: Verify the local stack, sign in, and confirm the product surfaces are ready for real testing.
 ---
 
-Use this page after Quickstart.
-It focuses on first login, first publish, and first runtime record.
+Use this page after the base Quickstart steps.
+The goal is simple: make sure your local environment is healthy before you spend time modeling metadata or debugging permissions.
 
-## Start the Stack
+<DocCallout title="Expected outcome" tone="tip">
+  You should finish this page with a healthy API, a working web login, and access to the product surface you need.
+</DocCallout>
+
+<DocSummary>
+  <DocSummaryItem label="You need">
+    A running local stack and a `.env` file based on `.env.example`.
+  </DocSummaryItem>
+  <DocSummaryItem label="You are done when">
+    Health checks pass, login works, and you can open at least one product surface.
+  </DocSummaryItem>
+  <DocSummaryItem label="If it fails">
+    Check role assignments first, then confirm the core auth and API URLs in `.env`.
+  </DocSummaryItem>
+</DocSummary>
+
+## Start The Stack
 
 ```bash
 pnpm infra:up
@@ -20,7 +36,7 @@ pnpm dev
 curl http://127.0.0.1:3001/health
 ```
 
-Expected response includes `"status":"ok"` and `"ready":true`.
+The response should include `"status":"ok"` and `"ready":true`.
 
 Default local ports:
 
@@ -34,21 +50,13 @@ Default local ports:
 
 1. Open `http://localhost:3000`.
 2. Use bootstrap or registration flow based on your `.env` settings.
-3. Confirm you can access at least one surface: `/admin`, `/maker`, or `/worker`.
+3. Confirm you can access at least one of `/admin`, `/maker`, or `/worker`.
 
-If no surface is visible, check role assignments in Admin Center.
-
-If login fails, verify `AUTH_BOOTSTRAP_TOKEN`, `SESSION_SECRET`, and `NEXT_PUBLIC_API_BASE_URL` in `.env`.
-
-## First Maker Flow
-
-1. Open Maker Center at `/maker`.
-2. Create one entity such as `account`.
-3. Add fields such as `name`, `status`, `owner`, and `segment`.
-4. Publish metadata.
-5. Open Worker Apps and create one record.
-6. Return to Maker Center and edit one field label.
-7. Publish again and verify the change in Worker Apps.
+<Checklist>
+  <li>If no surface is visible, check role assignments in Admin Center</li>
+  <li>If login fails, verify `AUTH_BOOTSTRAP_TOKEN`, `SESSION_SECRET`, and `NEXT_PUBLIC_API_BASE_URL` in `.env`</li>
+  <li>If passkeys fail, keep both the API and web app on `localhost` during local testing</li>
+</Checklist>
 
 ## Optional Demo Seed
 
@@ -56,35 +64,31 @@ If login fails, verify `AUTH_BOOTSTRAP_TOKEN`, `SESSION_SECRET`, and `NEXT_PUBLI
 pnpm dev:seed
 ```
 
-The seed targets `DEV_DEFAULT_TENANT_ID` when set (from `.env`), creates/updates the tenant named `Northwind Industrial Group`, and upserts sample `account`, `contact`, `deal`, and `invoice` records.
-
-It ensures seeded tenant identities and role assignments are in place, including full owner access through the system `tenant_owner` role.
-
-Beyond records, the seed provisions a full model-driven tenant surface: `sales_hub` and `finance_ops` apps, entity bindings, curated forms, grid views, and app sitemaps.
+The seed targets `DEV_DEFAULT_TENANT_ID` when set, creates or updates the tenant `Northwind Industrial Group`, and adds sample entities, records, apps, forms, views, workflows, and sitemaps.
 
 Seeded local users:
 
-- Admin: `admin@qryvanta.local` / `admin` (full tenant rights)
-- Standard user: `user@qryvanta.local` / `admin` (worker-focused app access via `standard_user` role)
+- Admin: `admin@qryvanta.local` / `admin`
+- Standard user: `user@qryvanta.local` / `admin`
 
-If these users already exist, the seed updates records instead of duplicating them.
+## Passkey Check
 
-## Local Passkey Test (Optional)
+Use one hostname for both the web app and the API:
 
-Use one hostname (`localhost`) for the web app and API while testing auth.
+- `FRONTEND_URL=http://localhost:3000`
+- `NEXT_PUBLIC_API_BASE_URL=http://localhost:3001`
 
-1. Set `FRONTEND_URL=http://localhost:3000`.
-2. Set `NEXT_PUBLIC_API_BASE_URL=http://localhost:3001`.
-3. Start apps with `pnpm dev`.
-4. Open `http://localhost:3000/login`.
-5. Enter a subject and bootstrap token, click **Bootstrap Session**.
-6. Click **Enroll Passkey** and complete the browser/device prompt.
-7. Click **Sign in with Passkey**.
+Then:
 
-Passkey login requires the same host for web and API origin checks.
+1. Open `http://localhost:3000/login`.
+2. Bootstrap a session or sign in with an existing local user.
+3. Enroll a passkey.
+4. Sign out and sign back in with the passkey flow.
 
-## Daily Shutdown
+## Next Step
 
-```bash
-pnpm infra:down
-```
+<DocCardGrid>
+  <DocCard href="/docs/quickstart/first-app" eyebrow="Hands-on tutorial" title="Build your first app">
+    Continue with the guided metadata-to-runtime exercise so you can prove the full product path works on your machine.
+  </DocCard>
+</DocCardGrid>

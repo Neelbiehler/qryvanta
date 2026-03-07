@@ -3,10 +3,20 @@ title: Maker Center
 description: Build metadata-driven apps with entities, forms, views, rules, and publish checks.
 ---
 
-Maker Center is for building and publishing tenant apps.
+Use Maker Center to define entities, fields, forms, views, app navigation, and workflows.
+This is where teams build the product shape before releasing it to runtime users.
 
-Draft edits stay inactive until publish.
-Worker Apps only use published metadata.
+<DocSummary>
+  <DocSummaryItem label="Use this page when">
+    You need to change schema, layouts, navigation, rules, or workflows.
+  </DocSummaryItem>
+  <DocSummaryItem label="Core boundary">
+    Draft changes stay inactive until publish.
+  </DocSummaryItem>
+  <DocSummaryItem label="Most common failure">
+    The metadata is valid in draft, but app binding or permissions were not updated with it.
+  </DocSummaryItem>
+</DocSummary>
 
 ## Primary Tasks
 
@@ -26,6 +36,11 @@ Worker Apps only use published metadata.
 5. Publish.
 6. Validate behavior in Worker Apps.
 7. Fix issues and publish again if needed.
+
+## What Good Maker Work Looks Like
+
+Good maker changes are small enough to reason about and complete enough to release together.
+In practice, that usually means changing the entity model, the form, the list view, and the app navigation in the same draft instead of spreading one runtime change across several unrelated drafts.
 
 ## Example Change
 

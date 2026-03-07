@@ -7,9 +7,39 @@ Qryvanta now fails fast on missing MFA encryption keys, rotates authenticated se
 
 Use this page as the minimum production hardening baseline before exposing a deployment to external tenants.
 
+<DocSummary>
+  <DocSummaryItem label="Use this page when">
+    You are preparing a real self-hosted environment for external or internal production traffic.
+  </DocSummaryItem>
+  <DocSummaryItem label="Minimum baseline">
+    Unique secrets, strict proxy settings, secure auth flows, tenant isolation checks, and validated browser headers.
+  </DocSummaryItem>
+  <DocSummaryItem label="Read with">
+    `Configuration`, `Identity Recovery and Secret Rotation`, and `Ingress Conformance`.
+  </DocSummaryItem>
+</DocSummary>
+
+## Read This Page In Parts
+
+<DocCardGrid columns={3}>
+  <DocCard href="#required-secrets" eyebrow="Secrets" title="Lock down secret material first">
+    Start here for unique secrets, source rules, and secret reuse protection.
+  </DocCard>
+  <DocCard href="#authentication-controls" eyebrow="Auth" title="Review session and MFA behavior">
+    Use this for session rotation, step-up, tenant switching, and reset behavior.
+  </DocCard>
+  <DocCard href="#database-tenant-isolation" eyebrow="Isolation" title="Check tenant boundaries and RLS">
+    Read this before claiming the deployment is tenant-safe.
+  </DocCard>
+</DocCardGrid>
+
 For recovery operations and secret lifecycle procedures, use [Identity Recovery and Secret Rotation](/docs/operations/identity-and-secret-rotation).
 For startup secret-source formats (`*_FILE`, `*_SECRET_REF`) and supported external manager references, use [Configuration](/docs/operations/configuration).
 For stable security event identifiers across auth flows and tenant-admin audit actions, use [Security Event Taxonomy](/docs/operations/security-event-taxonomy).
+
+<DocCallout title="Minimum operator claim" tone="note">
+  A deployment is not meaningfully hardened until unique secrets, trusted proxy rules, tenant isolation checks, and browser security headers are all verified together.
+</DocCallout>
 
 ## Required Secrets
 

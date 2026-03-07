@@ -1,24 +1,69 @@
 ---
 title: Concepts
-description: Core product concepts for metadata, runtime records, and workflow automation.
+description: The product mental model for metadata, publish boundaries, runtime records, and workflow execution.
 ---
 
-Qryvanta behavior starts with metadata.
-Runtime pages and APIs execute from published metadata versions.
+Qryvanta is easier to reason about once you stop treating it like a hand-built CRUD app.
+The runtime follows published metadata, tenant-scoped policy, and execution mode.
 
-## Core Concepts
+<DocCallout title="Start here when behavior is confusing" tone="tip">
+  Most user-facing surprises in Qryvanta come from one of four places: unpublished draft changes, missing app bindings, role access, or workflow execution mode.
+</DocCallout>
 
-- Metadata model: entities, fields, forms, views, and app navigation.
-- Publish lifecycle: draft edits become active after publish.
-- Runtime records: create and update operations use published schema.
-- Automation: workflow runs react to events or manual execution.
-- Tenant security: every runtime path is scoped by tenant and role permissions.
+<DocSummary>
+  <DocSummaryItem label="Use this section when">
+    Something in the product feels inconsistent and you need the rule behind it.
+  </DocSummaryItem>
+  <DocSummaryItem label="Check first">
+    Publish state, app bindings, role access, and workflow execution mode.
+  </DocSummaryItem>
+  <DocSummaryItem label="Common mistake">
+    Assuming a draft change should already appear in Worker Apps.
+  </DocSummaryItem>
+</DocSummary>
 
-## Why This Matters
+## The Mental Model
 
-When a page or API result looks wrong, start with the published metadata version and app scope.
+<DocCardGrid columns={3}>
+  <DocCard href="/docs/concepts/platform-architecture" eyebrow="System map" title="See how the whole project fits together">
+    Use the architecture guide for the monorepo layout, runtime request flow, publish flow, and Rust-first API contract model.
+  </DocCard>
+  <DocCard href="/docs/concepts/metadata-and-publishing" eyebrow="Contract boundary" title="Draft is not runtime">
+    Draft metadata can change freely. Runtime behavior changes only after publish succeeds.
+  </DocCard>
+  <DocCard href="/docs/concepts/records-and-views" eyebrow="Runtime model" title="Records run on published schema">
+    Worker-facing list and form behavior follows the active published model, not whatever is sitting in draft.
+  </DocCard>
+  <DocCard href="/docs/concepts/automation-basics" eyebrow="Execution model" title="Automation reacts to events and schedules">
+    Workflow runs can be triggered by runtime events, native schedules, webhooks, forms, inbound email, and approvals.
+  </DocCard>
+</DocCardGrid>
 
-## Concept Boundaries
+## What To Check First
 
-- Product behavior docs are in this section.
-- Internal implementation details are in repository `docs/internal/`.
+<Checklist>
+  <li>The expected metadata version has actually been published</li>
+  <li>The entity is bound into the app navigation used by the affected role</li>
+  <li>The role has the access needed for the runtime action</li>
+  <li>The workflow execution mode and worker runtime match the way the tenant is configured</li>
+</Checklist>
+
+## Read By Problem
+
+<DocCardGrid>
+  <DocCard href="/docs/concepts/platform-architecture" eyebrow="Whole system" title="I need the project map before I change anything">
+    Start here when you need the full monorepo, runtime, and publish model in one place.
+  </DocCard>
+  <DocCard href="/docs/concepts/metadata-and-publishing" eyebrow="Schema and publish" title="My change exists in Maker but not in Worker Apps">
+    Start with publish boundaries, compatibility checks, and selective publish behavior.
+  </DocCard>
+  <DocCard href="/docs/concepts/records-and-views" eyebrow="Runtime pages" title="The data model or layout looks wrong">
+    Read this when forms, list views, or runtime record operations do not match what you expected.
+  </DocCard>
+  <DocCard href="/docs/concepts/extensions-runtime" eyebrow="Extension path" title="I need to understand external runtime behavior">
+    Use this when the tenant relies on extensions or external integrations around the runtime surface.
+  </DocCard>
+  <DocCard href="/docs/concepts/automation-basics" eyebrow="Workflow path" title="A workflow did not fire or did the wrong thing">
+    Go here before moving into the operator runbook or worker troubleshooting path.
+  </DocCard>
+</DocCardGrid>

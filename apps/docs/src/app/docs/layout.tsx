@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { source } from '@/lib/source';
 import { DocsLayout } from 'fumadocs-ui/layouts/docs';
 import { baseOptions } from '@/lib/layout.shared';
@@ -8,16 +9,43 @@ export default function Layout({ children }: LayoutProps<'/docs'>) {
       tree={source.getPageTree()}
       sidebar={{
         collapsible: false,
-        className: 'border-e border-fd-border/70 bg-white/70 backdrop-blur',
+        className: 'docs-sidebar border-e border-fd-border/70 bg-white/72 backdrop-blur',
         banner: (
-          <div className="mx-3 mt-3 rounded-xl border border-fd-border bg-fd-muted/50 p-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-fd-muted-foreground">User Docs</p>
-            <p className="mt-1 text-sm text-fd-foreground">Guides for admins, makers, worker users, and operators.</p>
+          <div className="docs-sidebar-panel mx-3 mt-3 rounded-[1.35rem] p-4">
+            <p className="docs-sidebar-kicker">Open source docs</p>
+            <h2 className="mt-2 text-base font-semibold tracking-tight text-fd-foreground">
+              Read Qryvanta like a product, not a code dump
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-fd-muted-foreground">
+              Start with the platform shape, then move through product surfaces, publish rules, and operator runbooks.
+            </p>
+            <div className="mt-4 grid gap-2">
+              <Link className="docs-sidebar-quicklink" href="/docs/quickstart">
+                Quickstart
+              </Link>
+              <Link className="docs-sidebar-quicklink" href="/docs/concepts/platform-architecture">
+                Platform Architecture
+              </Link>
+              <Link className="docs-sidebar-quicklink" href="/docs/operations/self-hosting">
+                Self-Hosting
+              </Link>
+            </div>
           </div>
         ),
         footer: (
-          <div className="mx-3 mb-3 rounded-xl border border-fd-border bg-white/80 p-3 text-xs text-fd-muted-foreground">
-            Open source docs for `qryvanta.org`.
+          <div className="docs-sidebar-panel mx-3 mb-3 rounded-[1.2rem] p-3 text-xs leading-5 text-fd-muted-foreground">
+            <p className="docs-sidebar-kicker">Operator note</p>
+            <p className="mt-2">
+              Qryvanta is in active development. Validate behavior against the running build before rollout.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Link className="docs-mini-pill" href="/docs/operations/security-hardening">
+                Security
+              </Link>
+              <Link className="docs-mini-pill" href="/docs/operations/observability">
+                Observability
+              </Link>
+            </div>
           </div>
         ),
       }}
